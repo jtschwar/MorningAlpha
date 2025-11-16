@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Detail</title>
+    <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h1 id="stockTitle">Loading...</h1>
+                    <p class="subtitle" id="stockSubtitle"></p>
+                </div>
+                <button onclick="window.close()" class="btn-back">← Back to Dashboard</button>
+            </div>
+        </div>
+        
+        <div id="stockStats" class="stats"></div>
+        
+        <div id="loading" class="loading">
+            <h2>⏳ Fetching stock data...</h2>
+            <p>This may take a few seconds</p>
+        </div>
+        
+        <div id="error" class="error" style="display: none;"></div>
+        
+        <div id="priceChart" class="chart-container" style="display: none;">
+            <h2>Price History</h2>
+            <div id="pricePlot"></div>
+        </div>
+        
+        <div id="volumeChart" class="chart-container" style="display: none;">
+            <h2>Trading Volume</h2>
+            <div id="volumePlot"></div>
+        </div>
+        
+        <div id="returnsChart" class="chart-container" style="display: none;">
+            <h2>Daily Returns Distribution</h2>
+            <div id="returnsPlot"></div>
+        </div>
+        
+        <div id="technicals" class="chart-container" style="display: none;">
+            <h2>Technical Indicators</h2>
+            <div class="indicator-grid">
+                <div class="indicator-card">
+                    <div class="indicator-label">20-Day MA</div>
+                    <div class="indicator-value" id="ma20">-</div>
+                </div>
+                <div class="indicator-card">
+                    <div class="indicator-label">50-Day MA</div>
+                    <div class="indicator-value" id="ma50">-</div>
+                </div>
+                <div class="indicator-card">
+                    <div class="indicator-label">Volatility (Std Dev)</div>
+                    <div class="indicator-value" id="volatility">-</div>
+                </div>
+                <div class="indicator-card">
+                    <div class="indicator-label">Max Drawdown</div>
+                    <div class="indicator-value" id="maxDrawdown">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let ticker = null;
+        let stockInfo = null;
+        
+        window.addEventListener('DOMContentLoaded', async function() {
+            ticker = localStorage.getItem('selectedTicker');
+            const stockData = JSON.parse(localStorage.getItem('stockData') || '[]');
+            const metadata = JSON.parse(localStorage.getItem('metadata') || '{}');
+            
+            if (!ticker) {
+                showError('No stock selected. Please select a stock from the dashboard.');
+                return;
+            }
+            
+            stockInfo = stockData.find(s => s.Ticker === ticker);
+            if (!stockInfo) {
+                showError('Stock information not found.');
+                return;
+            }
+            
+            document.getElementById('stockTitle').textContent = `${ticker} - ${stockInfo.Name}`;
+            document.getElementById('stockSubtitle').textContent = `${stockInfo.Exchange} | ${metadata.metric} Return: ${stockInfo.ReturnPct.toFixed(2)}%`;
+            
+            await fetchStockDetails(ticker, metadata.metric);
+        });
+        
+        async function fetchStockDetails(ticker, metric) {
+            try {
+                const url = `http://localhost:5050/api/stock/${ticker}?period=${metric}`;
+                
+                console.log('Fetching from:', url); // Debug log
+                
+                const response = await fetch(url);
+                const data = await response.json();
+
+                console.log('Received data:', data); // Debug log
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                // Convert backend format to expected format
+                const timestamps = data.timestamps;
+                const dates = timestamps.map(ts => new Date(ts * 1000));
+                const opens = data.open;
+                const highs = data.high;
+                const lows = data.low;
+                const prices = data.close;
+                const volumes = data.volume;
+                
+                displayStatistics(prices, volumes);
+                createPriceChart(dates, opens, highs, lows, prices);
+                createVolumeChart(dates, volumes);
+                createReturnsChart(prices);
+                calculateTechnicals(prices);
+                
+                document.getElementById('loading').style.display = 'none';
+                
+            } catch (error) {
+                console.error('Error fetching stock data:', error);
+                showError('Unable to fetch stock data: ' + error.message);
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+        
+        function displayStatistics(prices, volumes) {
+            const validPrices = prices.filter(p => p !== null && p !== undefined);
+            const validVolumes = volumes.filter(v => v !== null && v !== undefined);
+            
+            if (validPrices.length === 0) {
+                showError('No valid price data received');
+                return;
+            }
+            
+            const firstPrice = validPrices[0];
+            const lastPrice = validPrices[validPrices.length - 1];
+            const maxPrice = Math.max(...validPrices);
+            const minPrice = Math.min(...validPrices);
+            const avgVolume = validVolumes.length > 0 ? 
+                validVolumes.reduce((a, b) => a + b, 0) / validVolumes.length : 0;
+            
+            const statsDiv = document.getElementById('stockStats');
+            statsDiv.style.display = 'grid';
+            statsDiv.innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-label">Current Price</div>
+                    <div class="stat-value">$${lastPrice.toFixed(2)}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Period High</div>
+                    <div class="stat-value">$${maxPrice.toFixed(2)}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Period Low</div>
+                    <div class="stat-value">$${minPrice.toFixed(2)}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Avg Volume</div>
+                    <div class="stat-value">${(avgVolume / 1000000).toFixed(2)}M</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Price Change</div>
+                    <div class="stat-value positive">$${(lastPrice - firstPrice).toFixed(2)}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Total Return</div>
+                    <div class="stat-value positive">${stockInfo.ReturnPct.toFixed(2)}%</div>
+                </div>
+            `;
+        }
+        
+        function createPriceChart(dates, opens, highs, lows, closes) {
+            const trace = {
+                x: dates,
+                close: closes,
+                high: highs,
+                low: lows,
+                open: opens,
+                type: 'candlestick',
+                name: ticker,
+                increasing: {line: {color: '#26a69a'}},
+                decreasing: {line: {color: '#ef5350'}}
+            };
+            
+            const layout = {
+                title: `${ticker} Candlestick Chart`,
+                xaxis: {
+                    title: 'Date',
+                    rangeslider: {visible: false}
+                },
+                yaxis: {
+                    title: 'Price ($)'
+                },
+                height: 500,
+                paper_bgcolor: 'white',
+                plot_bgcolor: '#f7fafc'
+            };
+            
+            Plotly.newPlot('pricePlot', [trace], layout, {responsive: true});
+            document.getElementById('priceChart').style.display = 'block';
+        }
+        
+        function createVolumeChart(dates, volumes) {
+            const trace = {
+                x: dates,
+                y: volumes,
+                type: 'bar',
+                marker: {
+                    color: 'rgba(102, 126, 234, 0.6)'
+                }
+            };
+            
+            const layout = {
+                title: 'Trading Volume',
+                xaxis: {title: 'Date'},
+                yaxis: {title: 'Volume'},
+                height: 300,
+                paper_bgcolor: 'white',
+                plot_bgcolor: '#f7fafc'
+            };
+            
+            Plotly.newPlot('volumePlot', [trace], layout, {responsive: true});
+            document.getElementById('volumeChart').style.display = 'block';
+        }
+        
+        function createReturnsChart(prices) {
+            const validPrices = prices.filter(p => p !== null && p !== undefined);
+            const returns = [];
+            for (let i = 1; i < validPrices.length; i++) {
+                returns.push(((validPrices[i] - validPrices[i-1]) / validPrices[i-1]) * 100);
+            }
+            
+            const trace = {
+                x: returns,
+                type: 'histogram',
+                marker: {
+                    color: 'rgba(102, 126, 234, 0.6)'
+                },
+                nbinsx: 30
+            };
+            
+            const layout = {
+                title: 'Daily Returns Distribution',
+                xaxis: {title: 'Daily Return (%)'},
+                yaxis: {title: 'Frequency'},
+                height: 300,
+                paper_bgcolor: 'white',
+                plot_bgcolor: '#f7fafc'
+            };
+            
+            Plotly.newPlot('returnsPlot', [trace], layout, {responsive: true});
+            document.getElementById('returnsChart').style.display = 'block';
+        }
+        
+        function calculateTechnicals(prices) {
+            const validPrices = prices.filter(p => p !== null && p !== undefined);
+            
+            const ma20 = validPrices.length >= 20 ? 
+                validPrices.slice(-20).reduce((a, b) => a + b) / 20 : null;
+            const ma50 = validPrices.length >= 50 ? 
+                validPrices.slice(-50).reduce((a, b) => a + b) / 50 : null;
+            
+            const mean = validPrices.reduce((a, b) => a + b) / validPrices.length;
+            const variance = validPrices.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / validPrices.length;
+            const volatility = Math.sqrt(variance);
+            
+            let maxPrice = validPrices[0];
+            let maxDrawdown = 0;
+            for (let price of validPrices) {
+                if (price > maxPrice) maxPrice = price;
+                const drawdown = ((price - maxPrice) / maxPrice) * 100;
+                if (drawdown < maxDrawdown) maxDrawdown = drawdown;
+            }
+            
+            document.getElementById('ma20').textContent = ma20 ? `$${ma20.toFixed(2)}` : 'N/A';
+            document.getElementById('ma50').textContent = ma50 ? `$${ma50.toFixed(2)}` : 'N/A';
+            document.getElementById('volatility').textContent = `$${volatility.toFixed(2)}`;
+            document.getElementById('maxDrawdown').textContent = `${maxDrawdown.toFixed(2)}%`;
+            
+            document.getElementById('technicals').style.display = 'block';
+        }
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.innerHTML = `<strong>Error:</strong> ${message}`;
+            errorDiv.style.display = 'block';
+        }
+    </script>
+</body>
+</html>

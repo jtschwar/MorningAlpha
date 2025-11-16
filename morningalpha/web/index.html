@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Gainers Dashboard</title>
+    <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📈 Top Stock Gainers Dashboard</h1>
+            <p class="subtitle">Click any stock to see detailed price history and analysis</p>
+        </div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label for="dataFile">Load Data File:</label>
+                <input type="file" id="dataFile" accept=".csv">
+                <div class="file-info">Upload stock_data.csv</div>
+            </div>
+            
+            <div class="control-group">
+                <label for="chartType">Chart Type:</label>
+                <select id="chartType">
+                    <option value="bar">Bar Chart</option>
+                    <option value="scatter">Scatter Plot</option>
+                    <option value="treemap">Treemap</option>
+                    <option value="sunburst">Sunburst</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="topN">Show Top N:</label>
+                <select id="topN">
+                    <option value="10">Top 10</option>
+                    <option value="20">Top 20</option>
+                    <option value="50" selected>Top 50</option>
+                    <option value="100">Top 100</option>
+                    <option value="200">Top 200</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="searchTicker">Search Ticker:</label>
+                <input type="text" id="searchTicker" placeholder="e.g., AAPL">
+            </div>
+            
+            <button onclick="updateVisualizations()">Update View</button>
+        </div>
+        
+        <div id="stats" class="stats" style="display: none;"></div>
+        
+        <div id="loading" class="loading">
+            <h2>👆 Please load a data file to begin</h2>
+            <p>Generate data using: <code>python dask_stock_analyzer.py --output stock_data.csv</code></p>
+        </div>
+        
+        <div id="error" class="error" style="display: none;"></div>
+        
+        <div id="mainChart" class="chart-container" style="display: none;">
+            <div class="chart-header">
+                <h2>Performance Visualization</h2>
+                <p class="chart-info">Click on any stock to view detailed analysis</p>
+            </div>
+            <div id="chartPlot"></div>
+        </div>
+        
+        <div id="tableContainer" class="table-container" style="display: none;">
+            <h2 style="margin-bottom: 20px; color: #2d3748;">Detailed Rankings</h2>
+            <div class="table-info">💡 Click any row to view stock details</div>
+            <table id="dataTable">
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Ticker</th>
+                        <th>Company Name</th>
+                        <th>Exchange</th>
+                        <th>Return %</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody"></tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script src="js/data-loader.js"></script>
+    <script src="js/charts.js"></script>
+    <script>
+        let stockData = null;
+        let metadata = {};
+        
+        // Initialize file loader
+        document.getElementById('dataFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                try {
+                    const csv = event.target.result;
+                    const parsed = parseCSV(csv);
+                    stockData = parsed.data;
+                    metadata = parsed.metadata;
+                    
+                    // Store in localStorage for detail page
+                    localStorage.setItem('stockData', JSON.stringify(stockData));
+                    localStorage.setItem('metadata', JSON.stringify(metadata));
+                    
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('error').style.display = 'none';
+                    
+                    displayStats();
+                    updateVisualizations();
+                } catch (err) {
+                    showError('Error parsing CSV: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+        });
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.innerHTML = `<strong>Error:</strong> ${message}`;
+            errorDiv.style.display = 'block';
+        }
+        
+        function displayStats() {
+            if (!stockData || stockData.length === 0) return;
+            
+            const statsDiv = document.getElementById('stats');
+            statsDiv.style.display = 'grid';
+            
+            const topGainer = stockData[0];
+            const avgReturn = (stockData.reduce((sum, s) => sum + s.ReturnPct, 0) / stockData.length).toFixed(2);
+            const median = stockData[Math.floor(stockData.length / 2)].ReturnPct.toFixed(2);
+            
+            statsDiv.innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-label">Period</div>
+                    <div class="stat-value">${metadata.metric}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Top Stocks</div>
+                    <div class="stat-value">${stockData.length}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Top Gainer</div>
+                    <div class="stat-value">${topGainer.Ticker}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Max Return</div>
+                    <div class="stat-value positive">${topGainer.ReturnPct.toFixed(2)}%</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Avg Return</div>
+                    <div class="stat-value positive">${avgReturn}%</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Median Return</div>
+                    <div class="stat-value positive">${median}%</div>
+                </div>
+            `;
+        }
+        
+        function updateVisualizations() {
+            if (!stockData) {
+                showError('Please load a data file first');
+                return;
+            }
+            
+            const chartType = document.getElementById('chartType').value;
+            const topN = parseInt(document.getElementById('topN').value);
+            const searchTicker = document.getElementById('searchTicker').value.trim().toUpperCase();
+            
+            let filteredData = stockData.slice(0, topN);
+            
+            if (searchTicker) {
+                const searchedStock = stockData.find(s => s.Ticker === searchTicker);
+                if (searchedStock && !filteredData.find(s => s.Ticker === searchTicker)) {
+                    filteredData = [...filteredData, searchedStock];
+                }
+            }
+            
+            // Create the selected chart type
+            createChart(chartType, filteredData, metadata);
+            createTable(filteredData);
+            
+            document.getElementById('mainChart').style.display = 'block';
+            document.getElementById('tableContainer').style.display = 'block';
+        }
+        
+        function createTable(data) {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+            
+            data.forEach((stock, index) => {
+                const row = document.createElement('tr');
+                row.className = 'clickable-row';
+                row.innerHTML = `
+                    <td>${stock.Rank}</td>
+                    <td><strong>${stock.Ticker}</strong></td>
+                    <td>${stock.Name}</td>
+                    <td>${stock.Exchange}</td>
+                    <td class="positive">${stock.ReturnPct.toFixed(2)}%</td>
+                    <td>
+                        <button class="btn-detail" onclick="viewStockDetail('${stock.Ticker}')">
+                            📊 View Details
+                        </button>
+                    </td>
+                `;
+                row.onclick = function(e) {
+                    if (!e.target.classList.contains('btn-detail')) {
+                        viewStockDetail(stock.Ticker);
+                    }
+                };
+                tbody.appendChild(row);
+            });
+        }
+        
+        function viewStockDetail(ticker) {
+            // Store the selected ticker
+            localStorage.setItem('selectedTicker', ticker);
+            // Open detail page
+            window.open('stock-detail.html', '_blank');
+        }
+    </script>
+</body>
+</html>
