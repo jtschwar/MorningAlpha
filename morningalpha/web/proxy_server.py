@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Alpha Vantage proxy server - Better for free tier
+Alpha Vantage proxy server - Enhanced with flexible period support
 Get free API key: https://www.alphavantage.co/support/#api-key
 """
 import os
@@ -12,16 +12,27 @@ from datetime import datetime, timedelta
 cache = {}
 CACHE_DURATION = timedelta(hours=4)
 
+# Period to days mapping for data fetching
+PERIOD_DAYS = {
+    '1M': 30,
+    '3M': 90,
+    '6M': 180,
+    '1Y': 365,
+    '5Y': 1825,
+    'MAX': 5000  # Alpha Vantage full history
+}
 
-# Lazy import - only load requests when needed
+
 def _lazy_imports():
+    """Lazy import requests when needed."""
     import requests
     return requests
 
 
-def get_cached_data(ticker):
-    if ticker in cache:
-        data, timestamp = cache[ticker]
+def get_cached_data(cache_key):
+    """Get data from cache if available and not expired."""
+    if cache_key in cache:
+        data, timestamp = cache[cache_key]
         if datetime.now() - timestamp < CACHE_DURATION:
             return data
     return None
@@ -58,10 +69,13 @@ def create_app():
         api_key = get_api_key()
         period = request.args.get('period', '3M')
         
+        # Create cache key with period
+        cache_key = f"{ticker}_{period}"
+        
         # Check cache
-        cached = get_cached_data(ticker)
+        cached = get_cached_data(cache_key)
         if cached:
-            print(f"✅ Cache hit for {ticker}")
+            print(f"✅ Cache hit for {ticker} ({period})")
             return jsonify(cached)
         
         try:
@@ -71,10 +85,10 @@ def create_app():
                 'function': 'TIME_SERIES_DAILY',
                 'symbol': ticker,
                 'apikey': api_key,
-                'outputsize': 'full'
+                'outputsize': 'full'  # Always get full data
             }
             
-            print(f"📊 Fetching {ticker} from Alpha Vantage...")
+            print(f"📊 Fetching {ticker} ({period}) from Alpha Vantage...")
             response = requests.get(url, params=params, timeout=30)
             data = response.json()
             
@@ -102,8 +116,11 @@ def create_app():
                     'raw_response': data
                 }), 404
             
-            # Get last 90 days of data
-            dates = sorted(time_series.keys(), reverse=True)[:90]
+            # Calculate how many days we need
+            days_needed = PERIOD_DAYS.get(period, 90)
+            
+            # Get the required number of days of data
+            dates = sorted(time_series.keys(), reverse=True)[:days_needed]
             dates = sorted(dates)  # Re-sort chronologically
             
             result = {
@@ -112,13 +129,14 @@ def create_app():
                 'high': [float(time_series[d]['2. high']) for d in dates],
                 'low': [float(time_series[d]['3. low']) for d in dates],
                 'close': [float(time_series[d]['4. close']) for d in dates],
-                'volume': [int(time_series[d]['5. volume']) for d in dates]
+                'volume': [int(time_series[d]['5. volume']) for d in dates],
+                'period': period
             }
             
             # Cache the result
-            cache[ticker] = (result, datetime.now())
+            cache[cache_key] = (result, datetime.now())
             
-            print(f"✅ Successfully fetched {ticker} ({len(result['timestamps'])} days)")
+            print(f"✅ Successfully fetched {ticker} ({len(result['timestamps'])} days, {period})")
             return jsonify(result)
             
         except Exception as e:
@@ -157,13 +175,16 @@ def create_app():
     
     @app.route('/api/cache/clear')
     def clear_cache():
+        """Clear all cached data"""
+        count = len(cache)
         cache.clear()
-        return jsonify({'message': f'Cache cleared'})
+        return jsonify({'message': f'Cache cleared ({count} entries removed)'})
     
     @app.route('/api/cache/status')
     def cache_status():
+        """Get cache status"""
         return jsonify({
-            'cached_stocks': list(cache.keys()),
+            'cached_items': [key for key in cache.keys()],
             'count': len(cache)
         })
     
@@ -184,7 +205,7 @@ def run_server(port=5050, debug=False):
     if not api_key:
         print("⚠️  WARNING: No API key found!")
         print("🔑 Get one free at: https://www.alphavantage.co/support/#api-key")
-        print("💡 Tip: Use 'alpha-serve' command to configure your API key")
+        print("💡 Tip: Use 'morningalpha launch' command to configure your API key")
         return
     
     # Suppress Flask development server warning
@@ -200,6 +221,7 @@ def run_server(port=5050, debug=False):
     print(f"🧪 Test: http://localhost:{port}/api/test")
     print("\n⚠️  Free tier: 25 API calls per day")
     print("💡 Tip: Data is cached for 4 hours to save API calls")
+    print("📅 Supported periods: 1M, 3M, 6M, 1Y, 5Y, MAX")
     
     app.run(port=port, debug=debug)
 
