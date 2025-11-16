@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+"""
+CLI command for stock spread analysis.
+"""
+
+from morningalpha import cli_context
+import rich_click as click
+
+# Rich-click configuration
+click.rich_click.USE_RICH_MARKUP = True
+click.rich_click.SHOW_ARGUMENTS = True
+click.rich_click.GROUP_ARGUMENTS_OPTIONS = True
+click.rich_click.STYLE_ERRORS_SUGGESTION = "magenta italic"
+
+@click.command(name='spread', context_settings=cli_context)
+@click.option(
+    '-u', '--universe',
+    multiple=True,
+    type=click.Choice(['nasdaq', 'sp500'], case_sensitive=False),
+    default=['nasdaq', 'sp500'],
+    help='Stock universes to include (can specify multiple)',
+    show_default=True
+)
+@click.option(
+    '-m', '--metric',
+    type=click.Choice(['1wk', '2wk', '1m', '3m', '6m', 'ytd'], case_sensitive=False),
+    default='3m',
+    help='Return window to rank stocks',
+    show_default=True
+)
+@click.option(
+    '-t', '--top',
+    type=int,
+    default=200,
+    help='Number of top gainers to save',
+    show_default=True
+)
+@click.option(
+    '-o', '--out',
+    type=click.Path(),
+    default='top_gainers.csv',
+    help='Output CSV filename',
+    show_default=True
+)
+@click.option(
+    '-bs', '--batch-size',
+    type=int,
+    default=200,
+    help='Tickers per yfinance batch',
+    show_default=True
+)
+@click.option(
+    '-p', '--pause',
+    type=float,
+    default=0.8,
+    help='Seconds to sleep between batches',
+    show_default=True
+)
+def spread(universe, metric, top, out, batch_size, pause):
+    """
+    [bold cyan]📈 Stock Gainers Analyzer[/bold cyan]
+    
+    Analyze top stock gainers from NASDAQ and S&P 500.
+    Outputs a CSV file ready for web visualization.
+    
+    [bold]Examples:[/bold]
+    
+      $ morningalpha spread --metric 3m --top 50
+      
+      $ morningalpha spread --universe nasdaq --metric ytd --top 100
+      
+      $ morningalpha spread --batch-size 100 --pause 1.0 --out my_stocks.csv
+    """
+    
+    get_spread(universe, metric, top, out, batch_size, pause)
+
+def get_spread(universe, metric, top, out, batch_size, pause):
+    """
+    Execute the spread analysis.
+    """
+    from morningalpha.spread.search import analyze_stocks 
+    from morningalpha.spread.search import make_universe
+    from morningalpha.spread.search import period_bounds
+    
+    from rich.console import Console
+    from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+    from rich.panel import Panel
+    from rich.table import Table
+
+    console = Console()
+    
+    console.print(Panel.fit(
+        "[bold cyan]📊 Stock Gainers Analyzer[/bold cyan]\n"
+        "[dim]Powered by yfinance[/dim]",
+        border_style="cyan"
+    ))
+    
+    universe_list = list(universe) if universe else ['nasdaq', 'sp500']
+    include_nasdaq = 'nasdaq' in universe_list
+    include_sp500 = 'sp500' in universe_list
+
+    # Build universe with progress
+    with console.status("[bold green]Building stock universe...") as status:
+        if include_nasdaq:
+            status.update("[bold cyan]Fetching NASDAQ listings...")
+        if include_sp500:
+            status.update("[bold cyan]Fetching S&P 500 listings...")
+        
+        uni = make_universe(include_nasdaq, include_sp500)
+        console.log(f"✓ Built universe: {len(uni)} stocks")
+
+    start, end = period_bounds(metric)
+    console.print(f"[bold]Period:[/bold] {start.date()} to {end.date()} ({metric.upper()})\n")
+
+    # Progress tracking
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TextColumn("({task.completed}/{task.total} batches)"),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        
+        task = progress.add_task("[cyan]Downloading stock data...", total=100)
+        
+        def progress_callback(current, total, message):
+            if total > 0:
+                progress.update(task, completed=current, total=total, description=f"[cyan]{message}")
+        
+        # Use the API function
+        result = analyze_stocks(
+            include_nasdaq=include_nasdaq,
+            include_sp500=include_sp500,
+            metric=metric,
+            top=top,
+            batch_size=batch_size,
+            pause=pause,
+            progress_callback=progress_callback
+        )
+
+    # Save results
+    with console.status("[bold cyan]Saving results..."):
+        result.to_csv(out, index_label="Rank")
+    
+    console.print(f"[bold green]✓ Saved {len(result)} stocks to {out}[/bold green]\n")
+    
+    # Display preview table
+    table = Table(title="Top 5 Gainers", show_header=True, header_style="bold magenta")
+    table.add_column("Rank", style="dim")
+    table.add_column("Ticker", style="cyan")
+    table.add_column("Company", style="white")
+    table.add_column("Return %", justify="right", style="green")
+    
+    return_col = f"Return_{metric.upper()}_%"
+    for idx, row in result.head().iterrows():
+        table.add_row(
+            str(idx),
+            row['Ticker'],
+            row['Name'][:40] + "..." if len(row['Name']) > 40 else row['Name'],
+            f"{row[return_col]:.2f}%"
+        )
+    
+    console.print(table)
+    
+    # Summary statistics
+    console.print(f"\n[bold]Summary:[/bold]")
+    console.print(f"  • Total analyzed: {len(uni)} stocks")
+    console.print(f"  • Valid data: {len(result)} stocks")
+    console.print(f"  • Top {len(result)} saved to [cyan]{out}[/cyan]")
+    console.print(f"  • Average return (top {len(result)}): [green]{result[return_col].mean():.2f}%[/green]\n")

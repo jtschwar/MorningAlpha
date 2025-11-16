@@ -1,4 +1,4 @@
-from morningalpha.spread import main as spread
+from morningalpha.spread.access import spread
 from morningalpha.web.serve import serve
 from morningalpha import cli_context
 import rich_click as click
