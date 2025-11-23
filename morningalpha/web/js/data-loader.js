@@ -8,17 +8,62 @@ function parseCSV(csv) {
     const returnCol = headers.find(h => h.startsWith('Return_'));
     const metric = returnCol ? returnCol.split('_')[1] : '3M';
     
+    // Find column indices dynamically
+    const getColIndex = (colName) => headers.findIndex(h => h === colName || h.toLowerCase() === colName.toLowerCase());
+    
+    const rankIdx = getColIndex('Rank');
+    const tickerIdx = getColIndex('Ticker');
+    const nameIdx = getColIndex('Name');
+    const exchangeIdx = getColIndex('Exchange');
+    const returnIdx = headers.findIndex(h => h.startsWith('Return_'));
+    const sharpeIdx = getColIndex('SharpeRatio');
+    const sortinoIdx = getColIndex('SortinoRatio');
+    const maxDrawdownIdx = getColIndex('MaxDrawdown');
+    const consistencyIdx = getColIndex('ConsistencyScore');
+    const volumeTrendIdx = getColIndex('VolumeTrend');
+    const qualityIdx = getColIndex('QualityScore');
+    const marketCapIdx = getColIndex('MarketCap');
+    const marketCapCategoryIdx = getColIndex('MarketCapCategory');
+    
     const data = [];
     for (let i = 1; i < lines.length; i++) {
         const values = parseCSVLine(lines[i]);
         if (values.length >= 5) {
-            data.push({
-                Rank: parseInt(values[0]) || i,
-                Ticker: values[1].trim(),
-                Name: values[2].trim(),
-                Exchange: values[3].trim(),
-                ReturnPct: parseFloat(values[4]) || 0
-            });
+            const rsiIdx = getColIndex('RSI');
+            const momentumAccelIdx = getColIndex('MomentumAccel');
+            const priceVsHighIdx = getColIndex('PriceVs20dHigh');
+            const volumeSurgeIdx = getColIndex('VolumeSurge');
+            const entryScoreIdx = getColIndex('EntryScore');
+            
+            const stock = {
+                Rank: rankIdx >= 0 ? parseInt(values[rankIdx]) || i : i,
+                Ticker: tickerIdx >= 0 ? values[tickerIdx].trim() : values[1].trim(),
+                Name: nameIdx >= 0 ? values[nameIdx].trim() : values[2].trim(),
+                Exchange: exchangeIdx >= 0 ? values[exchangeIdx].trim() : values[3].trim(),
+                ReturnPct: returnIdx >= 0 ? parseFloat(values[returnIdx]) || 0 : parseFloat(values[4]) || 0,
+                SharpeRatio: sharpeIdx >= 0 && values[sharpeIdx] ? parseFloat(values[sharpeIdx]) : null,     
+                SortinoRatio: sortinoIdx >= 0 && values[sortinoIdx] ? parseFloat(values[sortinoIdx]) : null,    
+                MaxDrawdown: maxDrawdownIdx >= 0 && values[maxDrawdownIdx] ? parseFloat(values[maxDrawdownIdx]) : null,     
+                ConsistencyScore: consistencyIdx >= 0 && values[consistencyIdx] ? parseFloat(values[consistencyIdx]) : null,
+                VolumeTrend: volumeTrendIdx >= 0 && values[volumeTrendIdx] ? parseFloat(values[volumeTrendIdx]) : null,     
+                QualityScore: qualityIdx >= 0 && values[qualityIdx] ? parseFloat(values[qualityIdx]) : null,
+                // NEW: Short-term metrics
+                RSI: rsiIdx >= 0 && values[rsiIdx] ? parseFloat(values[rsiIdx]) : null,
+                MomentumAccel: momentumAccelIdx >= 0 && values[momentumAccelIdx] ? parseFloat(values[momentumAccelIdx]) : null,
+                PriceVs20dHigh: priceVsHighIdx >= 0 && values[priceVsHighIdx] ? parseFloat(values[priceVsHighIdx]) : null,
+                VolumeSurge: volumeSurgeIdx >= 0 && values[volumeSurgeIdx] ? parseFloat(values[volumeSurgeIdx]) : null,
+                EntryScore: entryScoreIdx >= 0 && values[entryScoreIdx] ? parseFloat(values[entryScoreIdx]) : null
+            };
+            
+            // Add market cap if available
+            if (marketCapIdx >= 0 && values[marketCapIdx]) {
+                stock.MarketCap = parseFloat(values[marketCapIdx]) || null;
+            }
+            if (marketCapCategoryIdx >= 0 && values[marketCapCategoryIdx]) {
+                stock.MarketCapCategory = values[marketCapCategoryIdx].trim() || null;
+            }
+            
+            data.push(stock);
         }
     }
     
@@ -31,6 +76,7 @@ function parseCSV(csv) {
         }
     };
 }
+
 
 function parseCSVLine(line) {
     const result = [];

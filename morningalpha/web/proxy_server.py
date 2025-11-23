@@ -69,6 +69,13 @@ def create_app():
         api_key = get_api_key()
         period = request.args.get('period', '3M')
         
+        # Check if API key exists
+        if not api_key:
+            return jsonify({
+                'error': 'No API key configured. Please run "morningalpha launch" to set up your Alpha Vantage API key.',
+                'suggestion': 'Get a free API key at https://www.alphavantage.co/support/#api-key'
+            }), 400
+        
         # Create cache key with period
         cache_key = f"{ticker}_{period}"
         
@@ -80,33 +87,66 @@ def create_app():
         
         try:
             # Alpha Vantage API call
+            # Note: Free tier only supports 'compact' (last 100 data points)
+            # 'full' requires premium subscription
             url = f'https://www.alphavantage.co/query'
             params = {
                 'function': 'TIME_SERIES_DAILY',
                 'symbol': ticker,
                 'apikey': api_key,
-                'outputsize': 'full'  # Always get full data
+                'outputsize': 'compact'  # Free tier: last 100 data points
             }
             
             print(f"📊 Fetching {ticker} ({period}) from Alpha Vantage...")
             response = requests.get(url, params=params, timeout=30)
             data = response.json()
             
-            # Check for errors
+            # Debug: print response to see what Alpha Vantage is returning
+            print(f"🔍 Alpha Vantage response keys: {list(data.keys())}")
+            
+            # Check for errors - be more specific
             if 'Error Message' in data:
-                return jsonify({'error': f'Invalid ticker: {ticker}'}), 404
+                error_msg = data['Error Message']
+                print(f"❌ Alpha Vantage error: {error_msg}")
+                return jsonify({
+                    'error': f'Alpha Vantage error: {error_msg}',
+                    'ticker': ticker
+                }), 404
             
+            # Check for rate limit - be specific about the "Note" field
             if 'Note' in data:
-                return jsonify({
-                    'error': 'API rate limit (25 calls/day). Please wait or use demo mode.',
-                    'suggestion': 'Rate limit resets daily. Try again tomorrow.'
-                }), 429
+                note_msg = data['Note']
+                print(f"⚠️ Rate limit detected: {note_msg}")
+                # Only return rate limit if it actually mentions rate limit
+                if 'rate limit' in note_msg.lower() or 'call' in note_msg.lower():
+                    return jsonify({
+                        'error': 'API rate limit (25 calls/day). Please wait or use demo mode.',
+                        'suggestion': 'Rate limit resets daily. Try again tomorrow.',
+                        'note': note_msg
+                    }), 429
+                else:
+                    # Some other note - return it but don't call it a rate limit
+                    return jsonify({
+                        'error': f'API returned note: {note_msg}',
+                        'raw_response': data
+                    }), 400
             
+            # Check for "Information" field - this is usually about API limits
             if 'Information' in data:
-                return jsonify({
-                    'error': 'API limit reached',
-                    'message': data['Information']
-                }), 429
+                info_msg = data['Information']
+                print(f"⚠️ API information: {info_msg}")
+                # Check if it's actually about rate limits
+                if 'call' in info_msg.lower() or 'limit' in info_msg.lower():
+                    return jsonify({
+                        'error': 'API limit reached',
+                        'message': info_msg
+                    }), 429
+                else:
+                    # Other information - return as warning, not error
+                    return jsonify({
+                        'error': f'API returned information: {info_msg}',
+                        'raw_response': data
+                    }), 400
             
             time_series = data.get('Time Series (Daily)', {})
             

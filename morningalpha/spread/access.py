@@ -16,7 +16,7 @@ click.rich_click.STYLE_ERRORS_SUGGESTION = "magenta italic"
 @click.option(
     '-u', '--universe',
     multiple=True,
-    type=click.Choice(['nasdaq', 'sp500'], case_sensitive=False),
+    type=click.Choice(['nasdaq', 'nyse', 'sp500'], case_sensitive=False),
     default=['nasdaq', 'sp500'],
     help='Stock universes to include (can specify multiple)',
     show_default=True
@@ -56,25 +56,36 @@ click.rich_click.STYLE_ERRORS_SUGGESTION = "magenta italic"
     help='Seconds to sleep between batches',
     show_default=True
 )
-def spread(universe, metric, top, out, batch_size, pause):
+@click.option(
+    '--no-market-cap',
+    is_flag=True,
+    default=False,
+    help='Skip market cap fetching (faster, but no market cap data)',
+    show_default=True
+)
+def spread(universe, metric, top, out, batch_size, pause, no_market_cap):
     """
     [bold cyan]📈 Stock Gainers Analyzer[/bold cyan]
     
-    Analyze top stock gainers from NASDAQ and S&P 500.
+    Analyze top stock gainers from NASDAQ, NYSE, and S&P 500.
     Outputs a CSV file ready for web visualization.
     
     [bold]Examples:[/bold]
     
       $ morningalpha spread --metric 3m --top 50
       
-      $ morningalpha spread --universe nasdaq --metric ytd --top 100
+      $ morningalpha spread --universe nasdaq --universe nyse --metric ytd --top 100
+      
+      $ morningalpha spread --universe sp500 --metric 6m --top 200
       
       $ morningalpha spread --batch-size 100 --pause 1.0 --out my_stocks.csv
+      
+      $ morningalpha spread --no-market-cap  # Skip market cap for faster runs
     """
     
-    get_spread(universe, metric, top, out, batch_size, pause)
+    get_spread(universe, metric, top, out, batch_size, pause, no_market_cap)
 
-def get_spread(universe, metric, top, out, batch_size, pause):
+def get_spread(universe, metric, top, out, batch_size, pause, no_market_cap):
     """
     Execute the spread analysis.
     """
@@ -97,16 +108,19 @@ def get_spread(universe, metric, top, out, batch_size, pause):
     
     universe_list = list(universe) if universe else ['nasdaq', 'sp500']
     include_nasdaq = 'nasdaq' in universe_list
+    include_nyse = 'nyse' in universe_list
     include_sp500 = 'sp500' in universe_list
 
     # Build universe with progress
     with console.status("[bold green]Building stock universe...") as status:
         if include_nasdaq:
             status.update("[bold cyan]Fetching NASDAQ listings...")
+        if include_nyse:
+            status.update("[bold cyan]Fetching NYSE listings...")
         if include_sp500:
             status.update("[bold cyan]Fetching S&P 500 listings...")
         
-        uni = make_universe(include_nasdaq, include_sp500)
+        uni = make_universe(include_nasdaq, include_nyse, include_sp500)
         console.log(f"✓ Built universe: {len(uni)} stocks")
 
     start, end = period_bounds(metric)
@@ -132,12 +146,14 @@ def get_spread(universe, metric, top, out, batch_size, pause):
         # Use the API function
         result = analyze_stocks(
             include_nasdaq=include_nasdaq,
+            include_nyse=include_nyse,
             include_sp500=include_sp500,
             metric=metric,
             top=top,
             batch_size=batch_size,
             pause=pause,
-            progress_callback=progress_callback
+            progress_callback=progress_callback,
+            fetch_market_cap=not no_market_cap  # Fetch market cap unless --no-market-cap flag is set
         )
 
     # Save results

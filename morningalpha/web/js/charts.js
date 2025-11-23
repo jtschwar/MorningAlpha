@@ -4,6 +4,9 @@ function createChart(type, data, metadata) {
     const container = document.getElementById('chartPlot');
     
     switch(type) {
+        case 'riskReward':
+            createRiskRewardChart(data, metadata, container);
+            break;
         case 'bar':
             createBarChart(data, metadata, container);
             break;
@@ -17,8 +20,93 @@ function createChart(type, data, metadata) {
             createSunburst(data, metadata, container);
             break;
         default:
-            createBarChart(data, metadata, container);
+            createRiskRewardChart(data, metadata, container);
     }
+}
+
+function createRiskRewardChart(data, metadata, container) {
+    // Calculate risk (drawdown) vs reward (return)
+    const traces = {
+        'low': { x: [], y: [], text: [], customdata: [] },
+        'moderate': { x: [], y: [], text: [], customdata: [] },
+        'high': { x: [], y: [], text: [], customdata: [] },
+        'very-high': { x: [], y: [], text: [], customdata: [] }
+    };
+    
+    data.forEach(stock => {
+        const risk = Math.abs(stock.MaxDrawdown || 0);
+        const reward = stock.ReturnPct || 0;
+        const riskLevel = stock.riskLevel || 'moderate';
+        
+        if (traces[riskLevel]) {
+            traces[riskLevel].x.push(risk);
+            traces[riskLevel].y.push(reward);
+            traces[riskLevel].text.push(`${stock.Ticker}<br>Return: ${reward.toFixed(2)}%<br>DD: ${risk.toFixed(1)}%`);
+            traces[riskLevel].customdata.push(stock.Ticker);
+        }
+    });
+    
+    const plotTraces = Object.entries(traces)
+        .filter(([_, trace]) => trace.x.length > 0)
+        .map(([level, trace]) => ({
+            x: trace.x,
+            y: trace.y,
+            mode: 'markers',
+            type: 'scatter',
+            name: level.charAt(0).toUpperCase() + level.slice(1).replace('-', ' ') + ' Risk',
+            text: trace.text,
+            hovertemplate: '%{text}<extra></extra>',
+            customdata: trace.customdata,
+            marker: {
+                size: 12,
+                opacity: 0.7,
+                color: getRiskColor(level),
+                line: {
+                    width: 2,
+                    color: 'white'
+                }
+            }
+        }));
+    
+    const layout = {
+        title: {
+            text: 'Risk vs Reward Analysis',
+            font: { size: 20, color: '#2d3748' }
+        },
+        xaxis: {
+            title: 'Risk (Max Drawdown %)',
+            gridcolor: '#e2e8f0'
+        },
+        yaxis: {
+            title: 'Reward (Return %)',
+            gridcolor: '#e2e8f0'
+        },
+        height: 600,
+        paper_bgcolor: 'white',
+        plot_bgcolor: '#f7fafc',
+        hovermode: 'closest',
+        legend: {
+            x: 0.7,
+            y: 0.95
+        }
+    };
+    
+    Plotly.newPlot(container, plotTraces, layout, {responsive: true});
+    
+    container.on('plotly_click', function(data) {
+        const ticker = data.points[0].customdata;
+        if (ticker) viewStockDetail(ticker);
+    });
+}
+
+function getRiskColor(level) {
+    const colors = {
+        'low': '#48bb78',
+        'moderate': '#4299e1',
+        'high': '#ed8936',
+        'very-high': '#f56565'
+    };
+    return colors[level] || '#718096';
 }
 
 function createBarChart(data, metadata, container) {
