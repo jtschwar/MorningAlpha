@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { DragEvent } from 'react'
 import { useStock } from '../../store/StockContext'
 import { parseCSV } from '../../lib/csvParser'
 import type { WindowPeriod } from '../../store/types'
@@ -58,7 +59,7 @@ export default function CsvUpload() {
     reader.readAsText(file)
   }
 
-  function onDrop(e: React.DragEvent) {
+  function onDrop(e: DragEvent<HTMLDivElement>) {
     e.preventDefault()
     setDragging(false)
     const file = e.dataTransfer.files[0]

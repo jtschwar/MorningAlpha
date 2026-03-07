@@ -26,12 +26,16 @@ classifiers = [
 ]
 dependencies = [
     "pandas",
+    "numpy",
     "requests",
     "plotly",
     "flask",
     "flask-cors",
     "rich-click",
-    "cryptography"
+    "cryptography",
+    "yfinance",
+    "python-dateutil",
+    "lxml"
 ]
 
 [project.scripts]

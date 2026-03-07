@@ -1,10 +1,11 @@
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import TopBar from './TopBar'
 import Sidebar from './Sidebar'
 import styles from './AppShell.module.css'
 
 interface Props {
-  children: React.ReactNode
+  children: ReactNode
   showSidebar?: boolean
 }
 

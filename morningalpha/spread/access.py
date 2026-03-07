@@ -91,9 +91,10 @@ def spread(universe, metric, top, out, batch_size, pause, no_market_cap, output_
     if output_dir:
         from pathlib import Path
         Path(output_dir).mkdir(parents=True, exist_ok=True)
-        for period in ['2w', '1m', '3m', '6m']:
-            dest = str(Path(output_dir) / f'stocks_{period}.csv')
-            get_spread(universe, period, top, dest, batch_size, pause, no_market_cap)
+        period_map = [('2wk', '2w'), ('1m', '1m'), ('3m', '3m'), ('6m', '6m')]
+        for metric_code, file_suffix in period_map:
+            dest = str(Path(output_dir) / f'stocks_{file_suffix}.csv')
+            get_spread(universe, metric_code, top, dest, batch_size, pause, no_market_cap)
     else:
         get_spread(universe, metric, top, out, batch_size, pause, no_market_cap)
 

@@ -1,10 +1,11 @@
 import Plot from 'react-plotly.js'
+import type { CSSProperties } from 'react'
 import { plotlyBase } from '../../tokens/theme'
 
 interface Props {
   data: Plotly.Data[]
   layout?: Partial<Plotly.Layout>
-  style?: React.CSSProperties
+  style?: CSSProperties
   onClick?: (event: Readonly<Plotly.PlotMouseEvent>) => void
 }
 

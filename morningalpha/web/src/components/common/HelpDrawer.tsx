@@ -1,10 +1,11 @@
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import styles from './HelpDrawer.module.css'
 
 interface Section {
   id: string
   title: string
-  content: React.ReactNode
+  content: ReactNode
 }
 
 const SECTIONS: Section[] = [

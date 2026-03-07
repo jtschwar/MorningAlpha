@@ -1,5 +1,5 @@
 import { createContext, useContext, useReducer, useMemo } from 'react'
-import type { ReactNode } from 'react'
+import type { ReactNode, Dispatch as ReactDispatch } from 'react'
 import type { AppState, Stock } from './types'
 import { stockReducer, initialState } from './stockReducer'
 import type { Action } from './stockReducer'
@@ -7,7 +7,7 @@ import { applyFilters } from '../lib/scoring'
 
 interface StockContextValue {
   state: AppState
-  dispatch: React.Dispatch<Action>
+  dispatch: ReactDispatch<Action>
   rawData: Stock[]
   filteredData: Stock[]
 }
