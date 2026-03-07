@@ -8,6 +8,35 @@ import rich_click as click
 
 API_KEY_URL = "https://www.alphavantage.co/support/#api-key"
 WEBAPP_DIR = Path(__file__).parent
+DATA_DIR = WEBAPP_DIR / "public" / "data" / "latest"
+PAGES_BASE = "https://jtschwar.github.io/MorningAlpha"
+CSV_PERIODS = ["2w", "1m", "3m", "6m"]
+
+
+def sync_data(console):
+    """Download the latest CSVs from GitHub Pages into public/data/latest/."""
+    import urllib.request
+    import urllib.error
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    updated = 0
+
+    for period in CSV_PERIODS:
+        filename = f"stocks_{period}.csv"
+        url = f"{PAGES_BASE}/data/latest/{filename}"
+        dest = DATA_DIR / filename
+        try:
+            urllib.request.urlretrieve(url, dest)
+            updated += 1
+        except urllib.error.HTTPError as e:
+            console.print(f"[yellow]⚠[/yellow] {filename}: HTTP {e.code} — skipped")
+        except Exception:
+            console.print(f"[yellow]⚠[/yellow] {filename}: download failed — skipped")
+
+    if updated:
+        console.print(f"[green]✓[/green] Synced {updated}/{len(CSV_PERIODS)} CSVs from GitHub Pages")
+    else:
+        console.print("[yellow]⚠[/yellow] Could not sync CSVs — using local data if available")
 
 
 def prompt_for_api_key():
@@ -74,7 +103,8 @@ def open_browser_delayed(url="http://localhost:5173", delay=2.0):
 @click.command(context_settings=cli_context, name='launch')
 @click.option('-p', '--port', default=5050, help='Proxy server port', show_default=True)
 @click.option('-nb', '--no-browser', is_flag=True, default=False, help="Don't open browser")
-def serve(port, no_browser):
+@click.option('--no-sync', is_flag=True, default=False, help="Skip downloading latest CSVs")
+def serve(port, no_browser, no_sync):
     """
     Launch the proxy server and web app together.
 
@@ -113,6 +143,14 @@ def serve(port, no_browser):
         title="morningalpha",
         border_style="cyan"
     ))
+
+    # Sync latest CSVs from GitHub Pages
+    if no_sync:
+        console.print("[dim]Skipping CSV sync (--no-sync)[/dim]")
+    else:
+        console.print("[dim]Syncing latest data from GitHub Pages...[/dim]")
+        sync_data(console)
+    console.print()
 
     # Start Vite
     vite_proc = launch_vite(console)

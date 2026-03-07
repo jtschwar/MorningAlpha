@@ -218,6 +218,9 @@ morningalpha/web/node_modules/
 morningalpha/web/dist/
 morningalpha/web/public/data/
 
+# Un-ignore web source lib/ (the root `lib/` rule above would otherwise swallow it)
+!morningalpha/web/src/lib/
+
 # Vite env files (contain local config, not secrets — but keep out of repo)
 morningalpha/web/.env.local
 morningalpha/web/.env.*.local
