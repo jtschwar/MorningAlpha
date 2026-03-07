@@ -6,7 +6,6 @@ from pathlib import Path
 from morningalpha import cli_context
 import rich_click as click
 
-API_KEY_URL = "https://www.alphavantage.co/support/#api-key"
 WEBAPP_DIR = Path(__file__).parent
 DATA_DIR = WEBAPP_DIR / "public" / "data" / "latest"
 # Repo-root data/latest/ — populated by `alpha spread` or `git pull` after daily action runs
@@ -107,33 +106,6 @@ def sync_data(console):
         console.print("[dim]No data found — run `git pull` to get latest, or `alpha spread` to generate[/dim]")
 
 
-def prompt_for_api_key():
-    import sys
-    import webbrowser
-    from rich.console import Console
-    from rich.panel import Panel
-    from rich.prompt import Prompt
-
-    console = Console()
-    console.print(Panel(
-        f"[yellow]No Alpha Vantage API key found![/yellow]\n\n"
-        f"Get your free API key at:\n[cyan]{API_KEY_URL}[/cyan]\n\n"
-        f"[dim]• Free tier: 25 calls/day\n"
-        f"• No credit card required\n"
-        f"• Instant activation[/dim]",
-        title="API Key Required",
-        border_style="yellow"
-    ))
-    if click.confirm("Open API key page in browser?", default=True):
-        webbrowser.open(API_KEY_URL)
-    console.print()
-    api_key = Prompt.ask("[bold]Enter your API key[/bold]")
-    if not api_key or len(api_key) < 10:
-        console.print("[red]Invalid API key. Exiting.[/red]")
-        sys.exit(1)
-    return api_key
-
-
 def _npm():
     """Return the correct npm executable name for the current platform."""
     import platform
@@ -178,35 +150,16 @@ def serve(port, no_browser, no_sync):
 
     Starts the Flask proxy on :5050 and the Vite dev server on :5173.
     """
-    import sys
     from rich.console import Console
     from rich.panel import Panel
-    from morningalpha import keys
 
     console = Console()
     console.print("[bold cyan]morningalpha[/bold cyan] [dim]launch[/dim]\n")
 
-    # Ensure API key
-    if not keys.has_alpha_vantage_key():
-        api_key = prompt_for_api_key()
-        try:
-            keys.set_alpha_vantage_key(api_key)
-            console.print(Panel(
-                "[green]✓[/green] API key saved successfully!",
-                title="Success", border_style="green"
-            ))
-        except Exception as e:
-            console.print(f"[red]Failed to save API key:[/red] {e}")
-            sys.exit(1)
-        console.print()
-    else:
-        api_key = keys.get_alpha_vantage_key()
-        console.print(f"[green]✓[/green] API key: [dim]{api_key[:10]}...[/dim]")
-
     console.print(Panel(
         f"[green]Proxy[/green]  [bold cyan]http://localhost:{port}[/bold cyan]\n"
         f"[green]Web app[/green] [bold cyan]http://localhost:5173[/bold cyan]\n\n"
-        f"[dim]• {api_key[:10]}... · 25 calls/day · 4h cache\n"
+        f"[dim]• Powered by yfinance · no API key required · 4h cache\n"
         f"• Press Ctrl+C to stop both[/dim]",
         title="morningalpha",
         border_style="cyan"
