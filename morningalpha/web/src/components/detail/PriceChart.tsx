@@ -51,7 +51,8 @@ export default function PriceChart({ data, ticker }: Props) {
       data={[candlestick, ema20Trace, ema50Trace]}
       layout={{
         title: { text: `${ticker} — Price + EMAs` },
-        xaxis: { rangeslider: { visible: false } },
+        xaxis: { rangeslider: { visible: false }, type: 'date' },
+        yaxis: { autorange: true, tickformat: '.2f', tickprefix: '$' },
         height: 380,
       }}
     />

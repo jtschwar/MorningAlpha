@@ -1,12 +1,24 @@
 .strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
   margin-bottom: 16px;
+}
+
+.sectionLabel {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-secondary);
+  padding: 6px 16px 0;
+}
+
+.items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
 }
 
 .item {
@@ -36,3 +48,8 @@
 }
 
 .neg { color: var(--accent-red); }
+
+.sub {
+  font-size: 10px;
+  color: var(--text-secondary);
+}

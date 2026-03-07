@@ -1,10 +1,14 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
 import { useStock } from '../../store/StockContext'
 import { useStockData } from '../../hooks/useStockData'
+import { useFundamentals } from '../../hooks/useFundamentals'
+import { computeSignal } from '../../lib/signal'
 import AppShell from '../../components/layout/AppShell'
 import StockHeader from '../../components/detail/StockHeader'
+import SignalBanner from '../../components/detail/SignalBanner'
 import CsvMetricsStrip from '../../components/detail/CsvMetricsStrip'
+import FundamentalsStrip from '../../components/detail/FundamentalsStrip'
 import PeriodSelector from '../../components/detail/PeriodSelector'
 import type { DetailPeriod } from '../../components/detail/PeriodSelector'
 import PriceChart from '../../components/detail/PriceChart'
@@ -26,7 +30,13 @@ export default function StockDetail() {
       .find(s => s.Ticker === ticker) ?? null
 
   const { data, loading, error } = useStockData(ticker, period)
+  const { data: fundamentals } = useFundamentals(ticker)
   const meta = state.metadata[state.activePeriod]
+
+  const signal = useMemo(
+    () => computeSignal(stock, fundamentals, data),
+    [stock, fundamentals, data]
+  )
 
   return (
     <AppShell showSidebar={false}>
@@ -37,7 +47,10 @@ export default function StockDetail() {
           metric={meta?.metric ?? '3M'}
         />
 
+        <SignalBanner signal={signal} />
+        {fundamentals && <FundamentalsStrip data={fundamentals} />}
         {stock && <CsvMetricsStrip stock={stock} />}
+        {data && !loading && <TechnicalsPanel data={data} />}
 
         <PeriodSelector value={period} onChange={setPeriod} />
 
@@ -56,7 +69,6 @@ export default function StockDetail() {
             <PriceChart data={data} ticker={ticker ?? ''} />
             <RsiChart data={data} />
             <VolumeChart data={data} />
-            <TechnicalsPanel data={data} />
           </>
         )}
 
