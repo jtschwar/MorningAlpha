@@ -1,0 +1,33 @@
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 60px 20px;
+  color: var(--text-secondary);
+}
+
+.icon {
+  font-size: 36px;
+  font-family: var(--font-mono);
+  opacity: 0.4;
+}
+
+.msg {
+  font-size: 14px;
+}
+
+.btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 6px 16px;
+  border-radius: 4px;
+  margin-top: 4px;
+}
+
+.btn:hover {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}

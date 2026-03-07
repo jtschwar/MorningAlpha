@@ -1,0 +1,47 @@
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface2);
+}
+
+.info {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.btns {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  min-width: 28px;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.pageNum {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  padding: 0 8px;
+}

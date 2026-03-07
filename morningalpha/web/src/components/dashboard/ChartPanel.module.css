@@ -1,0 +1,37 @@
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+
+.tab {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 10px 16px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tab:hover {
+  color: var(--text-primary);
+}
+
+.tab.active {
+  color: var(--accent-blue);
+  border-bottom-color: var(--accent-blue);
+}
+
+.chart {
+  padding: 8px;
+}

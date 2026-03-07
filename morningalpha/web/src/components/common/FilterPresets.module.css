@@ -1,0 +1,27 @@
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.chip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 5px 6px;
+  border-radius: 4px;
+  text-align: center;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.chip:hover {
+  border-color: var(--accent-purple);
+  color: var(--accent-purple);
+}
+
+.chip.active {
+  border-color: var(--accent-purple);
+  background: rgba(139, 92, 246, 0.15);
+  color: var(--accent-purple);
+}

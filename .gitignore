@@ -212,3 +212,12 @@ morningalpha/.key_salt
 
 # Mac stuff
 .DS_Store
+
+# React/Vite build artifacts
+morningalpha/web/node_modules/
+morningalpha/web/dist/
+morningalpha/web/public/data/
+
+# Vite env files (contain local config, not secrets — but keep out of repo)
+morningalpha/web/.env.local
+morningalpha/web/.env.*.local

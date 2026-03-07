@@ -1,0 +1,32 @@
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 16px;
+  min-width: 120px;
+}
+
+.label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.value {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--text-code);
+  line-height: 1.2;
+}
+
+.positive { color: var(--accent-green); }
+.negative { color: var(--accent-red); }
+
+.sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}

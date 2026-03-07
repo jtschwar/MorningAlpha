@@ -1,0 +1,59 @@
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.back {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.back:hover {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.info {
+  flex: 1;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.ticker {
+  font-family: var(--font-mono);
+  font-size: 28px;
+  font-weight: 500;
+  color: var(--text-code);
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ticker:hover {
+  color: var(--accent-blue);
+  text-decoration: none;
+}
+
+.extIcon {
+  font-size: 14px;
+  opacity: 0.5;
+}
+
+.sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+}

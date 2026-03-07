@@ -1,0 +1,157 @@
+.wrapper {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+}
+
+.count {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.toolbarRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pageSizeLabel {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.pageSizeSelect {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.pageSizeSelect:focus {
+  border-color: var(--accent-blue);
+  outline: none;
+}
+
+.exportBtn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 3px;
+}
+
+.exportBtn:hover {
+  border-color: var(--accent-green);
+  color: var(--accent-green);
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.table thead th {
+  background: var(--surface2);
+  padding: 6px 8px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.sortable {
+  cursor: pointer;
+}
+
+.sortable:hover {
+  color: var(--text-primary) !important;
+}
+
+.sortIcon {
+  margin-left: 3px;
+  opacity: 0.4;
+  font-size: 9px;
+}
+
+.infoIcon {
+  margin-left: 3px;
+  opacity: 0.4;
+  font-size: 9px;
+}
+
+.row {
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+  height: var(--row-h);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.row:hover {
+  background: var(--surface2);
+}
+
+.row.focused {
+  background: rgba(59, 130, 246, 0.08);
+  outline: 1px solid rgba(59, 130, 246, 0.3);
+  outline-offset: -1px;
+}
+
+.table tbody td {
+  padding: 4px 8px;
+  color: var(--text-primary);
+}
+
+.tdMono {
+  font-family: var(--font-mono);
+  font-size: 11px !important;
+  color: var(--text-code) !important;
+}
+
+.tdTicker {
+  font-family: var(--font-mono);
+  font-size: 12px !important;
+  font-weight: 500;
+  color: var(--accent-blue) !important;
+}
+
+.tdName {
+  color: var(--text-secondary) !important;
+  font-size: 11px !important;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pos { color: var(--accent-green) !important; }
+.neg { color: var(--accent-red) !important; }

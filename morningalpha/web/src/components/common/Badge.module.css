@@ -1,0 +1,37 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.na {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+/* Score tiers */
+.high { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.mid  { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+.low  { background: rgba(239, 68, 68, 0.15);  color: #ef4444; }
+
+/* RSI states */
+.overbought { background: rgba(239, 68, 68, 0.15);  color: #ef4444; }
+.oversold   { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.neutral    { background: rgba(100, 116, 139, 0.15); color: #94a3b8; }
+
+/* Risk levels */
+.risk-low       { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.risk-moderate  { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+.risk-high      { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.risk-very-high { background: rgba(239, 68, 68, 0.15);  color: #ef4444; }
+.risk-unknown   { background: rgba(100, 116, 139, 0.15); color: #94a3b8; }
+
+/* Return */
+.positive { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.negative { background: rgba(239, 68, 68, 0.15);  color: #ef4444; }

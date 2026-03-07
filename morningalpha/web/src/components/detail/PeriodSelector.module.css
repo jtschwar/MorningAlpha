@@ -1,0 +1,33 @@
+.group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+.label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-right: 4px;
+}
+
+.btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 12px;
+  border-radius: 4px;
+}
+
+.btn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+.btn.active {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+  color: #fff;
+}

@@ -1,0 +1,28 @@
+.page {
+  max-width: 1100px;
+}
+
+.status {
+  padding: 32px 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.status code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-code);
+  background: var(--surface2);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.error {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 4px;
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--accent-red);
+  margin-bottom: 16px;
+}
