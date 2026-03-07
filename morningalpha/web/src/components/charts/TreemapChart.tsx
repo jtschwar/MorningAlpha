@@ -18,14 +18,14 @@ export default function TreemapChart({ stocks }: Props) {
     ...stocks.map(s => s.Exchange),
   ]
   const values = [
-    ...exchanges.map(() => null as unknown as number),
+    ...exchanges.map(() => 0),
     ...stocks.map(s => Math.abs(s.ReturnPct) + 0.01), // +0.01 so 0% still shows
   ]
   const colors = [
     ...exchanges.map(() => 0),
     ...stocks.map(s => s.ReturnPct),
   ]
-  const customdata = ['', ...stocks.map(s => s.Ticker)]
+  const customdata = [...exchanges.map(() => ''), ...stocks.map(s => s.Ticker)]
 
   const trace: Plotly.Data = {
     type: 'treemap',

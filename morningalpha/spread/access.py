@@ -17,7 +17,7 @@ click.rich_click.STYLE_ERRORS_SUGGESTION = "magenta italic"
     '-u', '--universe',
     multiple=True,
     type=click.Choice(['nasdaq', 'nyse', 'sp500'], case_sensitive=False),
-    default=['nasdaq', 'sp500'],
+    default=['nasdaq', 'nyse', 'sp500'],
     help='Stock universes to include (can specify multiple)',
     show_default=True
 )
@@ -69,7 +69,14 @@ click.rich_click.STYLE_ERRORS_SUGGESTION = "magenta italic"
     help='Skip market cap fetching (faster, but no market cap data)',
     show_default=True
 )
-def spread(universe, metric, top, out, batch_size, pause, no_market_cap, output_dir):
+@click.option('--top-nasdaq', type=int, default=250, show_default=True,
+              help='Max NASDAQ stocks when using --output-dir')
+@click.option('--top-nyse', type=int, default=100, show_default=True,
+              help='Max NYSE stocks when using --output-dir')
+@click.option('--top-sp500', type=int, default=100, show_default=True,
+              help='Max S&P500 stocks when using --output-dir')
+def spread(universe, metric, top, out, batch_size, pause, no_market_cap, output_dir,
+           top_nasdaq, top_nyse, top_sp500):
     """
     [bold cyan]📈 Stock Gainers Analyzer[/bold cyan]
 
@@ -91,14 +98,16 @@ def spread(universe, metric, top, out, batch_size, pause, no_market_cap, output_
     if output_dir:
         from pathlib import Path
         Path(output_dir).mkdir(parents=True, exist_ok=True)
+        per_exchange = {'NASDAQ': top_nasdaq, 'NYSE': top_nyse, 'S&P500': top_sp500}
         period_map = [('2wk', '2w'), ('1m', '1m'), ('3m', '3m'), ('6m', '6m')]
         for metric_code, file_suffix in period_map:
             dest = str(Path(output_dir) / f'stocks_{file_suffix}.csv')
-            get_spread(universe, metric_code, top, dest, batch_size, pause, no_market_cap)
+            get_spread(universe, metric_code, top, dest, batch_size, pause, no_market_cap,
+                       top_per_exchange=per_exchange)
     else:
         get_spread(universe, metric, top, out, batch_size, pause, no_market_cap)
 
-def get_spread(universe, metric, top, out, batch_size, pause, no_market_cap):
+def get_spread(universe, metric, top, out, batch_size, pause, no_market_cap, top_per_exchange=None):
     """
     Execute the spread analysis.
     """
@@ -163,10 +172,11 @@ def get_spread(universe, metric, top, out, batch_size, pause, no_market_cap):
             include_sp500=include_sp500,
             metric=metric,
             top=top,
+            top_per_exchange=top_per_exchange,
             batch_size=batch_size,
             pause=pause,
             progress_callback=progress_callback,
-            fetch_market_cap=not no_market_cap  # Fetch market cap unless --no-market-cap flag is set
+            fetch_market_cap=not no_market_cap
         )
 
     # Save results

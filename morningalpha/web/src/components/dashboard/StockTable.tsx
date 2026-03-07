@@ -14,6 +14,7 @@ interface ColDef {
   key: SortKey | null
   label: string
   title?: string
+  helpSection?: string
 }
 
 const COLS: ColDef[] = [
@@ -21,16 +22,21 @@ const COLS: ColDef[] = [
   { key: null, label: 'Ticker' },
   { key: null, label: 'Name' },
   { key: null, label: 'Exch' },
-  { key: 'return', label: 'Return %' },
-  { key: 'sharpe', label: 'Sharpe' },
-  { key: 'quality', label: 'Quality', title: 'Composite quality score (0–100)' },
-  { key: 'entryScore', label: 'Entry', title: 'Short-term entry timing score' },
-  { key: null, label: 'Max DD', title: 'Maximum drawdown during period' },
-  { key: null, label: 'RSI', title: '14-day Relative Strength Index' },
+  { key: 'return', label: 'Return %', title: 'Price change over the selected period', helpSection: 'returns' },
+  { key: 'sharpe', label: 'Sharpe', title: 'Risk-adjusted return (higher is better)', helpSection: 'risk' },
+  { key: 'quality', label: 'Quality', title: 'Composite quality score (0–100)', helpSection: 'scores' },
+  { key: 'entryScore', label: 'Entry', title: 'Short-term entry timing score', helpSection: 'scores' },
+  { key: null, label: 'Max DD', title: 'Maximum drawdown during period', helpSection: 'risk' },
+  { key: null, label: 'RSI', title: '14-day Relative Strength Index', helpSection: 'technicals' },
   { key: 'marketCap', label: 'Mkt Cap' },
   { key: null, label: 'Risk' },
-  { key: 'investmentScore', label: 'Score', title: 'Composite investment score (0–100)' },
+  { key: 'investmentScore', label: 'Score', title: 'Composite investment score (0–100)', helpSection: 'scores' },
 ]
+
+function openHelp(section: string) {
+  const drawer = (window as unknown as Record<string, { openSection: (s: string) => void }>).__helpDrawer
+  drawer?.openSection(section)
+}
 
 interface Props {
   stocks: Stock[]
@@ -97,7 +103,13 @@ export default function StockTable({ stocks }: Props) {
                 >
                   {c.label}
                   {c.key && <span className={styles.sortIcon}>↕</span>}
-                  {c.title && <span className={styles.infoIcon}>ⓘ</span>}
+                  {c.helpSection && (
+                    <span
+                      className={styles.infoIcon}
+                      onClick={e => { e.stopPropagation(); openHelp(c.helpSection!) }}
+                      title={c.title}
+                    >ⓘ</span>
+                  )}
                 </th>
               ))}
             </tr>

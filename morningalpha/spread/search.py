@@ -6,7 +6,7 @@ These functions can be imported and used programmatically.
 
 from morningalpha.spread.metrics import calculate_all_metrics
 from dateutil.relativedelta import relativedelta
-from typing import List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional
 from datetime import date
 import yfinance as yf
 import pandas as pd
@@ -180,15 +180,18 @@ def make_universe(
         DataFrame with unique stocks
     """
     frames = []
-    
-    if include_nasdaq:
-        frames.append(read_nasdaq())
-    
-    if include_nyse:
-        frames.append(read_nyse())
-    
+
+    # Priority order matters for dedup: S&P500 label > NYSE label > NASDAQ label.
+    # A stock in both S&P500 and NASDAQ keeps the "S&P500" exchange tag, which
+    # lets the frontend exchange filter work correctly.
     if include_sp500:
         frames.append(read_sp500())
+
+    if include_nyse:
+        frames.append(read_nyse())
+
+    if include_nasdaq:
+        frames.append(read_nasdaq())
     
     if not frames:
         raise ValueError("At least one universe must be included")
@@ -482,10 +485,11 @@ def fetch_returns_with_metrics(
 def analyze_stocks(
     universe: List[str] = None,
     include_nasdaq: bool = True,
-    include_nyse: bool = False,
+    include_nyse: bool = True,
     include_sp500: bool = True,
     metric: str = '3m',
     top: int = 200,
+    top_per_exchange: Optional[Dict[str, int]] = None,
     batch_size: int = 200,
     pause: float = 0.8,
     progress_callback: Optional[callable] = None,
@@ -551,8 +555,18 @@ def analyze_stocks(
     if tmp.empty:
         raise ValueError("No stocks found with sufficient data (need at least 3 months of trading history)")
     
-    topn = tmp.nlargest(top, "ReturnPct")
-    result = topn.sort_values("ReturnPct", ascending=False).reset_index(drop=True)
+    if top_per_exchange:
+        # Take top N per exchange so every exchange has meaningful representation.
+        parts = [
+            tmp[tmp["Exchange"] == exch].nlargest(n, "ReturnPct")
+            for exch, n in top_per_exchange.items()
+        ]
+        parts = [p for p in parts if not p.empty]
+        result = (
+            pd.concat(parts) if parts else tmp.head(0)
+        ).drop_duplicates(subset=["Ticker"]).sort_values("ReturnPct", ascending=False).reset_index(drop=True)
+    else:
+        result = tmp.nlargest(top, "ReturnPct").sort_values("ReturnPct", ascending=False).reset_index(drop=True)
     
     # NOW fetch market caps only for the top stocks (much faster!)
     if fetch_market_cap:

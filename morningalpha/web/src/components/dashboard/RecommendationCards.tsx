@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Stock } from '../../store/types'
 import { ScoreBadge, RiskBadge, ReturnBadge } from '../common/Badge'
@@ -9,17 +10,29 @@ interface Props {
 
 export default function RecommendationCards({ stocks }: Props) {
   const navigate = useNavigate()
+  const [count, setCount] = useState(3)
 
   const top = [...stocks]
     .filter(s => s.investmentScore != null)
     .sort((a, b) => (b.investmentScore ?? 0) - (a.investmentScore ?? 0))
-    .slice(0, 3)
+    .slice(0, count)
 
   if (top.length === 0) return null
 
   return (
     <div className={styles.section}>
-      <div className={styles.heading}>Top Picks</div>
+      <div className={styles.heading}>
+        Top Picks
+        <select
+          className={styles.countSelect}
+          value={count}
+          onChange={e => setCount(Number(e.target.value))}
+        >
+          <option value={3}>3</option>
+          <option value={5}>5</option>
+          <option value={10}>10</option>
+        </select>
+      </div>
       <div className={styles.grid}>
         {top.map((s, i) => (
           <div
