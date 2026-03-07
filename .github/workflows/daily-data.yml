@@ -2,9 +2,7 @@ name: Daily Data Build
 
 on:
   schedule:
-    # 9:35am ET weekdays — market open (13:35 UTC)
-    - cron: '35 13 * * 1-5'
-    # 4:15pm ET weekdays — market close (20:15 UTC)
+    # 4:15pm ET weekdays — after market close (20:15 UTC)
     - cron: '15 20 * * 1-5'
   workflow_dispatch:
 

@@ -43,6 +43,12 @@ click.rich_click.STYLE_ERRORS_SUGGESTION = "magenta italic"
     show_default=True
 )
 @click.option(
+    '--output-dir',
+    type=click.Path(),
+    default=None,
+    help='Output directory — runs all 4 periods and saves stocks_2w/1m/3m/6m.csv',
+)
+@click.option(
     '-bs', '--batch-size',
     type=int,
     default=200,
@@ -63,27 +69,33 @@ click.rich_click.STYLE_ERRORS_SUGGESTION = "magenta italic"
     help='Skip market cap fetching (faster, but no market cap data)',
     show_default=True
 )
-def spread(universe, metric, top, out, batch_size, pause, no_market_cap):
+def spread(universe, metric, top, out, batch_size, pause, no_market_cap, output_dir):
     """
     [bold cyan]📈 Stock Gainers Analyzer[/bold cyan]
-    
+
     Analyze top stock gainers from NASDAQ, NYSE, and S&P 500.
     Outputs a CSV file ready for web visualization.
-    
+
     [bold]Examples:[/bold]
-    
+
       $ morningalpha spread --metric 3m --top 50
-      
+
       $ morningalpha spread --universe nasdaq --universe nyse --metric ytd --top 100
-      
+
       $ morningalpha spread --universe sp500 --metric 6m --top 200
-      
+
       $ morningalpha spread --batch-size 100 --pause 1.0 --out my_stocks.csv
-      
-      $ morningalpha spread --no-market-cap  # Skip market cap for faster runs
+
+      $ morningalpha spread --output-dir data/latest  # Run all 4 periods
     """
-    
-    get_spread(universe, metric, top, out, batch_size, pause, no_market_cap)
+    if output_dir:
+        from pathlib import Path
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        for period in ['2w', '1m', '3m', '6m']:
+            dest = str(Path(output_dir) / f'stocks_{period}.csv')
+            get_spread(universe, period, top, dest, batch_size, pause, no_market_cap)
+    else:
+        get_spread(universe, metric, top, out, batch_size, pause, no_market_cap)
 
 def get_spread(universe, metric, top, out, batch_size, pause, no_market_cap):
     """
