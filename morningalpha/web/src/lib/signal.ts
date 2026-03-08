@@ -28,24 +28,30 @@ export function computeSignal(
   // ── CSV metrics ──────────────────────────────────────────────────
   if (stock) {
     // Investment score (0–100) → contributes up to ±20 pts
-    maxPoints += 20
-    const invNorm = (stock.investmentScore - 50) / 50  // -1 to +1
-    points += invNorm * 20
-    if (invNorm > 0.4) pos.push(`Investment score ${stock.investmentScore.toFixed(0)}`)
-    else if (invNorm < -0.2) neg.push(`Weak investment score (${stock.investmentScore.toFixed(0)})`)
+    if (stock.investmentScore != null) {
+      maxPoints += 20
+      const invNorm = (stock.investmentScore - 50) / 50
+      points += invNorm * 20
+      if (invNorm > 0.4) pos.push(`Investment score ${stock.investmentScore.toFixed(0)}`)
+      else if (invNorm < -0.2) neg.push(`Weak investment score (${stock.investmentScore.toFixed(0)})`)
+    }
 
     // Entry score (0–100) → ±15 pts
-    maxPoints += 15
-    const entNorm = (stock.EntryScore - 50) / 50
-    points += entNorm * 15
-    if (entNorm > 0.4) pos.push(`Entry score ${stock.EntryScore.toFixed(0)} — good timing`)
-    else if (entNorm < -0.2) neg.push(`Poor entry timing (score ${stock.EntryScore.toFixed(0)})`)
+    if (stock.EntryScore != null) {
+      maxPoints += 15
+      const entNorm = (stock.EntryScore - 50) / 50
+      points += entNorm * 15
+      if (entNorm > 0.4) pos.push(`Entry score ${stock.EntryScore.toFixed(0)} — good timing`)
+      else if (entNorm < -0.2) neg.push(`Poor entry timing (score ${stock.EntryScore.toFixed(0)})`)
+    }
 
     // Quality score → ±10 pts
-    maxPoints += 10
-    const qualNorm = (stock.QualityScore - 50) / 50
-    points += qualNorm * 10
-    if (qualNorm > 0.4) pos.push(`High quality score (${stock.QualityScore.toFixed(0)})`)
+    if (stock.QualityScore != null) {
+      maxPoints += 10
+      const qualNorm = (stock.QualityScore - 50) / 50
+      points += qualNorm * 10
+      if (qualNorm > 0.4) pos.push(`High quality score (${stock.QualityScore.toFixed(0)})`)
+    }
 
     // Sharpe ratio → ±10 pts
     if (stock.SharpeRatio != null) {

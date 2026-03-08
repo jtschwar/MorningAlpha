@@ -28,9 +28,9 @@ export default function RecommendationCards({ stocks }: Props) {
           value={count}
           onChange={e => setCount(Number(e.target.value))}
         >
-          <option value={3}>3</option>
-          <option value={5}>5</option>
-          <option value={10}>10</option>
+          {Array.from({ length: 12 }, (_, i) => i + 1).map(n => (
+            <option key={n} value={n}>{n}</option>
+          ))}
         </select>
       </div>
       <div className={styles.grid}>
