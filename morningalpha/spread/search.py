@@ -140,7 +140,16 @@ def read_sp500() -> pd.DataFrame:
         DataFrame with columns: Ticker, Name, Exchange
     """
     html = _get_html_with_retries(WIKI_SP500)
-    tables = pd.read_html(io.StringIO(html), flavor="lxml")
+    # Try available parsers — lxml is fastest but html5lib is more lenient
+    tables = None
+    for flavor in ["lxml", "html5lib", None]:
+        try:
+            tables = pd.read_html(io.StringIO(html), flavor=flavor)
+            break
+        except Exception:
+            continue
+    if tables is None:
+        raise RuntimeError("pd.read_html failed with all available parsers for S&P 500 page.")
 
     tbl = None
     for t in tables:
@@ -551,10 +560,14 @@ def analyze_stocks(
                                      "QualityScore", "MarketCap", "MarketCapCategory"])
     
     tmp = uni.merge(rets, on="Ticker", how="left").dropna(subset=["ReturnPct"])
-    
+
     if tmp.empty:
         raise ValueError("No stocks found with sufficient data (need at least 3 months of trading history)")
-    
+
+    # Log per-exchange breakdown so workflow output is diagnosable
+    for exch, count in tmp["Exchange"].value_counts().items():
+        print(f"  {exch}: {count} stocks with valid data")
+
     if top_per_exchange:
         # Take top N per exchange so every exchange has meaningful representation.
         parts = [

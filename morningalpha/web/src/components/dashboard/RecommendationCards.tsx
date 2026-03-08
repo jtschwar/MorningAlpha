@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Stock } from '../../store/types'
+import { summarizeTopPicks } from '../../lib/signal'
 import { ScoreBadge, RiskBadge, ReturnBadge } from '../common/Badge'
 import styles from './RecommendationCards.module.css'
 
@@ -16,6 +17,8 @@ export default function RecommendationCards({ stocks }: Props) {
     .filter(s => s.investmentScore != null)
     .sort((a, b) => (b.investmentScore ?? 0) - (a.investmentScore ?? 0))
     .slice(0, count)
+
+  const summary = useMemo(() => summarizeTopPicks(top), [top])
 
   if (top.length === 0) return null
 
@@ -33,6 +36,7 @@ export default function RecommendationCards({ stocks }: Props) {
           ))}
         </select>
       </div>
+      {summary && <p className={styles.summary}>{summary}</p>}
       <div className={styles.grid}>
         {top.map((s, i) => (
           <div

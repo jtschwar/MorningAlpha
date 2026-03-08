@@ -166,3 +166,67 @@ export function computeSignal(
 
   return { level, score, reasons }
 }
+
+/**
+ * Generate a 1–2 sentence plain-English summary for the top K stocks.
+ * Uses only CSV data (no fundamentals/OHLCV needed).
+ */
+export function summarizeTopPicks(stocks: Stock[]): string {
+  if (stocks.length === 0) return ''
+
+  const signals = stocks.map(s => computeSignal(s, null, null))
+
+  // Count signal levels
+  const counts: Record<SignalLevel, number> = {
+    'STRONG BUY': 0, 'BUY': 0, 'HOLD': 0, 'SELL': 0, 'STRONG SELL': 0,
+  }
+  for (const sig of signals) counts[sig.level]++
+
+  const top = stocks[0]
+  const topSig = signals[0]
+
+  // ── Sentence 1: distribution + lead stock ────────────────────────
+  const bullishCount = counts['STRONG BUY'] + counts['BUY']
+  const bearishCount = counts['SELL'] + counts['STRONG SELL']
+
+  let s1 = ''
+  if (counts['STRONG BUY'] >= Math.ceil(stocks.length / 2)) {
+    s1 = `Strong conviction across top ${stocks.length} — ${counts['STRONG BUY']} strong buy${counts['STRONG BUY'] > 1 ? 's' : ''}.`
+  } else if (bullishCount >= Math.ceil(stocks.length * 0.6)) {
+    s1 = `${bullishCount} of ${stocks.length} picks rated buy or better.`
+  } else if (bearishCount >= Math.ceil(stocks.length / 2)) {
+    s1 = `Mixed-to-negative signals — consider sizing down.`
+  } else {
+    s1 = `Mixed signals across top ${stocks.length} picks.`
+  }
+
+  // Add lead stock detail
+  const returnStr = top.ReturnPct != null
+    ? ` (${top.ReturnPct > 0 ? '+' : ''}${top.ReturnPct.toFixed(1)}%)`
+    : ''
+  s1 += ` ${top.Ticker}${returnStr} leads with a ${topSig.level.toLowerCase()} signal.`
+
+  // ── Sentence 2: notable highlight or warning ─────────────────────
+  // Find overbought stocks
+  const overbought = stocks.filter(s => s.RSI != null && s.RSI > 70)
+  // Find highest Sharpe
+  const bestSharpe = [...stocks].sort((a, b) => (b.SharpeRatio ?? 0) - (a.SharpeRatio ?? 0))[0]
+  // Find worst drawdown
+  const worstDD = [...stocks].sort((a, b) => (a.MaxDrawdown ?? 0) - (b.MaxDrawdown ?? 0))[0]
+  // Find accelerating momentum
+  const accelerating = stocks.filter(s => s.MomentumAccel != null && s.MomentumAccel > 1)
+
+  let s2 = ''
+  if (overbought.length > 0) {
+    const names = overbought.map(s => s.Ticker).join(', ')
+    s2 = `Watch ${names} — RSI elevated${overbought.length === 1 && overbought[0].RSI != null ? ` (${overbought[0].RSI.toFixed(0)})` : ''}, potential near-term pullback.`
+  } else if (accelerating.length >= 2) {
+    s2 = `${accelerating.length} picks showing accelerating momentum — trend may continue.`
+  } else if (bestSharpe.SharpeRatio != null && bestSharpe.SharpeRatio >= 1.5) {
+    s2 = `${bestSharpe.Ticker} stands out for risk-adjusted returns (Sharpe ${bestSharpe.SharpeRatio.toFixed(2)}).`
+  } else if (worstDD.MaxDrawdown != null && worstDD.MaxDrawdown < -40) {
+    s2 = `${worstDD.Ticker} has seen a steep decline (${worstDD.MaxDrawdown.toFixed(1)}%) — higher risk.`
+  }
+
+  return s2 ? `${s1} ${s2}` : s1
+}

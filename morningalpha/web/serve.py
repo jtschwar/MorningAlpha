@@ -11,99 +11,63 @@ DATA_DIR = WEBAPP_DIR / "public" / "data" / "latest"
 # Repo-root data/latest/ — populated by `alpha spread` or `git pull` after daily action runs
 LOCAL_DATA_DIR = WEBAPP_DIR.parent.parent / "data" / "latest"
 PAGES_BASE = "https://jtschwar.github.io/MorningAlpha"
+RAW_BASE   = "https://raw.githubusercontent.com/jtschwar/MorningAlpha/main/data/latest"
 CSV_PERIODS = ["2w", "1m", "3m", "6m"]
 
 
-def _last_market_close():
-    """Return the datetime of the most recent weekday 4:15pm ET."""
-    from datetime import datetime, timedelta
-    from zoneinfo import ZoneInfo
-
-    ET = ZoneInfo("America/New_York")
-    now = datetime.now(ET)
-    d = now.date()
-    # Walk back to the most recent weekday
-    while d.weekday() >= 5:
-        d -= timedelta(days=1)
-    close = datetime(d.year, d.month, d.day, 16, 15, tzinfo=ET)
-    # If that close is still in the future (e.g. running before 4:15pm today),
-    # step back one more weekday
-    if close > now:
-        d -= timedelta(days=1)
-        while d.weekday() >= 5:
-            d -= timedelta(days=1)
-        close = datetime(d.year, d.month, d.day, 16, 15, tzinfo=ET)
-    return close
-
-
-def _is_current(path: Path) -> bool:
-    """Return True if path exists and was written after the last market close."""
-    if not path.exists():
-        return False
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
-    mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=ZoneInfo("America/New_York"))
-    return mtime >= _last_market_close()
-
-
 def sync_data(console):
-    """Ensure public/data/latest/ has current CSVs.
+    """Download the latest CSVs into public/data/latest/ on every launch.
 
-    1. Check the timestamp on the existing stocks_3m.csv against the last
-       market close (weekday 4:15pm ET). If it's already current, skip.
-    2. Otherwise try to download all 4 CSVs from GitHub Pages.
-    3. If GitHub Pages is unreachable, fall back to the local repo's
-       data/latest/ (populated by `git pull` after the daily action runs).
+    Sources tried in order for each file:
+      1. raw.githubusercontent.com  — available immediately after daily-data.yml commits
+      2. GitHub Pages                — available after pages.yml deploys (~5 min lag)
+      3. Local data/latest/          — last resort (repo clone, no network needed)
+
+    The timestamp check is intentionally removed: it caused syncs to be skipped
+    whenever local files appeared "fresh enough", missing workflow runs triggered
+    manually or out-of-band.
     """
     import urllib.request
     import urllib.error
     import shutil
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    sentinel = DATA_DIR / "stocks_3m.csv"
-
-    if _is_current(sentinel):
-        mtime = datetime.fromtimestamp(sentinel.stat().st_mtime, tz=ZoneInfo("America/New_York"))
-        console.print(f"[green]✓[/green] Data is current (generated {mtime.strftime('%b %d %I:%M %p ET')})")
-        return
-
-    console.print("[dim]Data is stale — fetching latest...[/dim]")
-    pages_synced = 0
+    synced = 0
+    failed = []
 
     for period in CSV_PERIODS:
         filename = f"stocks_{period}.csv"
-        url = f"{PAGES_BASE}/data/latest/{filename}"
         dest = DATA_DIR / filename
-        try:
-            urllib.request.urlretrieve(url, dest)
-            pages_synced += 1
-        except urllib.error.HTTPError as e:
-            console.print(f"[yellow]⚠[/yellow] {filename}: HTTP {e.code} — skipped")
-        except Exception:
-            pass  # fall back to local below
+        downloaded = False
 
-    if pages_synced:
-        console.print(f"[green]✓[/green] Synced {pages_synced}/{len(CSV_PERIODS)} CSVs from GitHub Pages")
-    else:
-        console.print("[yellow]⚠[/yellow] GitHub Pages unreachable — checking local data/latest/")
+        for base in [RAW_BASE, f"{PAGES_BASE}/data/latest"]:
+            url = f"{base}/{filename}"
+            tmp = dest.with_suffix('.tmp')
+            try:
+                urllib.request.urlretrieve(url, tmp)
+                tmp.replace(dest)
+                downloaded = True
+                synced += 1
+                break
+            except Exception:
+                if tmp.exists():
+                    tmp.unlink()
 
-    # Fall back: copy any still-missing CSVs from the local repo data/latest/
-    local_copied = 0
-    for period in CSV_PERIODS:
-        filename = f"stocks_{period}.csv"
-        dest = DATA_DIR / filename
-        if not dest.exists():
+        if not downloaded:
             local_src = LOCAL_DATA_DIR / filename
             if local_src.exists():
                 shutil.copy2(local_src, dest)
-                local_copied += 1
+                synced += 1
+                console.print(f"[yellow]⚠[/yellow] {filename}: network unavailable — using local copy")
+            else:
+                failed.append(filename)
 
-    if local_copied:
-        console.print(f"[green]✓[/green] Loaded {local_copied} CSV(s) from local data/latest/")
-    elif pages_synced == 0:
-        console.print("[dim]No data found — run `git pull` to get latest, or `alpha spread` to generate[/dim]")
+    if synced == len(CSV_PERIODS):
+        console.print(f"[green]✓[/green] Data synced ({synced}/{len(CSV_PERIODS)} files)")
+    elif synced > 0:
+        console.print(f"[yellow]⚠[/yellow] Partial sync ({synced}/{len(CSV_PERIODS)} files)")
+    if failed:
+        console.print(f"[red]✗[/red] Missing: {', '.join(failed)} — run `alpha spread` to generate")
 
 
 def _npm():

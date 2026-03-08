@@ -35,7 +35,8 @@ dependencies = [
     "cryptography",
     "yfinance",
     "python-dateutil",
-    "lxml"
+    "lxml",
+    "html5lib"
 ]
 
 [project.scripts]
