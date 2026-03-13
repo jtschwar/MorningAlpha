@@ -1,6 +1,7 @@
 import Plot from 'react-plotly.js'
 import type { CSSProperties } from 'react'
-import { plotlyBase } from '../../tokens/theme'
+import { plotlyBase, plotlyBaseLight } from '../../tokens/theme'
+import { useTheme } from '../../store/ThemeContext'
 
 interface Props {
   data: Plotly.Data[]
@@ -10,11 +11,14 @@ interface Props {
 }
 
 export default function PlotlyChart({ data, layout = {}, style, onClick }: Props) {
+  const { isDark } = useTheme()
+  const base = isDark ? plotlyBase : plotlyBaseLight
+
   return (
     <Plot
       data={data}
-      layout={{ ...(plotlyBase as Partial<Plotly.Layout>), ...layout }}
-      config={{ responsive: true, displayModeBar: 'hover', scrollZoom: true }}
+      layout={{ ...(base as Partial<Plotly.Layout>), ...layout }}
+      config={{ responsive: true, displayModeBar: 'hover' }}
       style={{ width: '100%', ...style }}
       onClick={onClick}
       useResizeHandler

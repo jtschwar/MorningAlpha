@@ -32,12 +32,15 @@ export default function ScatterChart({ stocks }: Props) {
     }
   })
 
+  const allY = stocks.map(s => s.ReturnPct)
+  const yPad = (Math.max(...allY) - Math.min(...allY)) * 0.08
+
   return (
     <PlotlyChart
       data={traces}
       layout={{
-        xaxis: { title: { text: 'Rank' } },
-        yaxis: { title: { text: 'Return (%)' } },
+        xaxis: { title: { text: 'Rank' }, minallowed: 0, maxallowed: stocks.length + 1 },
+        yaxis: { title: { text: 'Return (%)' }, minallowed: Math.min(...allY) - yPad, maxallowed: Math.max(...allY) + yPad },
         hovermode: 'closest',
         height: 420,
       }}

@@ -27,12 +27,15 @@ export default function BarChart({ stocks, metricLabel = '3M' }: Props) {
     customdata: sorted.map(s => s.Ticker),
   }
 
+  const allX = sorted.map(s => s.ReturnPct)
+  const xPad = (Math.max(...allX) - Math.min(...allX)) * 0.08
+
   return (
     <PlotlyChart
       data={[trace]}
       layout={{
         title: { text: `Returns — ${metricLabel}` },
-        xaxis: { title: { text: 'Return (%)' } },
+        xaxis: { title: { text: 'Return (%)' }, minallowed: Math.min(...allX) - xPad, maxallowed: Math.max(...allX) + xPad },
         height: Math.max(400, sorted.length * 22),
         margin: { l: 80, r: 80, t: 40, b: 40 },
       }}

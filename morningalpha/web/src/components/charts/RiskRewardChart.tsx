@@ -44,12 +44,17 @@ export default function RiskRewardChart({ stocks }: Props) {
     marker: { size: 9, opacity: 0.75, color: RISK_COLORS[level] ?? '#64748b' },
   }))
 
+  const allX = Object.values(grouped).flatMap(d => d.x)
+  const allY = Object.values(grouped).flatMap(d => d.y)
+  const xPad = (Math.max(...allX) - Math.min(...allX)) * 0.08
+  const yPad = (Math.max(...allY) - Math.min(...allY)) * 0.08
+
   return (
     <PlotlyChart
       data={traces}
       layout={{
-        xaxis: { title: { text: 'Max Drawdown (%)' } },
-        yaxis: { title: { text: 'Return (%)' } },
+        xaxis: { title: { text: 'Max Drawdown (%)' }, minallowed: Math.min(...allX) - xPad, maxallowed: Math.max(...allX) + xPad },
+        yaxis: { title: { text: 'Return (%)' }, minallowed: Math.min(...allY) - yPad, maxallowed: Math.max(...allY) + yPad },
         hovermode: 'closest',
         height: 420,
       }}

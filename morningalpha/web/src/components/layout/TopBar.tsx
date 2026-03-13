@@ -1,19 +1,8 @@
-import { useState, useEffect } from 'react'
 import { useStock } from '../../store/StockContext'
+import { useTheme } from '../../store/ThemeContext'
 import type { WindowPeriod } from '../../store/types'
 import SearchInput from '../common/SearchInput'
 import styles from './TopBar.module.css'
-
-function useTheme() {
-  const [light, setLight] = useState(() => localStorage.getItem('theme') === 'light')
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', light ? 'light' : 'dark')
-    localStorage.setItem('theme', light ? 'light' : 'dark')
-  }, [light])
-
-  return { light, toggle: () => setLight(v => !v) }
-}
 
 const PERIODS: { key: WindowPeriod; label: string }[] = [
   { key: '2w', label: '2W' },
@@ -30,7 +19,8 @@ interface Props {
 
 export default function TopBar({ showHamburger, onToggleSidebar, sidebarOpen }: Props) {
   const { state, dispatch } = useStock()
-  const { light, toggle } = useTheme()
+  const { isDark, toggle } = useTheme()
+  const light = !isDark
   const { activePeriod, dataSource, metadata } = state
   const meta = metadata[activePeriod]
 

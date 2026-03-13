@@ -12,6 +12,14 @@ export const colors = {
   accentPurple: '#8b5cf6',
 } as const
 
+export const lightColors = {
+  surface: '#ffffff',
+  surface2: '#f8fafc',
+  border: '#e2e8f0',
+  textPrimary: '#0f172a',
+  textSecondary: '#64748b',
+} as const
+
 export const fonts = {
   mono: "'JetBrains Mono', monospace",
   ui: "'Inter', system-ui, sans-serif",
@@ -35,5 +43,25 @@ export const plotlyBase = {
     zeroline: false,
   },
   legend: { bgcolor: 'transparent', font: { color: colors.textSecondary } },
+  margin: { t: 40, r: 20, b: 40, l: 60 },
+} as const
+
+export const plotlyBaseLight = {
+  paper_bgcolor: lightColors.surface,
+  plot_bgcolor: lightColors.surface2,
+  font: { family: fonts.mono, color: lightColors.textPrimary, size: 12 },
+  xaxis: {
+    gridcolor: lightColors.border,
+    linecolor: lightColors.border,
+    tickfont: { color: lightColors.textSecondary },
+    zeroline: false,
+  },
+  yaxis: {
+    gridcolor: lightColors.border,
+    linecolor: lightColors.border,
+    tickfont: { color: lightColors.textSecondary },
+    zeroline: false,
+  },
+  legend: { bgcolor: 'transparent', font: { color: lightColors.textSecondary } },
   margin: { t: 40, r: 20, b: 40, l: 60 },
 } as const
