@@ -36,7 +36,7 @@ export default function Sidebar() {
           <option value="">All</option>
           <option value="NASDAQ">NASDAQ</option>
           <option value="NYSE">NYSE</option>
-          <option value="S&P 500">S&P 500</option>
+          <option value="S&P500">S&P 500</option>
         </select>
 
         <label className={styles.label}>Market Cap</label>
