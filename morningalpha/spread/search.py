@@ -5,6 +5,7 @@ These functions can be imported and used programmatically.
 """
 
 from morningalpha.spread.metrics import calculate_all_metrics
+from morningalpha.spread.indicators import compute_all_indicators
 from dateutil.relativedelta import relativedelta
 from typing import Dict, List, Tuple, Optional
 from datetime import date
@@ -378,7 +379,9 @@ def fetch_returns_with_metrics(
         if isinstance(data.columns, pd.MultiIndex):
             close_cols = data.xs("Close", axis=1, level=1, drop_level=False)
             volume_cols = data.xs("Volume", axis=1, level=1, drop_level=False)
-            
+            high_cols = data.xs("High", axis=1, level=1, drop_level=False) if "High" in data.columns.get_level_values(1) else None
+            low_cols = data.xs("Low", axis=1, level=1, drop_level=False) if "Low" in data.columns.get_level_values(1) else None
+
             for t in batch:
                 try:
                     prices = close_cols[(t, "Close")]
@@ -411,10 +414,22 @@ def fetch_returns_with_metrics(
                     
                     # Calculate all metrics (use full available data for better accuracy)
                     metrics = calculate_all_metrics(prices, volumes, daily_returns)
-                    
+
+                    # Compute technical indicators from OHLCV data
+                    try:
+                        ohlcv = pd.DataFrame({
+                            'Close': prices,
+                            'High': high_cols[(t, "High")] if high_cols is not None else pd.Series(np.nan, index=prices.index),
+                            'Low': low_cols[(t, "Low")] if low_cols is not None else pd.Series(np.nan, index=prices.index),
+                            'Volume': volumes,
+                        })
+                        indicator_vals = compute_all_indicators(ohlcv)
+                    except Exception:
+                        indicator_vals = {}
+
                     # Get market cap if available
                     market_cap, market_cap_category = market_caps.get(t, (None, None))
-                    
+
                     # Store everything
                     results.append({
                         "Ticker": t,
@@ -433,6 +448,7 @@ def fetch_returns_with_metrics(
                         "EntryScore": metrics.get('entry_score', np.nan),
                         "MarketCap": market_cap,
                         "MarketCapCategory": market_cap_category,
+                        **indicator_vals,
                     })
                 except KeyError:
                     continue
@@ -460,10 +476,22 @@ def fetch_returns_with_metrics(
                 return_pct = percent_change(period_prices)
                 daily_returns = prices.pct_change().dropna()
                 metrics = calculate_all_metrics(prices, volumes, daily_returns)
-                
+
+                # Compute technical indicators from OHLCV data
+                try:
+                    ohlcv = pd.DataFrame({
+                        'Close': prices,
+                        'High': data.get("High", pd.Series(np.nan, index=prices.index)),
+                        'Low': data.get("Low", pd.Series(np.nan, index=prices.index)),
+                        'Volume': volumes,
+                    })
+                    indicator_vals = compute_all_indicators(ohlcv)
+                except Exception:
+                    indicator_vals = {}
+
                 # Get market cap if available
                 market_cap, market_cap_category = market_caps.get(batch[0], (None, None))
-                
+
                 results.append({
                     "Ticker": batch[0],
                     "ReturnPct": return_pct,
@@ -481,6 +509,7 @@ def fetch_returns_with_metrics(
                     "EntryScore": metrics.get('entry_score', np.nan),
                     "MarketCap": market_cap,
                     "MarketCapCategory": market_cap_category,
+                    **indicator_vals,
                 })
         
         if progress_callback:

@@ -1,5 +1,6 @@
 from morningalpha.spread.access import spread
 from morningalpha.web.serve import serve
+from morningalpha.spread.fundamentals import fundamentals
 from morningalpha import cli_context
 import rich_click as click
 
@@ -12,3 +13,4 @@ def routines():
 # Add Subcommands to the group
 routines.add_command(spread)
 routines.add_command(serve)
+routines.add_command(fundamentals)

@@ -26,3 +26,23 @@
   color: var(--accent-red);
   margin-bottom: 16px;
 }
+
+.chartToggle {
+  margin: 12px 0 4px;
+}
+
+.toggleBtn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.toggleBtn:hover {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}

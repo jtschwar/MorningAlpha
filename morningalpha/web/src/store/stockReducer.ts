@@ -1,5 +1,20 @@
-import type { AppState, FilterState, Stock, StockDetailData, WindowPeriod, Metadata } from './types'
-import { DEFAULT_FILTERS } from './types'
+import type { AppState, FilterState, Stock, StockDetailData, WindowPeriod, Metadata, FundamentalData, ColumnConfig, BacktestResult } from './types'
+import { DEFAULT_FILTERS, DEFAULT_VISIBLE_COLUMNS } from './types'
+
+// ── localStorage helpers ───────────────────────────────────────────────────
+
+const LS_COLUMNS_KEY = 'ma-visible-columns'
+
+function loadColumnConfig(): ColumnConfig {
+  try {
+    const stored = localStorage.getItem(LS_COLUMNS_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      if (Array.isArray(parsed)) return { visibleColumns: parsed }
+    }
+  } catch {}
+  return { visibleColumns: DEFAULT_VISIBLE_COLUMNS }
+}
 
 // ── Actions ──────────────────────────────────────────────────────────────────
 
@@ -11,6 +26,10 @@ export type Action =
   | { type: 'SET_FILTERS'; filters: Partial<FilterState> }
   | { type: 'RESET_FILTERS' }
   | { type: 'CACHE_API_RESPONSE'; key: string; data: StockDetailData }
+  | { type: 'SET_FUNDAMENTALS'; data: Record<string, FundamentalData> }
+  | { type: 'SET_COLUMN_CONFIG'; columns: string[] }
+  | { type: 'RESET_COLUMN_CONFIG' }
+  | { type: 'SET_BACKTEST_RESULTS'; data: BacktestResult }
 
 // ── Initial state ─────────────────────────────────────────────────────────────
 
@@ -24,6 +43,9 @@ export const initialState: AppState = {
   dataSource: null,
   filters: DEFAULT_FILTERS,
   apiCache: new Map(),
+  fundamentals: null,
+  columnConfig: loadColumnConfig(),
+  backtestResults: null,
 }
 
 // ── Reducer ───────────────────────────────────────────────────────────────────
@@ -63,6 +85,22 @@ export function stockReducer(state: AppState, action: Action): AppState {
       newCache.set(action.key, action.data)
       return { ...state, apiCache: newCache }
     }
+
+    case 'SET_FUNDAMENTALS':
+      return { ...state, fundamentals: action.data }
+
+    case 'SET_COLUMN_CONFIG': {
+      try { localStorage.setItem(LS_COLUMNS_KEY, JSON.stringify(action.columns)) } catch {}
+      return { ...state, columnConfig: { visibleColumns: action.columns } }
+    }
+
+    case 'RESET_COLUMN_CONFIG': {
+      try { localStorage.removeItem(LS_COLUMNS_KEY) } catch {}
+      return { ...state, columnConfig: { visibleColumns: DEFAULT_VISIBLE_COLUMNS } }
+    }
+
+    case 'SET_BACKTEST_RESULTS':
+      return { ...state, backtestResults: action.data }
 
     default:
       return state

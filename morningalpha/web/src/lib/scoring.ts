@@ -111,6 +111,89 @@ export function applyFilters(stocks: Stock[], filters: FilterState): Stock[] {
     })
   }
 
+  // Sector filter
+  if (filters.sectors.length > 0) {
+    result = result.filter(s => s.fundamentals?.sector && filters.sectors.includes(s.fundamentals.sector))
+  }
+
+  // Industry filter
+  if (filters.industries.length > 0) {
+    result = result.filter(s => s.fundamentals?.industry && filters.industries.includes(s.fundamentals.industry))
+  }
+
+  // RSI range
+  if (filters.rsiMin > 0 || filters.rsiMax < 100) {
+    result = result.filter(s => {
+      const rsi = s.RSI
+      if (rsi == null) return false
+      return rsi >= filters.rsiMin && rsi <= filters.rsiMax
+    })
+  }
+
+  // SMA position
+  if (filters.smaPosition) {
+    result = result.filter(s => {
+      switch (filters.smaPosition) {
+        case 'above_sma50': return s.PriceToSMA50Pct != null && s.PriceToSMA50Pct > 0
+        case 'below_sma50': return s.PriceToSMA50Pct != null && s.PriceToSMA50Pct < 0
+        case 'above_sma200': return s.PriceToSMA200Pct != null && s.PriceToSMA200Pct > 0
+        case 'below_sma200': return s.PriceToSMA200Pct != null && s.PriceToSMA200Pct < 0
+        default: return true
+      }
+    })
+  }
+
+  // Stochastic
+  if (filters.stochastic) {
+    result = result.filter(s => {
+      const k = s.StochK
+      if (k == null) return false
+      switch (filters.stochastic) {
+        case 'overbought': return k > 80
+        case 'oversold': return k < 20
+        case 'neutral': return k >= 20 && k <= 80
+        default: return true
+      }
+    })
+  }
+
+  // P/E range (from fundamentals)
+  if (filters.peMin > 0 || filters.peMax < 999) {
+    result = result.filter(s => {
+      const pe = s.fundamentals?.pe
+      if (pe == null) return false
+      return pe >= filters.peMin && pe <= filters.peMax
+    })
+  }
+
+  // Beta range (from fundamentals)
+  if (filters.betaMin > 0 || filters.betaMax < 10) {
+    result = result.filter(s => {
+      const beta = s.fundamentals?.beta
+      if (beta == null) return false
+      return beta >= filters.betaMin && beta <= filters.betaMax
+    })
+  }
+
+  // Dividend
+  if (filters.dividend) {
+    result = result.filter(s => {
+      const div = s.fundamentals?.divYield
+      switch (filters.dividend) {
+        case 'has_dividend': return div != null && div > 0
+        case 'no_dividend': return div == null || div === 0
+        case 'yield_2pct': return div != null && div >= 0.02
+        case 'yield_4pct': return div != null && div >= 0.04
+        default: return true
+      }
+    })
+  }
+
+  // Min Sharpe
+  if (filters.minSharpe > -999) {
+    result = result.filter(s => s.SharpeRatio != null && s.SharpeRatio >= filters.minSharpe)
+  }
+
   return sortStocks(result, filters.sortBy)
 }
 

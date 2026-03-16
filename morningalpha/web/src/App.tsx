@@ -3,6 +3,7 @@ import { StockProvider } from './store/StockContext'
 import { ThemeProvider } from './store/ThemeContext'
 import Dashboard from './pages/Dashboard'
 import StockDetail from './pages/StockDetail'
+import BacktestPage from './pages/Backtest'
 
 export default function App() {
   return (
@@ -11,6 +12,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/stock/:ticker" element={<StockDetail />} />
+          <Route path="/backtest" element={<BacktestPage />} />
         </Routes>
       </StockProvider>
     </ThemeProvider>

@@ -63,3 +63,31 @@
   border-color: var(--accent-red);
   color: var(--accent-red);
 }
+
+.rangeRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rangeInput {
+  width: 100%;
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 4px;
+}
+
+.rangeInput:focus {
+  border-color: var(--accent-blue);
+  outline: none;
+}
+
+.rangeSep {
+  color: var(--text-secondary);
+  font-size: 12px;
+  flex-shrink: 0;
+}

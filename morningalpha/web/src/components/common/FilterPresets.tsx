@@ -11,19 +11,56 @@ interface Preset {
 const PRESETS: Preset[] = [
   {
     label: 'Conservative',
-    filters: { riskTolerance: 'conservative', minQuality: 60, maxDrawdown: -20, sortBy: 'investmentScore' },
+    filters: {
+      betaMax: 1.0,
+      maxDrawdown: -20,
+      minSharpe: 1.0,
+      dividend: 'has_dividend',
+      sortBy: 'investmentScore',
+    },
   },
   {
     label: 'Momentum',
-    filters: { riskTolerance: 'all', minQuality: 0, maxDrawdown: -100, sortBy: 'momentumAccel' },
+    filters: {
+      rsiMin: 50,
+      rsiMax: 70,
+      smaPosition: 'above_sma50',
+      sortBy: 'momentumAccel',
+    },
   },
   {
     label: 'Value Entry',
-    filters: { riskTolerance: 'all', minQuality: 40, maxDrawdown: -100, sortBy: 'entryScore' },
+    filters: {
+      peMax: 20,
+      smaPosition: 'below_sma200',
+      minQuality: 40,
+      sortBy: 'entryScore',
+    },
   },
   {
-    label: 'Quality First',
-    filters: { riskTolerance: 'all', minQuality: 70, maxDrawdown: -100, sortBy: 'quality' },
+    label: 'Quality Growth',
+    filters: {
+      minQuality: 60,
+      minSharpe: 1.5,
+      sortBy: 'quality',
+    },
+  },
+  {
+    label: 'Breakout',
+    filters: {
+      rsiMin: 50,
+      rsiMax: 70,
+      smaPosition: 'above_sma50',
+      sortBy: 'momentumAccel',
+    },
+  },
+  {
+    label: 'Undervalued',
+    filters: {
+      peMax: 15,
+      rsiMax: 40,
+      sortBy: 'entryScore',
+    },
   },
 ]
 
@@ -36,6 +73,7 @@ export default function FilterPresets() {
       dispatch({ type: 'RESET_FILTERS' })
       setActive(null)
     } else {
+      dispatch({ type: 'RESET_FILTERS' })
       dispatch({ type: 'SET_FILTERS', filters: p.filters })
       setActive(p.label)
     }

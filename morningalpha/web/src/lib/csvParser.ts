@@ -34,6 +34,34 @@ export function parseCSV(csv: string): ParseResult {
   const volumeSurgeIdx = col('VolumeSurge')
   const entryScoreIdx = col('EntryScore')
 
+  // New technical indicator columns
+  const sma7Idx = col('SMA7')
+  const sma20ColIdx = col('SMA20')
+  const sma50ColIdx = col('SMA50')
+  const sma200ColIdx = col('SMA200')
+  const priceToSMA20PctIdx = col('PriceToSMA20Pct')
+  const priceToSMA50PctIdx = col('PriceToSMA50Pct')
+  const priceToSMA200PctIdx = col('PriceToSMA200Pct')
+  const ema7Idx = col('EMA7')
+  const ema200Idx = col('EMA200')
+  const macdIdx = col('MACD')
+  const macdSignalIdx = col('MACDSignal')
+  const macdHistIdx = col('MACDHist')
+  const rsi7Idx = col('RSI7')
+  const rsi21Idx = col('RSI21')
+  const stochKIdx = col('StochK')
+  const stochDIdx = col('StochD')
+  const roc5Idx = col('ROC5')
+  const roc10Idx = col('ROC10')
+  const roc21Idx = col('ROC21')
+  const atr14Idx = col('ATR14')
+  const bollingerPctBIdx = col('BollingerPctB')
+  const bollingerBandwidthIdx = col('BollingerBandwidth')
+  const annualizedVolIdx = col('AnnualizedVol')
+  const obvIdx = col('OBV')
+  const relativeVolumeIdx = col('RelativeVolume')
+  const volumeROCIdx = col('VolumeROC')
+
   const num = (values: string[], idx: number): number | null => {
     if (idx < 0 || !values[idx]) return null
     const n = parseFloat(values[idx])
@@ -66,6 +94,33 @@ export function parseCSV(csv: string): ParseResult {
       EntryScore: num(values, entryScoreIdx),
       MarketCap: num(values, marketCapIdx),
       MarketCapCategory: marketCapCategoryIdx >= 0 ? str(values, marketCapCategoryIdx) || null : null,
+      SMA7: num(values, sma7Idx),
+      SMA20: num(values, sma20ColIdx),
+      SMA50: num(values, sma50ColIdx),
+      SMA200: num(values, sma200ColIdx),
+      PriceToSMA20Pct: num(values, priceToSMA20PctIdx),
+      PriceToSMA50Pct: num(values, priceToSMA50PctIdx),
+      PriceToSMA200Pct: num(values, priceToSMA200PctIdx),
+      EMA7: num(values, ema7Idx),
+      EMA200: num(values, ema200Idx),
+      MACD: num(values, macdIdx),
+      MACDSignal: num(values, macdSignalIdx),
+      MACDHist: num(values, macdHistIdx),
+      RSI7: num(values, rsi7Idx),
+      RSI21: num(values, rsi21Idx),
+      StochK: num(values, stochKIdx),
+      StochD: num(values, stochDIdx),
+      ROC5: num(values, roc5Idx),
+      ROC10: num(values, roc10Idx),
+      ROC21: num(values, roc21Idx),
+      ATR14: num(values, atr14Idx),
+      BollingerPctB: num(values, bollingerPctBIdx),
+      BollingerBandwidth: num(values, bollingerBandwidthIdx),
+      AnnualizedVol: num(values, annualizedVolIdx),
+      OBV: num(values, obvIdx),
+      RelativeVolume: num(values, relativeVolumeIdx),
+      VolumeROC: num(values, volumeROCIdx),
+      fundamentals: null,
       // Will be filled by computeScores
       investmentScore: null,
       riskRewardRatio: null,

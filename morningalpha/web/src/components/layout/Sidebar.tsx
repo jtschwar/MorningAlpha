@@ -91,6 +91,58 @@ export default function Sidebar() {
           <option value={-40}>≥ -40%</option>
         </select>
 
+        {/* RSI Range */}
+        <label className={styles.label}>RSI Range</label>
+        <div className={styles.rangeRow}>
+          <input
+            type="number"
+            className={styles.rangeInput}
+            min={0} max={100}
+            value={filters.rsiMin}
+            onChange={e => set('rsiMin', Number(e.target.value))}
+            placeholder="Min"
+          />
+          <span className={styles.rangeSep}>–</span>
+          <input
+            type="number"
+            className={styles.rangeInput}
+            min={0} max={100}
+            value={filters.rsiMax}
+            onChange={e => set('rsiMax', Number(e.target.value))}
+            placeholder="Max"
+          />
+        </div>
+
+        {/* SMA Position */}
+        <label className={styles.label}>SMA Position</label>
+        <select className={styles.select} value={filters.smaPosition} onChange={e => set('smaPosition', e.target.value)}>
+          <option value="">Any</option>
+          <option value="above_sma50">Above SMA 50</option>
+          <option value="below_sma50">Below SMA 50</option>
+          <option value="above_sma200">Above SMA 200</option>
+          <option value="below_sma200">Below SMA 200</option>
+        </select>
+
+        {/* Stochastic */}
+        <label className={styles.label}>Stochastic</label>
+        <select className={styles.select} value={filters.stochastic} onChange={e => set('stochastic', e.target.value)}>
+          <option value="">Any</option>
+          <option value="overbought">Overbought (&gt;80)</option>
+          <option value="oversold">Oversold (&lt;20)</option>
+          <option value="neutral">Neutral (20–80)</option>
+        </select>
+
+        {/* Min Sharpe */}
+        <label className={styles.label}>Min Sharpe</label>
+        <input
+          type="number"
+          className={styles.select}
+          step="0.1"
+          value={filters.minSharpe <= -999 ? '' : filters.minSharpe}
+          placeholder="Any"
+          onChange={e => set('minSharpe', e.target.value === '' ? -999 : Number(e.target.value))}
+        />
+
         <label className={styles.label}>Sort By</label>
         <select
           className={styles.select}

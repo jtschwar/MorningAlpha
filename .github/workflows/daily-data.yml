@@ -36,3 +36,33 @@ jobs:
           git add data/
           git diff --staged --quiet || git commit -m "chore: daily data update $(date -u +%Y-%m-%d)"
           git push
+
+  fundamentals:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Pull the commit made by the build job
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install Python dependencies
+        run: pip install -e .
+
+      - name: Fetch fundamentals
+        run: alpha fundamentals --out data/latest/fundamentals.csv
+        env:
+          PYTHONUNBUFFERED: '1'
+
+      - name: Commit fundamentals
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/latest/fundamentals.csv
+          git diff --staged --quiet || git commit -m "chore: update fundamentals $(date -u +%Y-%m-%d)"
+          git push

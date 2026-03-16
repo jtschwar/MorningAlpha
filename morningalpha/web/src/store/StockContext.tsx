@@ -19,14 +19,23 @@ export function StockProvider({ children }: { children: ReactNode }) {
 
   const rawData = state.windowData[state.activePeriod]
 
+  // Merge fundamentals onto each stock so applyFilters can access them
+  const mergedData = useMemo(() => {
+    if (!state.fundamentals) return rawData
+    return rawData.map(stock => ({
+      ...stock,
+      fundamentals: state.fundamentals![stock.Ticker] ?? null,
+    }))
+  }, [rawData, state.fundamentals])
+
   const filteredData = useMemo(
-    () => applyFilters(rawData, state.filters),
-    [rawData, state.filters],
+    () => applyFilters(mergedData, state.filters),
+    [mergedData, state.filters],
   )
 
   const value = useMemo(
-    () => ({ state, dispatch, rawData, filteredData }),
-    [state, dispatch, rawData, filteredData],
+    () => ({ state, dispatch, rawData: mergedData, filteredData }),
+    [state, dispatch, mergedData, filteredData],
   )
 
   return <StockContext.Provider value={value}>{children}</StockContext.Provider>

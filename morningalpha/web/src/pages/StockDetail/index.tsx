@@ -7,21 +7,33 @@ import { computeSignal } from '../../lib/signal'
 import AppShell from '../../components/layout/AppShell'
 import StockHeader from '../../components/detail/StockHeader'
 import SignalBanner from '../../components/detail/SignalBanner'
-import CsvMetricsStrip from '../../components/detail/CsvMetricsStrip'
-import FundamentalsStrip from '../../components/detail/FundamentalsStrip'
+import DenseIndicatorGrid from '../../components/detail/DenseIndicatorGrid'
 import PeriodSelector from '../../components/detail/PeriodSelector'
 import type { DetailPeriod } from '../../components/detail/PeriodSelector'
 import PriceChart from '../../components/detail/PriceChart'
 import RsiChart from '../../components/detail/RsiChart'
 import VolumeChart from '../../components/detail/VolumeChart'
-import TechnicalsPanel from '../../components/detail/TechnicalsPanel'
 import HelpDrawer from '../../components/common/HelpDrawer'
 import styles from './StockDetail.module.css'
+
+// Map DetailPeriod to the simpler Period type expected by DenseIndicatorGrid
+// DetailPeriod = '1M' | '3M' | '6M' | '1Y' | '5Y' | 'MAX'
+type GridPeriod = '1M' | '2W' | '3M' | '6M' | '1Y'
+
+function toGridPeriod(p: DetailPeriod): GridPeriod {
+  if (p === '1M') return '1M'
+  if (p === '3M') return '3M'
+  if (p === '6M') return '6M'
+  if (p === '1Y') return '1Y'
+  // '5Y' and 'MAX' fall back to '1Y'
+  return '1Y'
+}
 
 export default function StockDetail() {
   const { ticker } = useParams<{ ticker: string }>()
   const { state } = useStock()
   const [period, setPeriod] = useState<DetailPeriod>('3M')
+  const [expandedChart, setExpandedChart] = useState(false)
 
   // Find the stock in any loaded window
   const stock =
@@ -30,12 +42,15 @@ export default function StockDetail() {
       .find(s => s.Ticker === ticker) ?? null
 
   const { data, loading, error } = useStockData(ticker, period)
-  const { data: fundamentals } = useFundamentals(ticker)
+  const { data: proxyFundamentals } = useFundamentals(ticker)
   const meta = state.metadata[state.activePeriod]
 
+  // CSV-based FundamentalData (our richer type) — only pass this to DenseIndicatorGrid
+  const csvFundamentals = state.fundamentals?.[ticker ?? ''] ?? null
+
   const signal = useMemo(
-    () => computeSignal(stock, fundamentals, data),
-    [stock, fundamentals, data]
+    () => computeSignal(stock, proxyFundamentals, data),
+    [stock, proxyFundamentals, data]
   )
 
   return (
@@ -48,14 +63,18 @@ export default function StockDetail() {
         />
 
         <SignalBanner signal={signal} />
-        {fundamentals && <FundamentalsStrip data={fundamentals} />}
-        {stock && <CsvMetricsStrip stock={stock} />}
-        {data && !loading && <TechnicalsPanel data={data} />}
+
+        <DenseIndicatorGrid
+          stock={stock}
+          fundamentals={csvFundamentals}
+          ohlcv={data ?? null}
+          period={toGridPeriod(period)}
+        />
 
         <PeriodSelector value={period} onChange={setPeriod} />
 
         {loading && (
-          <div className={styles.status}>Loading {ticker} ({period})…</div>
+          <div className={styles.status}>Loading {ticker} ({period})&hellip;</div>
         )}
 
         {error && (
@@ -66,9 +85,21 @@ export default function StockDetail() {
 
         {data && !loading && (
           <>
-            <PriceChart data={data} ticker={ticker ?? ''} />
-            <RsiChart data={data} />
-            <VolumeChart data={data} />
+            <div className={styles.chartToggle}>
+              <button
+                className={styles.toggleBtn}
+                onClick={() => setExpandedChart(v => !v)}
+              >
+                {expandedChart ? 'Hide Full Technicals' : 'Show Full Technicals'}
+              </button>
+            </div>
+            <PriceChart data={data} ticker={ticker ?? ''} expanded={expandedChart} />
+            {!expandedChart && (
+              <>
+                <RsiChart data={data} />
+                <VolumeChart data={data} />
+              </>
+            )}
           </>
         )}
 

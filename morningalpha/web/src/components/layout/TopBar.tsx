@@ -1,3 +1,4 @@
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useStock } from '../../store/StockContext'
 import { useTheme } from '../../store/ThemeContext'
 import type { WindowPeriod } from '../../store/types'
@@ -20,6 +21,8 @@ interface Props {
 export default function TopBar({ showHamburger, onToggleSidebar, sidebarOpen }: Props) {
   const { state, dispatch } = useStock()
   const { isDark, toggle } = useTheme()
+  const navigate = useNavigate()
+  const location = useLocation()
   const light = !isDark
   const { activePeriod, dataSource, metadata } = state
   const meta = metadata[activePeriod]
@@ -49,6 +52,20 @@ export default function TopBar({ showHamburger, onToggleSidebar, sidebarOpen }: 
       </div>
 
       <div className={styles.right}>
+        <nav className={styles.navGroup}>
+          <button
+            className={`${styles.navBtn} ${location.pathname === '/' ? styles.navActive : ''}`}
+            onClick={() => navigate('/')}
+          >
+            Screener
+          </button>
+          <button
+            className={`${styles.navBtn} ${location.pathname === '/backtest' ? styles.navActive : ''}`}
+            onClick={() => navigate('/backtest')}
+          >
+            Backtest
+          </button>
+        </nav>
         <button className={styles.themeBtn} onClick={toggle} title="Toggle light/dark mode">
           {light ? '☀' : '☾'}
         </button>
