@@ -36,7 +36,13 @@ dependencies = [
     "yfinance",
     "python-dateutil",
     "lxml",
-    "html5lib"
+    "html5lib",
+    "lightgbm>=4.0",
+    "shap>=0.44",
+    "rich>=13.0",
+    "huggingface_hub>=0.20",
+    "optuna>=3.0",
+    "pyarrow"
 ]
 
 [project.scripts]

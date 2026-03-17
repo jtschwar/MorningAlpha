@@ -210,6 +210,11 @@ __marimo__/
 morningalpha/.api_keys.enc
 morningalpha/.key_salt
 
+# ML data directories (large, generated locally)
+data/raw_ohlcv/
+data/training/
+data/fundamentals/
+
 # Mac stuff
 .DS_Store
 

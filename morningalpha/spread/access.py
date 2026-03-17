@@ -179,6 +179,16 @@ def get_spread(universe, metric, top, out, batch_size, pause, no_market_cap, top
             fetch_market_cap=not no_market_cap
         )
 
+    # Merge fundamentals
+    from morningalpha.fundamentals import fetch_universe_fundamentals
+    tickers = result["Ticker"].tolist()
+    with console.status("[bold cyan]Fetching fundamental features..."):
+        fund_df = fetch_universe_fundamentals(tickers, batch_size=50, pause=2.0, refresh_stale=False)
+    if not fund_df.empty and "ticker" in fund_df.columns:
+        fund_df = fund_df.drop(columns=["fetched_at"], errors="ignore")
+        fund_df = fund_df.rename(columns={"ticker": "Ticker"})
+        result = result.merge(fund_df, on="Ticker", how="left")
+
     # Save results
     with console.status("[bold cyan]Saving results..."):
         result.to_csv(out, index_label="Rank")
