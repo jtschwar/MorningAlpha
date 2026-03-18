@@ -7,10 +7,11 @@ interface Props {
   data: Plotly.Data[]
   layout?: Partial<Plotly.Layout>
   style?: CSSProperties
+  responsive?: boolean
   onClick?: (event: Readonly<Plotly.PlotMouseEvent>) => void
 }
 
-export default function PlotlyChart({ data, layout = {}, style, onClick }: Props) {
+export default function PlotlyChart({ data, layout = {}, style, responsive = true, onClick }: Props) {
   const { isDark } = useTheme()
   const base = isDark ? plotlyBase : plotlyBaseLight
 
@@ -18,10 +19,10 @@ export default function PlotlyChart({ data, layout = {}, style, onClick }: Props
     <Plot
       data={data}
       layout={{ ...(base as Partial<Plotly.Layout>), ...layout }}
-      config={{ responsive: true, displayModeBar: 'hover' }}
+      config={{ responsive, displayModeBar: 'hover' }}
       style={{ width: '100%', ...style }}
       onClick={onClick}
-      useResizeHandler
+      useResizeHandler={responsive}
     />
   )
 }
