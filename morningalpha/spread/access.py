@@ -183,11 +183,29 @@ def get_spread(universe, metric, top, out, batch_size, pause, no_market_cap, top
     from morningalpha.fundamentals import fetch_universe_fundamentals
     tickers = result["Ticker"].tolist()
     with console.status("[bold cyan]Fetching fundamental features..."):
-        fund_df = fetch_universe_fundamentals(tickers, batch_size=50, pause=2.0, refresh_stale=False)
+        fund_df = fetch_universe_fundamentals(tickers, batch_size=50, pause=2.0, ticker_pause=0.5, refresh_stale=False)
     if not fund_df.empty and "ticker" in fund_df.columns:
         fund_df = fund_df.drop(columns=["fetched_at"], errors="ignore")
         fund_df = fund_df.rename(columns={"ticker": "Ticker"})
         result = result.merge(fund_df, on="Ticker", how="left")
+
+        # Fill canonical spread columns from raw yfinance names (fund_df uses raw names)
+        _raw_to_canonical = {
+            "sector": "Sector", "industry": "Industry",
+            "trailingPE": "PE", "forwardPE": "ForwardPE",
+            "priceToBook": "PB", "priceToSalesTrailing12Months": "PS",
+            "pegRatio": "PEG", "trailingEps": "EPS",
+            "revenueGrowth": "RevenueGrowth", "earningsGrowth": "EarningsGrowth",
+            "returnOnEquity": "ROE", "returnOnAssets": "ROA",
+            "grossMargins": "GrossMargin", "operatingMargins": "OperatingMargin",
+            "profitMargins": "NetMargin", "debtToEquity": "DebtEquity",
+            "currentRatio": "CurrentRatio", "dividendYield": "DivYield",
+            "beta": "Beta", "shortPercentOfFloat": "ShortFloat",
+            "heldPercentInstitutions": "InstOwnership",
+        }
+        for src, dst in _raw_to_canonical.items():
+            if src in result.columns and dst in result.columns:
+                result[dst] = result[dst].fillna(result[src])
 
     # Save results
     with console.status("[bold cyan]Saving results..."):

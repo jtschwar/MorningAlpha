@@ -31,6 +31,10 @@ INFO_FIELDS = [
     "returnOnEquity", "debtToEquity", "revenueGrowth", "profitMargins",
     "freeCashflow", "currentRatio", "shortPercentOfFloat",
     "sector", "industry", "currentPrice",
+    # Additional fields for spread CSV canonical columns
+    "trailingPE", "forwardPE", "priceToBook", "priceToSalesTrailing12Months",
+    "pegRatio", "earningsGrowth", "returnOnAssets", "grossMargins",
+    "operatingMargins", "dividendYield", "beta", "heldPercentInstitutions",
 ]
 
 SECTOR_MAP = {
@@ -206,12 +210,22 @@ def fetch_universe_fundamentals(
     tickers: List[str],
     batch_size: int = 50,
     pause: float = 2.0,
+    ticker_pause: float = 0.5,
     refresh_stale: bool = False,
 ) -> pd.DataFrame:
-    """Fetch fundamentals for all tickers with batching and per-ticker JSON caching."""
+    """Fetch fundamentals for all tickers with batching and per-ticker JSON caching.
+
+    Args:
+        batch_size: Tickers per batch (pauses `pause` seconds between batches).
+        pause: Seconds to sleep between batches.
+        ticker_pause: Seconds to sleep between individual ticker fetches within a batch.
+    """
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     results = []
     to_fetch = []
+
+    # Fields that must be present in cache; missing any triggers a re-fetch
+    _required_fields = set(INFO_FIELDS)
 
     for ticker in tickers:
         cache_file = CACHE_DIR / f"{ticker}.json"
@@ -219,7 +233,9 @@ def fetch_universe_fundamentals(
             try:
                 data = json.loads(cache_file.read_text())
                 fetched_at = datetime.fromisoformat(data.get("fetched_at", "2000-01-01"))
-                if not refresh_stale or (datetime.now() - fetched_at) < STALE_THRESHOLD:
+                is_stale = refresh_stale and (datetime.now() - fetched_at) >= STALE_THRESHOLD
+                missing_fields = _required_fields - set(data.keys())
+                if not is_stale and not missing_fields:
                     results.append(data)
                     continue
             except Exception:
@@ -238,13 +254,15 @@ def fetch_universe_fundamentals(
             task = progress.add_task("Fetching fundamentals", total=len(to_fetch))
             batches = [to_fetch[i:i + batch_size] for i in range(0, len(to_fetch), batch_size)]
             for bi, batch in enumerate(batches):
-                for ticker in batch:
+                for ti, ticker in enumerate(batch):
                     data = fetch_ticker_fundamentals(ticker)
                     if data is not None:
                         cache_file = CACHE_DIR / f"{ticker}.json"
                         cache_file.write_text(json.dumps(data, default=str))
                         results.append(data)
                     progress.advance(task)
+                    if ticker_pause > 0 and ti < len(batch) - 1:
+                        time.sleep(ticker_pause)
                 if bi < len(batches) - 1:
                     time.sleep(pause)
 
@@ -390,11 +408,12 @@ def _validate_fundamentals(yf_data: Dict, edgar_data: Dict, ticker: str) -> List
 @click.option("--output", default="data/fundamentals/fundamentals.parquet", show_default=True)
 @click.option("--batch-size", "batch_size", default=50, show_default=True)
 @click.option("--pause", default=2.0, show_default=True, help="Seconds between batches.")
+@click.option("--ticker-pause", "ticker_pause", default=0.5, show_default=True, help="Seconds between individual ticker fetches.")
 @click.option("--refresh-stale", "refresh_stale", is_flag=True, default=False, help="Re-fetch tickers older than 7 days.")
 @click.option("--validate", is_flag=True, default=False, help="Cross-validate top N against SEC EDGAR.")
 @click.option("--top", default=50, show_default=True, help="Number of tickers to validate by market cap.")
 @click.option("--status", is_flag=True, default=False, help="Print cache summary and exit.")
-def fundamentals_cmd(tickers_from, output, batch_size, pause, refresh_stale, validate, top, status):
+def fundamentals_cmd(tickers_from, output, batch_size, pause, ticker_pause, refresh_stale, validate, top, status):
     """Fetch and cache fundamental data for the ML feature set.
 
     \b
@@ -434,7 +453,7 @@ def fundamentals_cmd(tickers_from, output, batch_size, pause, refresh_stale, val
     tickers = df_t[ticker_col].dropna().astype(str).str.strip().tolist()
     console.print(f"Fetching fundamentals for [bold]{len(tickers)}[/bold] tickers")
 
-    df = fetch_universe_fundamentals(tickers, batch_size=batch_size, pause=pause, refresh_stale=refresh_stale)
+    df = fetch_universe_fundamentals(tickers, batch_size=batch_size, pause=pause, ticker_pause=ticker_pause, refresh_stale=refresh_stale)
 
     if df.empty:
         console.print("[red]No data fetched.[/red]")
