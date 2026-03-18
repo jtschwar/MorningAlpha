@@ -264,67 +264,88 @@ def batched(iterable, n: int):
         yield batch
 
 
-def get_market_cap(ticker: str) -> Tuple[Optional[float], Optional[str]]:
+_FUNDAMENTAL_INFO_FIELDS: Dict[str, str] = {
+    'Sector':          'sector',
+    'Industry':        'industry',
+    'PE':              'trailingPE',
+    'ForwardPE':       'forwardPE',
+    'PB':              'priceToBook',
+    'PS':              'priceToSalesTrailing12Months',
+    'PEG':             'pegRatio',
+    'EPS':             'trailingEps',
+    'RevenueGrowth':   'revenueGrowth',
+    'EarningsGrowth':  'earningsGrowth',
+    'ROE':             'returnOnEquity',
+    'ROA':             'returnOnAssets',
+    'GrossMargin':     'grossMargins',
+    'OperatingMargin': 'operatingMargins',
+    'NetMargin':       'profitMargins',
+    'DebtEquity':      'debtToEquity',
+    'CurrentRatio':    'currentRatio',
+    'DivYield':        'dividendYield',
+    'Beta':            'beta',
+    'ShortFloat':      'shortPercentOfFloat',
+    'InstOwnership':   'heldPercentInstitutions',
+}
+
+
+def fetch_ticker_info(ticker: str) -> dict:
+    """Fetch market cap + all fundamental fields for a single ticker.
+
+    Returns a dict with keys: MarketCap, MarketCapCategory, Sector, Industry,
+    PE, ForwardPE, PB, PS, PEG, EPS, RevenueGrowth, EarningsGrowth, ROE, ROA,
+    GrossMargin, OperatingMargin, NetMargin, DebtEquity, CurrentRatio, DivYield,
+    Beta, ShortFloat, InstOwnership.  Missing fields are None.
     """
-    Fetch market cap for a ticker and categorize it.
-    
-    Args:
-        ticker: Stock ticker symbol
-    
-    Returns:
-        Tuple of (market_cap_value, market_cap_category)
-        market_cap_value: Market cap in dollars (float) or None if unavailable
-        market_cap_category: 'Large', 'Mid', 'Small', or None
-    """
+    result: dict = {col: None for col in _FUNDAMENTAL_INFO_FIELDS}
+    result['MarketCap'] = None
+    result['MarketCapCategory'] = None
+
     try:
-        stock = yf.Ticker(ticker)
-        info = stock.info
-        
-        # Market cap is typically in 'marketCap' field
-        market_cap = info.get('marketCap')
-        
-        if market_cap is None:
-            # Try alternative fields
-            market_cap = info.get('enterpriseValue')  # Fallback
-            if market_cap is None:
-                return None, None
-        
-        # Categorize market cap
-        # Large cap: > $10 billion
-        # Mid cap: $2 billion - $10 billion
-        # Small cap: < $2 billion
-        if market_cap >= 10_000_000_000:
-            category = 'Large'
-        elif market_cap >= 2_000_000_000:
-            category = 'Mid'
-        else:
-            category = 'Small'
-        
-        return float(market_cap), category
-        
-    except Exception as e:
-        # Silently fail - market cap is optional
-        return None, None
+        info = yf.Ticker(ticker).info
+
+        # Market cap + category
+        mc = info.get('marketCap') or info.get('enterpriseValue')
+        if mc is not None:
+            result['MarketCap'] = float(mc)
+            if mc >= 200_000_000_000:
+                result['MarketCapCategory'] = 'Mega'
+            elif mc >= 10_000_000_000:
+                result['MarketCapCategory'] = 'Large'
+            elif mc >= 2_000_000_000:
+                result['MarketCapCategory'] = 'Mid'
+            else:
+                result['MarketCapCategory'] = 'Small'
+
+        # All fundamental fields
+        for col, info_key in _FUNDAMENTAL_INFO_FIELDS.items():
+            raw = info.get(info_key)
+            if raw is None:
+                continue
+            # Sector / Industry stay as strings; everything else is float
+            if col in ('Sector', 'Industry'):
+                result[col] = str(raw).strip() or None
+            else:
+                try:
+                    result[col] = float(raw)
+                except (ValueError, TypeError):
+                    pass
+
+    except Exception:
+        pass
+
+    return result
 
 
-def fetch_market_caps_batch(tickers: List[str], pause: float = 0.1) -> dict:
-    """
-    Fetch market caps for a batch of tickers.
-    
-    Args:
-        tickers: List of ticker symbols
-        pause: Seconds to pause between requests
-    
-    Returns:
-        Dict mapping ticker -> (market_cap, category)
+def fetch_ticker_info_batch(tickers: List[str], pause: float = 0.1) -> dict:
+    """Fetch ticker info for a list of tickers.
+
+    Returns dict mapping ticker -> info dict (from fetch_ticker_info).
     """
     results = {}
-    
     for ticker in tickers:
-        market_cap, category = get_market_cap(ticker)
-        results[ticker] = (market_cap, category)
-        time.sleep(pause)  # Rate limiting
-    
+        results[ticker] = fetch_ticker_info(ticker)
+        time.sleep(pause)
     return results
 
 
@@ -610,30 +631,35 @@ def analyze_stocks(
     else:
         result = tmp.nlargest(top, "ReturnPct").sort_values("ReturnPct", ascending=False).reset_index(drop=True)
     
-    # NOW fetch market caps only for the top stocks (much faster!)
+    # Fetch market cap + fundamentals for the screened stocks
     if fetch_market_cap:
         if progress_callback:
-            progress_callback(0, 0, f"Fetching market cap for top {len(result)} stocks...")
-        
-        market_caps = {}
+            progress_callback(0, 0, f"Fetching fundamentals for {len(result)} stocks...")
+
+        ticker_info: dict = {}
         top_tickers = result["Ticker"].tolist()
-        market_cap_batch_size = 50
-        
-        for i in range(0, len(top_tickers), market_cap_batch_size):
-            batch = top_tickers[i:i + market_cap_batch_size]
-            batch_caps = fetch_market_caps_batch(batch, pause=0.05)  # Faster pause
-            market_caps.update(batch_caps)
-            
+        info_batch_size = 50
+
+        for i in range(0, len(top_tickers), info_batch_size):
+            batch = top_tickers[i:i + info_batch_size]
+            batch_info = fetch_ticker_info_batch(batch, pause=0.05)
+            ticker_info.update(batch_info)
+
             if progress_callback:
-                progress_callback(i + len(batch), len(top_tickers), f"Fetching market cap... ({i + len(batch)}/{len(top_tickers)})")
-        
-        # Add market cap data to results
-        result["MarketCap"] = result["Ticker"].map(lambda t: market_caps.get(t, (None, None))[0])
-        result["MarketCapCategory"] = result["Ticker"].map(lambda t: market_caps.get(t, (None, None))[1])
+                progress_callback(
+                    i + len(batch), len(top_tickers),
+                    f"Fetching fundamentals... ({i + len(batch)}/{len(top_tickers)})",
+                )
+
+        # Write all fundamental fields into result DataFrame
+        all_cols = ['MarketCap', 'MarketCapCategory'] + list(_FUNDAMENTAL_INFO_FIELDS.keys())
+        for col in all_cols:
+            result[col] = result["Ticker"].map(lambda t, c=col: ticker_info.get(t, {}).get(c))
     else:
-        # No market cap data
         result["MarketCap"] = None
         result["MarketCapCategory"] = None
+        for col in _FUNDAMENTAL_INFO_FIELDS:
+            result[col] = None
     
     # Rename the return column
     result = result.rename(columns={"ReturnPct": f"Return_{metric.upper()}_%"})

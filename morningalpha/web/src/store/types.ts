@@ -155,7 +155,6 @@ export interface AppState {
   dataSource: 'auto' | 'upload' | null
   filters: FilterState
   apiCache: Map<string, StockDetailData>
-  fundamentals: Record<string, FundamentalData> | null
   columnConfig: ColumnConfig
   backtestResults: BacktestResult | null
 }

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import type { DragEvent } from 'react'
 import { useStock } from '../../store/StockContext'
 import { parseCSV } from '../../lib/csvParser'
-import { parseFundamentalsCSV } from '../../lib/fundamentalsParser'
 import type { WindowPeriod } from '../../store/types'
 import styles from './CsvUpload.module.css'
 
@@ -40,14 +39,6 @@ export default function CsvUpload() {
         for (const p of PERIOD_PATHS.slice(1)) {
           loadPeriod(p).catch(() => {}) // silent — other windows may not exist
         }
-        // Fetch fundamentals silently
-        fetch('./data/latest/fundamentals.csv')
-          .then(r => r.ok ? r.text() : Promise.reject())
-          .then(text => {
-            const data = parseFundamentalsCSV(text)
-            dispatch({ type: 'SET_FUNDAMENTALS', data })
-          })
-          .catch(() => {}) // silent — fundamentals are optional
       })
       .catch(() => setAutoStatus('failed'))
   }, [dispatch])

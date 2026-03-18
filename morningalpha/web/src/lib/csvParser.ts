@@ -62,6 +62,31 @@ export function parseCSV(csv: string): ParseResult {
   const relativeVolumeIdx = col('RelativeVolume')
   const volumeROCIdx = col('VolumeROC')
 
+  // Fundamental columns (now embedded in period CSVs)
+  const sectorIdx = col('Sector')
+  const industryIdx = col('Industry')
+  const peIdx = col('PE')
+  const forwardPeIdx = col('ForwardPE')
+  const pbIdx = col('PB')
+  const psIdx = col('PS')
+  const pegIdx = col('PEG')
+  const epsIdx = col('EPS')
+  const revenueGrowthIdx = col('RevenueGrowth')
+  const earningsGrowthIdx = col('EarningsGrowth')
+  const roeIdx = col('ROE')
+  const roaIdx = col('ROA')
+  const grossMarginIdx = col('GrossMargin')
+  const operatingMarginIdx = col('OperatingMargin')
+  const netMarginIdx = col('NetMargin')
+  const debtEquityIdx = col('DebtEquity')
+  const currentRatioIdx = col('CurrentRatio')
+  const divYieldIdx = col('DivYield')
+  const betaIdx = col('Beta')
+  const shortFloatIdx = col('ShortFloat')
+  const instOwnershipIdx = col('InstOwnership')
+
+  const hasFundamentals = sectorIdx >= 0
+
   const num = (values: string[], idx: number): number | null => {
     if (idx < 0 || !values[idx]) return null
     const n = parseFloat(values[idx])
@@ -120,7 +145,30 @@ export function parseCSV(csv: string): ParseResult {
       OBV: num(values, obvIdx),
       RelativeVolume: num(values, relativeVolumeIdx),
       VolumeROC: num(values, volumeROCIdx),
-      fundamentals: null,
+      fundamentals: hasFundamentals ? {
+        sector: str(values, sectorIdx) || '',
+        industry: str(values, industryIdx) || '',
+        marketCap: num(values, marketCapIdx),
+        pe: num(values, peIdx),
+        forwardPe: num(values, forwardPeIdx),
+        pb: num(values, pbIdx),
+        ps: num(values, psIdx),
+        peg: num(values, pegIdx),
+        eps: num(values, epsIdx),
+        revenueGrowth: num(values, revenueGrowthIdx),
+        earningsGrowth: num(values, earningsGrowthIdx),
+        roe: num(values, roeIdx),
+        roa: num(values, roaIdx),
+        grossMargin: num(values, grossMarginIdx),
+        operatingMargin: num(values, operatingMarginIdx),
+        netMargin: num(values, netMarginIdx),
+        debtEquity: num(values, debtEquityIdx),
+        currentRatio: num(values, currentRatioIdx),
+        divYield: num(values, divYieldIdx),
+        beta: num(values, betaIdx),
+        shortFloat: num(values, shortFloatIdx),
+        instOwnership: num(values, instOwnershipIdx),
+      } : null,
       // Will be filled by computeScores
       investmentScore: null,
       riskRewardRatio: null,

@@ -1,4 +1,4 @@
-import type { AppState, FilterState, Stock, StockDetailData, WindowPeriod, Metadata, FundamentalData, ColumnConfig, BacktestResult } from './types'
+import type { AppState, FilterState, Stock, StockDetailData, WindowPeriod, Metadata, ColumnConfig, BacktestResult } from './types'
 import { DEFAULT_FILTERS, DEFAULT_VISIBLE_COLUMNS } from './types'
 
 // ── localStorage helpers ───────────────────────────────────────────────────
@@ -26,7 +26,6 @@ export type Action =
   | { type: 'SET_FILTERS'; filters: Partial<FilterState> }
   | { type: 'RESET_FILTERS' }
   | { type: 'CACHE_API_RESPONSE'; key: string; data: StockDetailData }
-  | { type: 'SET_FUNDAMENTALS'; data: Record<string, FundamentalData> }
   | { type: 'SET_COLUMN_CONFIG'; columns: string[] }
   | { type: 'RESET_COLUMN_CONFIG' }
   | { type: 'SET_BACKTEST_RESULTS'; data: BacktestResult }
@@ -43,7 +42,6 @@ export const initialState: AppState = {
   dataSource: null,
   filters: DEFAULT_FILTERS,
   apiCache: new Map(),
-  fundamentals: null,
   columnConfig: loadColumnConfig(),
   backtestResults: null,
 }
@@ -85,9 +83,6 @@ export function stockReducer(state: AppState, action: Action): AppState {
       newCache.set(action.key, action.data)
       return { ...state, apiCache: newCache }
     }
-
-    case 'SET_FUNDAMENTALS':
-      return { ...state, fundamentals: action.data }
 
     case 'SET_COLUMN_CONFIG': {
       try { localStorage.setItem(LS_COLUMNS_KEY, JSON.stringify(action.columns)) } catch {}

@@ -45,8 +45,8 @@ export default function StockDetail() {
   const { data: proxyFundamentals } = useFundamentals(ticker)
   const meta = state.metadata[state.activePeriod]
 
-  // CSV-based FundamentalData (our richer type) — only pass this to DenseIndicatorGrid
-  const csvFundamentals = state.fundamentals?.[ticker ?? ''] ?? null
+  // Fundamentals are now embedded in the stock object from the period CSV
+  const csvFundamentals = stock?.fundamentals ?? null
 
   const signal = useMemo(
     () => computeSignal(stock, proxyFundamentals, data),
