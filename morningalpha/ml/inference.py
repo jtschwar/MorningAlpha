@@ -63,8 +63,12 @@ _SPREAD_TO_ML: dict = {
     "PriceToSMA20Pct":    "price_to_sma20",
     "PriceToSMA50Pct":    "price_to_sma50",
     "PriceToSMA200Pct":   "price_to_sma200",
-    "PriceVs52wkHighPct": "price_vs_52wk_high",
-    "PctDaysPositive21d":  "pct_days_positive_21d",
+    "PriceVs52wkHighPct":   "price_vs_52wk_high",
+    "PctDaysPositive21d":   "pct_days_positive_21d",
+    # Long-horizon momentum (academic factors)
+    "Momentum12_1":         "momentum_12_1",
+    "MomentumIntermediate": "momentum_intermediate",
+    "MomentumAccelLong":    "momentum_accel_long",
     # Fundamentals — raw yfinance column names that end up in the CSV
     "returnOnEquity":          "roe",
     "debtToEquity":            "debt_to_equity",
@@ -240,6 +244,16 @@ def _build_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
         feat["book_to_market_vs_sector"] = (
             feat["book_to_market"] - sector_grp["book_to_market"].transform("median")
         ).fillna(0.0)
+
+    # Long-horizon momentum cross-sectional features
+    if "momentum_12_1" in feat.columns:
+        feat["sector_momentum_rank"] = (
+            sector_grp["momentum_12_1"].transform(lambda x: x.rank(pct=True))
+        ).fillna(0.5)
+    if "earnings_yield" in feat.columns and "momentum_12_1" in feat.columns:
+        feat["value_x_momentum"] = feat["earnings_yield"] * feat["momentum_12_1"]
+    if "roe" in feat.columns and "momentum_12_1" in feat.columns:
+        feat["quality_x_momentum"] = feat["roe"] * feat["momentum_12_1"]
 
     # Ensure every expected feature column exists (fill missing with NaN → 0 after preprocessing)
     for col in FEATURE_COLUMNS:

@@ -94,6 +94,9 @@ def compute_all_indicators(ohlcv_df: pd.DataFrame) -> dict:
             "RelativeVolume", "VolumeROC",
             "PriceVs52wkHighPct",
             "PctDaysPositive21d",
+            "Momentum12_1",
+            "MomentumIntermediate",
+            "MomentumAccelLong",
         ]
         return {k: np.nan for k in nan_keys}
 
@@ -163,6 +166,33 @@ def compute_all_indicators(ohlcv_df: pd.DataFrame) -> dict:
         result["PctDaysPositive21d"] = float((recent > 0).mean()) if len(recent) > 0 else np.nan
     except Exception:
         result["PctDaysPositive21d"] = np.nan
+
+    # Long-horizon momentum (academic factors — require 252 days of history)
+    # Momentum12_1: Jegadeesh-Titman — return from month -12 to -1 (skip last month)
+    # MomentumIntermediate: Novy-Marx — return from month -12 to -7
+    # MomentumAccelLong: 3-month ROC minus Momentum12_1 (acceleration vs trend)
+    try:
+        if n >= 252:
+            p_252 = float(close.iloc[-252])   # ~12 months ago
+            p_21  = float(close.iloc[-21])    # ~1 month ago (skip)
+            p_147 = float(close.iloc[-147])   # ~7 months ago
+            result["Momentum12_1"] = (p_21 / p_252 - 1) * 100 if p_252 > 0 and p_21 > 0 else np.nan
+            result["MomentumIntermediate"] = (p_147 / p_252 - 1) * 100 if p_252 > 0 and p_147 > 0 else np.nan
+            if n >= 63:
+                p_63 = float(close.iloc[-63])
+                roc_63 = (last_close / p_63 - 1) * 100 if p_63 > 0 else np.nan
+                mom = result.get("Momentum12_1", np.nan)
+                result["MomentumAccelLong"] = (roc_63 - mom) if (not pd.isna(roc_63) and not pd.isna(mom)) else np.nan
+            else:
+                result["MomentumAccelLong"] = np.nan
+        else:
+            result["Momentum12_1"] = np.nan
+            result["MomentumIntermediate"] = np.nan
+            result["MomentumAccelLong"] = np.nan
+    except Exception:
+        result["Momentum12_1"] = np.nan
+        result["MomentumIntermediate"] = np.nan
+        result["MomentumAccelLong"] = np.nan
 
     # EMA7
     try:
