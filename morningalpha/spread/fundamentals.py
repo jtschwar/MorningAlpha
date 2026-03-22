@@ -34,11 +34,21 @@ FUNDAMENTAL_FIELDS = {
 }
 
 
+_RATE_LIMIT_PHRASES = ("too many requests", "rate limited", "429")
+_RETRY_DELAYS = [10, 30, 90]  # seconds between retries (3 attempts)
+
+
+def _is_rate_limit(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(p in msg for p in _RATE_LIMIT_PHRASES)
+
+
 def fetch_fundamentals(
     tickers: List[str],
     out_path: str,
     batch_size: int = 50,
     pause: float = 1.0,
+    request_delay: float = 0.1,
 ) -> pd.DataFrame:
     """
     Fetch fundamental metrics for a list of tickers and save to CSV.
@@ -48,6 +58,7 @@ def fetch_fundamentals(
         out_path: File path for the output CSV.
         batch_size: Number of tickers to process before pausing.
         pause: Seconds to sleep between batches.
+        request_delay: Seconds to sleep between individual requests.
 
     Returns:
         DataFrame with one row per ticker and columns matching FUNDAMENTAL_FIELDS.
@@ -55,24 +66,40 @@ def fetch_fundamentals(
     rows = []
 
     for i, t in enumerate(tickers):
-        try:
-            info = yf.Ticker(t).info
-            row = {"Ticker": t}
-            for col_name, (info_key, cast) in FUNDAMENTAL_FIELDS.items():
-                raw = info.get(info_key)
-                if raw is None:
-                    row[col_name] = np.nan if cast is float else None
-                else:
-                    try:
-                        row[col_name] = cast(raw)
-                    except (ValueError, TypeError):
-                        row[col_name] = np.nan if cast is float else None
-            rows.append(row)
-        except Exception as e:
-            print(f"  [WARN] Failed to fetch {t}: {e}")
+        info = None
+        for attempt, delay in enumerate([0] + _RETRY_DELAYS):
+            if delay:
+                print(f"  [RATE LIMIT] Waiting {delay}s before retrying {t} (attempt {attempt + 1})...")
+                time.sleep(delay)
+            try:
+                info = yf.Ticker(t).info
+                break
+            except Exception as e:
+                if _is_rate_limit(e) and attempt < len(_RETRY_DELAYS):
+                    continue
+                print(f"  [WARN] Failed to fetch {t}: {e}")
+                break
+
+        if info is None:
             continue
 
-        # Pause between batches
+        row = {"Ticker": t}
+        for col_name, (info_key, cast) in FUNDAMENTAL_FIELDS.items():
+            raw = info.get(info_key)
+            if raw is None:
+                row[col_name] = np.nan if cast is float else None
+            else:
+                try:
+                    row[col_name] = cast(raw)
+                except (ValueError, TypeError):
+                    row[col_name] = np.nan if cast is float else None
+        rows.append(row)
+
+        # Small delay between requests to reduce rate limiting
+        if request_delay > 0:
+            time.sleep(request_delay)
+
+        # Longer pause between batches
         if (i + 1) % batch_size == 0:
             time.sleep(pause)
 
@@ -90,9 +117,11 @@ def fetch_fundamentals(
               help='Number of tickers per batch before pausing')
 @click.option('--pause', default=1.0, show_default=True,
               help='Seconds to sleep between batches')
+@click.option('--request-delay', default=0.1, show_default=True,
+              help='Seconds to sleep between individual requests')
 @click.option('--universe', multiple=True, default=['nasdaq', 'nyse'], show_default=True,
               type=click.Choice(['nasdaq', 'nyse', 'sp500'], case_sensitive=False))
-def fundamentals(out, batch_size, pause, universe):
+def fundamentals(out, batch_size, pause, request_delay, universe):
     """Fetch fundamental metrics for the stock universe."""
     from morningalpha.spread.search import make_universe
 
@@ -109,6 +138,6 @@ def fundamentals(out, batch_size, pause, universe):
     tickers = uni["Ticker"].tolist()
     print(f"Fetching fundamentals for {len(tickers)} tickers...")
 
-    df = fetch_fundamentals(tickers, out_path=out, batch_size=batch_size, pause=pause)
+    df = fetch_fundamentals(tickers, out_path=out, batch_size=batch_size, pause=pause, request_delay=request_delay)
 
     print(f"Saved {len(df)} rows to {out}")
