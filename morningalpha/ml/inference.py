@@ -63,6 +63,7 @@ _SPREAD_TO_ML: dict = {
     "PriceToSMA20Pct":    "price_to_sma20",
     "PriceToSMA50Pct":    "price_to_sma50",
     "PriceToSMA200Pct":   "price_to_sma200",
+    "PriceVs52wkHighPct": "price_vs_52wk_high",
     # Fundamentals — raw yfinance column names that end up in the CSV
     "returnOnEquity":          "roe",
     "debtToEquity":            "debt_to_equity",
@@ -217,6 +218,10 @@ def _build_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
     spy = _compute_spy_features()
     for col in MARKET_CONTEXT_COLUMNS:
         feat[col] = spy.get(col, 0.0)
+
+    # Composite: earnings_yield × ROE — penalises cheap-but-deteriorating stocks
+    if "earnings_yield" in feat.columns and "roe" in feat.columns:
+        feat["earnings_yield_quality"] = feat["earnings_yield"] * feat["roe"]
 
     # Cross-sectional derived features
     spy_regime = spy.get("spy_momentum_regime", 0.0)

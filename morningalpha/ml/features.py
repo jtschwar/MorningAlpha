@@ -47,6 +47,7 @@ TECHNICAL_FEATURE_COLUMNS: List[str] = [
     "price_to_sma20",
     "price_to_sma50",
     "price_to_sma200",
+    "price_vs_52wk_high",   # % below 52-week high; 0 = at high, negative = below
     # Tier 3: cross-sectional alpha features
     "return_vs_sector",      # return_pct minus sector median — separates alpha from beta
     "return_pct_x_regime",   # return_pct × spy_momentum_regime — regime-conditional momentum.
@@ -88,6 +89,7 @@ FUNDAMENTAL_FEATURE_NAMES: List[str] = [
     "short_pct_float",
     "asset_growth",
     "accruals_ratio",
+    "earnings_yield_quality",  # earnings_yield × ROE — value + quality composite
     "sector",
     "has_fundamentals",
 ]

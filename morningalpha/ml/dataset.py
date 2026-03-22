@@ -2,9 +2,14 @@
 import json
 import logging
 import time
+import warnings
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
+
+# Suppress noisy-but-harmless numpy/pandas warnings from rolling windows on short series
+warnings.filterwarnings("ignore", message="Mean of empty slice", category=RuntimeWarning)
+warnings.filterwarnings("ignore", message="Degrees of freedom <= 0", category=RuntimeWarning)
 
 import numpy as np
 import pandas as pd
@@ -117,11 +122,11 @@ def _load_tickers_from_csv(path: str) -> Tuple[List[str], Dict[str, dict]]:
 
 
 def _load_ticker_universe() -> Tuple[List[str], Dict[str, dict]]:
-    from morningalpha.spread.search import read_nasdaq, read_sp500
-    console.print("[bold]Fetching ticker universe from S&P 500 + NASDAQ...[/bold]")
-    sp = read_sp500()
+    from morningalpha.spread.search import read_nasdaq, read_nyse
+    console.print("[bold]Fetching ticker universe from NASDAQ + NYSE...[/bold]")
     nq = read_nasdaq()
-    combined = pd.concat([sp, nq]).drop_duplicates(subset=["Ticker"])
+    ny = read_nyse()
+    combined = pd.concat([nq, ny]).drop_duplicates(subset=["Ticker"])
     tickers = combined["Ticker"].tolist()
     meta = {
         row["Ticker"]: {"market_cap": np.nan, "market_cap_cat": 0, "exchange": _encode_exchange(row["Exchange"])}
@@ -404,7 +409,7 @@ def _compute_market_features_lookup(
     if spy_ohlcv is None or spy_ohlcv.empty:
         return {d: _NULL_MARKET_FEATURES.copy() for d in snapshot_dates}
 
-    prices = spy_ohlcv["Close"].dropna()
+    prices = spy_ohlcv["Close"].squeeze().dropna()
     lookup: Dict[pd.Timestamp, dict] = {}
 
     for t in snapshot_dates:
@@ -470,6 +475,8 @@ def _rank_norm_series(x: pd.Series) -> pd.Series:
 def _safe_float(v) -> float:
     """Return float or nan."""
     try:
+        if isinstance(v, pd.Series):
+            v = v.iloc[0]
         f = float(v)
         return f if not np.isnan(f) else np.nan
     except (ValueError, TypeError):
@@ -607,6 +614,13 @@ def _compute_extended_technicals(subset: pd.DataFrame) -> dict:
     result["price_to_sma50"] = _sma_ratio(50)
     result["price_to_sma200"] = _sma_ratio(200)
 
+    # 52-week high proximity — 0 = at high, negative = below
+    try:
+        high_52wk = float(prices.iloc[-252:].max()) if n >= 252 else float(prices.max())
+        result["price_vs_52wk_high"] = ((price_t - high_52wk) / high_52wk) if high_52wk > 0 else np.nan
+    except Exception:
+        result["price_vs_52wk_high"] = np.nan
+
     return result
 
 
@@ -670,7 +684,8 @@ def _compute_features_at_date(
     except Exception:
         return None
 
-    return_pct = ((prices.iloc[-1] / prices.iloc[0]) - 1) * 100
+    p0 = prices.iloc[0]
+    return_pct = ((prices.iloc[-1] / p0) - 1) * 100 if p0 != 0 else np.nan
 
     # Point-in-time market cap proxy: scale current market cap by price ratio.
     # current_mc comes from the CSV (snapshot date), current_price is the
@@ -734,6 +749,14 @@ def _compute_features_at_date(
         )
     else:
         fund_feats = _null_fundamental_features()
+
+    # Composite: value × quality — penalises cheap-but-deteriorating stocks
+    ey = fund_feats.get("earnings_yield", np.nan)
+    roe = fund_feats.get("roe", np.nan)
+    fund_feats["earnings_yield_quality"] = float(ey * roe) if (
+        ey is not None and roe is not None
+        and not np.isnan(float(ey)) and not np.isnan(float(roe))
+    ) else np.nan
 
     return {**technical, **fund_feats}
 
@@ -859,7 +882,7 @@ def _apply_preprocessing(df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
     show_default=True,
     help="Output parquet path.",
 )
-@click.option("--tickers-from", "tickers_from", default=None, help="CSV with tickers. Omit to use full NASDAQ+S&P500 universe (reduces survivorship bias).")
+@click.option("--tickers-from", "tickers_from", default=None, help="CSV with tickers. Omit to use full NASDAQ+NYSE universe (reduces survivorship bias).")
 @click.option("--horizons", default="5,10,21", show_default=True, help="Comma-separated forward return horizons (trading days).")
 @click.option("--no-overlap/--overlap", "no_overlap", default=True, show_default=True, help="Non-overlapping snapshot windows.")
 @click.option("--refresh-only", "refresh_only", is_flag=True, default=False, help="Update raw OHLCV cache only; skip dataset build.")

@@ -92,6 +92,7 @@ def compute_all_indicators(ohlcv_df: pd.DataFrame) -> dict:
             "AnnualizedVol",
             "OBV",
             "RelativeVolume", "VolumeROC",
+            "PriceVs52wkHighPct",
         ]
         return {k: np.nan for k in nan_keys}
 
@@ -146,6 +147,13 @@ def compute_all_indicators(ohlcv_df: pd.DataFrame) -> dict:
         result["PriceToSMA200Pct"] = (last_close - sma200) / sma200 * 100 if (not pd.isna(sma200) and sma200 != 0) else np.nan
     except Exception:
         result["PriceToSMA200Pct"] = np.nan
+
+    # PriceVs52wkHighPct — % below 52-week high (0 = at high, negative = below)
+    try:
+        high_52wk = close.iloc[-252:].max() if n >= 252 else close.max()
+        result["PriceVs52wkHighPct"] = (last_close - high_52wk) / high_52wk * 100 if high_52wk > 0 else np.nan
+    except Exception:
+        result["PriceVs52wkHighPct"] = np.nan
 
     # EMA7
     try:

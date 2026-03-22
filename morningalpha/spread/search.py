@@ -381,10 +381,10 @@ def fetch_returns_with_metrics(
     # Market caps will be fetched AFTER we have results (only for top stocks)
     market_caps = {}
     
-    # For 3-month filter, we need at least 3 months of data to check trading history
-    # So extend start date back 3 months if the requested period is shorter
-    min_start_date = start - pd.Timedelta(days=90)
-    actual_start = min(start, min_start_date)
+    # Extend lookback to 300 days so SMA200 (needs ~200 trading days) and other
+    # long-window indicators are computable. Period return/metrics are still
+    # calculated on [start, end] — the extra history is only used for indicators.
+    actual_start = start - pd.Timedelta(days=300)
     
     for i, batch in enumerate(batches):
         data = yf.download(

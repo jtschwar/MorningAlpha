@@ -1,5 +1,5 @@
 {
-  "model_name": "lgbm_v4",
+  "model_name": "lgbm_v1",
   "model_type": "lgbm",
   "feature_columns": [
     "return_pct",
@@ -63,22 +63,22 @@
   ],
   "target": "forward_10d_rank",
   "best_params": {
-    "num_leaves": 26,
-    "max_depth": 3,
-    "learning_rate": 0.033327054644497756,
-    "feature_fraction": 0.6664436291986952,
-    "bagging_fraction": 0.61547416167964,
-    "min_child_samples": 111,
-    "lambda_l1": 0.049103805049148755,
-    "lambda_l2": 1.9515869838936317
+    "num_leaves": 8,
+    "max_depth": 6,
+    "learning_rate": 0.04852625920711308,
+    "feature_fraction": 0.5274668704842372,
+    "bagging_fraction": 0.5520098414987222,
+    "min_child_samples": 195,
+    "lambda_l1": 0.30535131717652264,
+    "lambda_l2": 13.888839620316478
   },
   "results": {
-    "train_ic": 0.1775499891874394,
-    "val_ic": 0.1266766409504707,
-    "test_ic": 0.13031994355859194,
-    "train_hit": 0.5634595074464666,
-    "val_hit": 0.5489605302802049,
-    "test_hit": 0.5550945099498745
+    "train_ic": 0.12345524727413358,
+    "val_ic": 0.0650654834372679,
+    "test_ic": 0.049496615887459086,
+    "train_hit": 0.5412421641658894,
+    "val_hit": 0.5233796981355431,
+    "test_hit": 0.5184429514551787
   },
-  "persistence_ic": 0.12095802830204681
+  "persistence_ic": -0.010142548245910037
 }

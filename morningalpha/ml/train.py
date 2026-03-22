@@ -17,7 +17,9 @@ from morningalpha.ml.features import FEATURE_COLUMNS, FLOAT_FEATURES
 logger = logging.getLogger(__name__)
 console = Console()
 
-MODEL_DIR = Path.home() / ".morningalpha" / "models"
+_REPO_MODELS = Path(__file__).parents[2] / "models"
+_HOME_MODELS = Path.home() / ".morningalpha" / "models"
+MODEL_DIR = _REPO_MODELS if _REPO_MODELS.exists() else _HOME_MODELS
 
 # ---------------------------------------------------------------------------
 # Metrics
@@ -342,6 +344,34 @@ def generate_plots(model, X_tr, y_tr, X_va, y_va, X_te, y_te, feat_cols, plot_di
         console.print(f"  [yellow]IC by fold plot skipped: {e}[/yellow]")
 
 
+def _upsert_model_config(model_dir: Path, name: str, model_type: str, test_ic: float | None) -> None:
+    """Add or update the model entry in config.json. Does not change the champion."""
+    config_path = model_dir / "config.json"
+    if config_path.exists():
+        with open(config_path) as f:
+            config = json.load(f)
+    else:
+        config = {"champion": name, "models": []}
+
+    ic_str = f"{test_ic:.3f}" if test_ic is not None else "n/a"
+    entry = {
+        "id": name,
+        "type": model_type,
+        "description": f"{model_type.upper()} — test IC {ic_str}",
+        "status": "candidate",
+    }
+
+    existing_ids = [m["id"] for m in config["models"]]
+    if name in existing_ids:
+        config["models"] = [entry if m["id"] == name else m for m in config["models"]]
+    else:
+        config["models"].append(entry)
+
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=2)
+    console.print(f"Config updated → {config_path}")
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -436,6 +466,9 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
         with open(feat_config_path, "w") as f:
             json.dump(feat_config, f, indent=2, default=str)
         console.print(f"Feature config saved → {feat_config_path}")
+
+        # Upsert model into config.json
+        _upsert_model_config(MODEL_DIR, name, model_type, lgbm_results.get("test_ic"))
 
         # Plots
         if not no_plots:
