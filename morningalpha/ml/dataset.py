@@ -455,6 +455,37 @@ def _compute_market_features_lookup(
     return lookup
 
 
+def _compute_spy_forward_return_lookup(
+    spy_ohlcv: Optional[pd.DataFrame],
+    dates: List[pd.Timestamp],
+    horizons: List[int],
+) -> Dict[pd.Timestamp, dict]:
+    """Compute SPY forward returns at each snapshot date for market-excess targets."""
+    if spy_ohlcv is None or spy_ohlcv.empty:
+        return {}
+    prices = spy_ohlcv["Close"].squeeze().dropna()
+    price_array = prices.values
+    date_index = prices.index
+    result: Dict[pd.Timestamp, dict] = {}
+    for d in dates:
+        t = pd.Timestamp(d)
+        pos = date_index.searchsorted(t, side="right") - 1
+        if pos < 0:
+            continue
+        price_t = float(price_array[pos])
+        if price_t <= 0 or np.isnan(price_t):
+            continue
+        entry: dict = {}
+        for h in horizons:
+            if pos + h < len(price_array):
+                price_h = float(price_array[pos + h])
+                entry[f"forward_{h}d"] = (price_h / price_t) - 1
+            else:
+                entry[f"forward_{h}d"] = np.nan
+        result[t] = entry
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Label rank normalization
 # ---------------------------------------------------------------------------
@@ -620,6 +651,36 @@ def _compute_extended_technicals(subset: pd.DataFrame) -> dict:
         result["price_vs_52wk_high"] = ((price_t - high_52wk) / high_52wk) if high_52wk > 0 else np.nan
     except Exception:
         result["price_vs_52wk_high"] = np.nan
+
+    # % of last 21 trading days that were positive — momentum quality
+    try:
+        daily_rets = prices.pct_change().dropna()
+        recent = daily_rets.iloc[-21:] if len(daily_rets) >= 21 else daily_rets
+        result["pct_days_positive_21d"] = float((recent > 0).mean()) if len(recent) > 0 else np.nan
+    except Exception:
+        result["pct_days_positive_21d"] = np.nan
+
+    # --- Long-horizon momentum (academic factors) ---
+    # momentum_12_1: Jegadeesh-Titman — return from month -12 to -1 (skip last month)
+    # momentum_intermediate: Novy-Marx — return from month -12 to -7 (most predictive window)
+    # momentum_accel_long: 3-month ROC minus momentum_12_1 (acceleration vs trend)
+    try:
+        if n >= 252:
+            price_252 = float(prices.iloc[-252])  # ~12 months ago
+            price_21 = float(prices.iloc[-21])    # ~1 month ago (skip month)
+            price_147 = float(prices.iloc[-147])  # ~7 months ago
+            if price_252 > 0 and price_21 > 0:
+                result["momentum_12_1"] = (price_21 / price_252) - 1
+            if price_252 > 0 and price_147 > 0:
+                result["momentum_intermediate"] = (price_147 / price_252) - 1
+            if n >= 63 and price_252 > 0 and price_21 > 0:
+                price_63 = float(prices.iloc[-63])
+                roc_63 = (price_t / price_63 - 1) if price_63 > 0 else np.nan
+                mom_12_1 = result.get("momentum_12_1", np.nan)
+                if not np.isnan(roc_63) and not np.isnan(mom_12_1):
+                    result["momentum_accel_long"] = roc_63 - mom_12_1
+    except Exception:
+        pass
 
     return result
 
@@ -1044,15 +1105,28 @@ def dataset(lookback, output, tickers_from, horizons, no_overlap, refresh_only, 
         f"SPY coverage: [bold]{sum(1 for v in market_lookup.values() if not np.isnan(v['spy_return_10d']))}[/bold]/{len(all_dates)} dates."
     )
 
-    # --- Compute sector-relative return (alpha vs. sector beta) ---
-    # Use raw return_pct before rank normalization; stocks with unknown sector get NaN → filled to 0.
-    df["return_vs_sector"] = np.nan
-    if "sector" in df.columns and "return_pct" in df.columns:
+    # --- Compute sector-relative features (cross-sectional, pre-rank-normalization) ---
+    df["sector_return_rank"] = np.nan
+    df["earnings_yield_vs_sector"] = np.nan
+    df["book_to_market_vs_sector"] = np.nan
+    if "sector" in df.columns:
         known_mask = df["sector"].notna() & (df["sector"].astype(float) >= 0)
-        if known_mask.any():
-            df.loc[known_mask, "return_vs_sector"] = (
+        if known_mask.any() and "return_pct" in df.columns:
+            df.loc[known_mask, "sector_return_rank"] = (
                 df.loc[known_mask]
                 .groupby(["date", "sector"])["return_pct"]
+                .transform(lambda x: x.rank(pct=True))
+            )
+        if known_mask.any() and "earnings_yield" in df.columns:
+            df.loc[known_mask, "earnings_yield_vs_sector"] = (
+                df.loc[known_mask]
+                .groupby(["date", "sector"])["earnings_yield"]
+                .transform(lambda x: x - x.median())
+            )
+        if known_mask.any() and "book_to_market" in df.columns:
+            df.loc[known_mask, "book_to_market_vs_sector"] = (
+                df.loc[known_mask]
+                .groupby(["date", "sector"])["book_to_market"]
                 .transform(lambda x: x - x.median())
             )
 
@@ -1066,12 +1140,75 @@ def dataset(lookback, output, tickers_from, horizons, no_overlap, refresh_only, 
     else:
         df["return_pct_x_regime"] = np.nan
 
+    # --- Sector momentum rank (within-sector percentile rank of momentum_12_1) ---
+    df["sector_momentum_rank"] = np.nan
+    if "sector" in df.columns and "momentum_12_1" in df.columns:
+        known_mask = (
+            df["sector"].notna()
+            & (df["sector"].astype(float) >= 0)
+            & df["momentum_12_1"].notna()
+        )
+        if known_mask.any():
+            df.loc[known_mask, "sector_momentum_rank"] = (
+                df.loc[known_mask]
+                .groupby(["date", "sector"])["momentum_12_1"]
+                .transform(lambda x: x.rank(pct=True))
+            )
+
+    # --- Value × momentum and quality × momentum interaction features ---
+    # Computed on raw values; rank-normalized by _apply_preprocessing like all float features.
+    df["value_x_momentum"] = np.nan
+    df["quality_x_momentum"] = np.nan
+    if "earnings_yield" in df.columns and "momentum_12_1" in df.columns:
+        both = df["earnings_yield"].notna() & df["momentum_12_1"].notna()
+        df.loc[both, "value_x_momentum"] = (
+            df.loc[both, "earnings_yield"] * df.loc[both, "momentum_12_1"]
+        )
+    if "roe" in df.columns and "momentum_12_1" in df.columns:
+        both = df["roe"].notna() & df["momentum_12_1"].notna()
+        df.loc[both, "quality_x_momentum"] = (
+            df.loc[both, "roe"] * df.loc[both, "momentum_12_1"]
+        )
+
     # --- Rank-normalize labels cross-sectionally per date ---
     # forward_{h}d_rank is the primary training target; raw forward_{h}d is kept for evaluation.
     for h in horizons_list:
         col = f"forward_{h}d"
         if col in df.columns:
             df[f"{col}_rank"] = df.groupby("date")[col].transform(_rank_norm_series)
+
+    # --- Market-excess and sector-relative return targets ---
+    spy_fwd_lookup = _compute_spy_forward_return_lookup(spy_ohlcv, all_dates, horizons_list)
+    for h in horizons_list:
+        raw_col = f"forward_{h}d"
+        if raw_col not in df.columns:
+            continue
+        # Market-excess: stock return minus SPY return over same window, then rank within date
+        if spy_fwd_lookup:
+            spy_fwd = df["date"].map(
+                lambda d, _h=h: spy_fwd_lookup.get(d, {}).get(f"forward_{_h}d", np.nan)
+            )
+            df["_tmp_excess"] = df[raw_col] - spy_fwd
+            df[f"forward_{h}d_market_excess_rank"] = (
+                df.groupby("date")["_tmp_excess"].transform(_rank_norm_series)
+            )
+            df.drop(columns=["_tmp_excess"], inplace=True)
+        # Sector-relative: stock return minus sector median return, then rank within date
+        if "sector" in df.columns:
+            known_mask = df["sector"].notna() & (df["sector"].astype(float) >= 0)
+            sector_rel = df[raw_col].copy()
+            if known_mask.any():
+                sector_medians = (
+                    df.loc[known_mask]
+                    .groupby(["date", "sector"])[raw_col]
+                    .transform("median")
+                )
+                sector_rel.loc[known_mask] = df.loc[known_mask, raw_col] - sector_medians
+            df["_tmp_sector_rel"] = sector_rel
+            df[f"forward_{h}d_sector_relative_rank"] = (
+                df.groupby("date")["_tmp_sector_rel"].transform(_rank_norm_series)
+            )
+            df.drop(columns=["_tmp_sector_rel"], inplace=True)
 
     # Cross-sectional median imputation for fundamental features (per snapshot date)
     for col in FUNDAMENTAL_FLOAT_FEATURES:

@@ -93,6 +93,7 @@ def compute_all_indicators(ohlcv_df: pd.DataFrame) -> dict:
             "OBV",
             "RelativeVolume", "VolumeROC",
             "PriceVs52wkHighPct",
+            "PctDaysPositive21d",
         ]
         return {k: np.nan for k in nan_keys}
 
@@ -154,6 +155,14 @@ def compute_all_indicators(ohlcv_df: pd.DataFrame) -> dict:
         result["PriceVs52wkHighPct"] = (last_close - high_52wk) / high_52wk * 100 if high_52wk > 0 else np.nan
     except Exception:
         result["PriceVs52wkHighPct"] = np.nan
+
+    # PctDaysPositive21d — % of last 21 trading days that closed up
+    try:
+        daily_rets = close.pct_change().dropna()
+        recent = daily_rets.iloc[-21:] if len(daily_rets) >= 21 else daily_rets
+        result["PctDaysPositive21d"] = float((recent > 0).mean()) if len(recent) > 0 else np.nan
+    except Exception:
+        result["PctDaysPositive21d"] = np.nan
 
     # EMA7
     try:

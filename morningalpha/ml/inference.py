@@ -64,6 +64,7 @@ _SPREAD_TO_ML: dict = {
     "PriceToSMA50Pct":    "price_to_sma50",
     "PriceToSMA200Pct":   "price_to_sma200",
     "PriceVs52wkHighPct": "price_vs_52wk_high",
+    "PctDaysPositive21d":  "pct_days_positive_21d",
     # Fundamentals — raw yfinance column names that end up in the CSV
     "returnOnEquity":          "roe",
     "debtToEquity":            "debt_to_equity",
@@ -227,9 +228,18 @@ def _build_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
     spy_regime = spy.get("spy_momentum_regime", 0.0)
     ret = feat.get("return_pct", pd.Series(np.nan, index=feat.index))
 
-    sector_median = feat.groupby(feat["sector"])["return_pct"].transform("median")
-    feat["return_vs_sector"] = (ret - sector_median.fillna(ret)).fillna(0.0)
+    sector_grp = feat.groupby(feat["sector"])
+    feat["sector_return_rank"] = sector_grp["return_pct"].transform(lambda x: x.rank(pct=True)).fillna(0.5)
     feat["return_pct_x_regime"] = ret.fillna(0.0) * spy_regime
+
+    if "earnings_yield" in feat.columns:
+        feat["earnings_yield_vs_sector"] = (
+            feat["earnings_yield"] - sector_grp["earnings_yield"].transform("median")
+        ).fillna(0.0)
+    if "book_to_market" in feat.columns:
+        feat["book_to_market_vs_sector"] = (
+            feat["book_to_market"] - sector_grp["book_to_market"].transform("median")
+        ).fillna(0.0)
 
     # Ensure every expected feature column exists (fill missing with NaN → 0 after preprocessing)
     for col in FEATURE_COLUMNS:

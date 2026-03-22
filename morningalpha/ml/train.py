@@ -386,7 +386,8 @@ def _upsert_model_config(model_dir: Path, name: str, model_type: str, test_ic: f
 @click.option("--finetune", is_flag=True, default=False, help="Warm-start from existing checkpoint.")
 @click.option("--checkpoint", default=None, help="Source checkpoint path for fine-tuning.")
 @click.option("--no-plots", "no_plots", is_flag=True, default=False, help="Skip diagnostic plot generation.")
-def train(dataset, model_type, target, name, output, n_trials, finetune, checkpoint, no_plots):
+@click.option("--exclude-features", "exclude_features", default=None, help="Comma-separated feature names to exclude (for ablation experiments).")
+def train(dataset, model_type, target, name, output, n_trials, finetune, checkpoint, no_plots, exclude_features):
     """Train a model on the labeled dataset.
 
     \b
@@ -405,6 +406,15 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
     # Load data
     (X_tr, y_tr, d_tr, df_tr), (X_va, y_va, d_va, df_va), (X_te, y_te, d_te, df_te), feat_cols = \
         load_splits(dataset, target=target)
+
+    # Apply feature exclusions (ablation experiments)
+    if exclude_features:
+        excluded = {f.strip() for f in exclude_features.split(",")}
+        feat_cols = [f for f in feat_cols if f not in excluded]
+        X_tr = X_tr[feat_cols]
+        X_va = X_va[feat_cols]
+        X_te = X_te[feat_cols]
+        console.print(f"[yellow]Excluding {len(excluded)} features: {', '.join(sorted(excluded))}[/yellow]")
 
     # Load finetune checkpoint if requested
     finetune_model = None
@@ -447,6 +457,21 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
             console.print("[bold yellow]WARNING: test IC < 0.03 — fix dataset before Phase 3.[/bold yellow]")
         elif lgbm_results["test_ic"] >= 0.05:
             console.print("[bold green]IC >= 0.05 — skip Phase 3 (LSTM), go straight to Phase 4 (Set Transformer).[/bold green]")
+
+        # SHAP top-15 summary
+        try:
+            sv = final_model.shap_values(X_te.iloc[:min(1000, len(X_te))])
+            mean_abs_shap = np.abs(sv).mean(axis=0)
+            shap_series = pd.Series(mean_abs_shap, index=feat_cols).sort_values(ascending=False)
+            shap_table = Table(title="SHAP Top 15 Features (mean |SHAP| on test set)", show_header=True)
+            shap_table.add_column("Rank", justify="right")
+            shap_table.add_column("Feature")
+            shap_table.add_column("Mean |SHAP|", justify="right")
+            for rank, (feat, val) in enumerate(shap_series.head(15).items(), 1):
+                shap_table.add_row(str(rank), feat, f"{val:.6f}")
+            console.print(shap_table)
+        except Exception as e:
+            console.print(f"[yellow]SHAP summary skipped: {e}[/yellow]")
 
         # Save model
         final_model.save(output)

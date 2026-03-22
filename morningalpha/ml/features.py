@@ -18,7 +18,6 @@ TECHNICAL_FEATURE_COLUMNS: List[str] = [
     "quality_score",
     "rsi",
     "momentum_accel",
-    "price_vs_20d_high",
     "volume_surge",
     "entry_score",
     "market_cap",
@@ -30,6 +29,7 @@ TECHNICAL_FEATURE_COLUMNS: List[str] = [
     "avg_drawdown",
     "volume_consistency",
     "distance_from_high",
+    "pct_days_positive_21d",
     # Tier 2: extended technical indicators (OHLCV-derived, point-in-time)
     "rsi_7",
     "rsi_21",
@@ -48,11 +48,18 @@ TECHNICAL_FEATURE_COLUMNS: List[str] = [
     "price_to_sma50",
     "price_to_sma200",
     "price_vs_52wk_high",   # % below 52-week high; 0 = at high, negative = below
+    # Tier 2 extended: long-horizon momentum (academic factors)
+    "momentum_12_1",         # Jegadeesh-Titman: return from month -12 to -1 (skip last month)
+    "momentum_intermediate", # Novy-Marx: return from month -12 to -7 (intermediate horizon)
+    "momentum_accel_long",   # 3-month ROC minus momentum_12_1 (long-term trend acceleration)
     # Tier 3: cross-sectional alpha features
-    "return_vs_sector",      # return_pct minus sector median — separates alpha from beta
+    "sector_return_rank",    # percentile rank of return_pct within sector (0–1) — cross-sectional alpha vs peers
     "return_pct_x_regime",   # return_pct × spy_momentum_regime — regime-conditional momentum.
                              # Positive in trending markets, negative in reversal markets.
                              # Cross-sectional (varies by stock) → rank-normalized.
+    "sector_momentum_rank",  # within-sector percentile rank of momentum_12_1
+    "value_x_momentum",      # raw earnings_yield × momentum_12_1 (value trap filter)
+    "quality_x_momentum",    # raw ROE × momentum_12_1 (quality + trend)
 ]
 
 # ---------------------------------------------------------------------------
@@ -89,6 +96,8 @@ FUNDAMENTAL_FEATURE_NAMES: List[str] = [
     "short_pct_float",
     "asset_growth",
     "accruals_ratio",
+    "earnings_yield_vs_sector",   # earnings_yield minus sector median — value relative to peers
+    "book_to_market_vs_sector",   # book_to_market minus sector median — value relative to peers
     "earnings_yield_quality",  # earnings_yield × ROE — value + quality composite
     "sector",
     "has_fundamentals",

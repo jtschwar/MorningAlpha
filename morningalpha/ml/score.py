@@ -105,6 +105,16 @@ def score(data_dir, models_dir):
     else:
         df_score = df3m.copy()
 
+    # Momentum gate — only score stocks in an uptrend (price > SMA200).
+    # Prevents the model from ranking value traps above trend-qualified stocks.
+    if "PriceToSMA200Pct" in df_score.columns:
+        sma200_pct = pd.to_numeric(df_score["PriceToSMA200Pct"], errors="coerce")
+        trending_up = sma200_pct > 0
+        n_gated = (~trending_up & sma200_pct.notna()).sum()
+        df_score = df_score[trending_up | sma200_pct.isna()].copy()
+        if n_gated:
+            console.print(f"[dim]Momentum gate (price > SMA200): removed {n_gated} downtrending stocks[/dim]")
+
     raw_scores: dict[str, np.ndarray] = {}
 
     for m in active_models:

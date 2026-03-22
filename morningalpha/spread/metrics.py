@@ -3,8 +3,13 @@
 Enhanced metrics for stock analysis.
 All functions accept price/volume series and return scalar values or dicts.
 """
+import warnings
 import numpy as np
 import pandas as pd
+
+# Suppress expected numerical warnings from rolling windows on sparse/zero-price data
+warnings.filterwarnings("ignore", message="divide by zero encountered", category=RuntimeWarning)
+warnings.filterwarnings("ignore", message="invalid value encountered", category=RuntimeWarning)
 
 
 def calculate_sharpe_ratio(returns_series, risk_free_rate=0.05):
@@ -97,10 +102,14 @@ def calculate_drawdown_metrics(prices):
     
     # Recovery time from max drawdown
     try:
-        max_dd_idx = drawdowns.idxmin()
-        recovery_idx = prices[max_dd_idx:][prices[max_dd_idx:] >= rolling_max[max_dd_idx]].index
-        recovery_days = len(prices[max_dd_idx:recovery_idx[0]]) if len(recovery_idx) > 0 else None
-    except:
+        valid = drawdowns.dropna()
+        max_dd_idx = valid.idxmin() if not valid.empty else None
+        if max_dd_idx is not None:
+            recovery_idx = prices[max_dd_idx:][prices[max_dd_idx:] >= rolling_max[max_dd_idx]].index
+            recovery_days = len(prices[max_dd_idx:recovery_idx[0]]) if len(recovery_idx) > 0 else None
+        else:
+            recovery_days = None
+    except Exception:
         recovery_days = None
     
     return {
@@ -334,7 +343,8 @@ def calculate_all_metrics(prices, volumes, returns):
     drawdown_metrics = calculate_drawdown_metrics(prices)
     
     # Calculate return percentage
-    return_pct = ((prices.iloc[-1] / prices.iloc[0]) - 1) * 100 if len(prices) > 0 else np.nan
+    p0 = prices.iloc[0] if len(prices) > 0 else 0
+    return_pct = ((prices.iloc[-1] / p0) - 1) * 100 if p0 != 0 else np.nan
     
     # Calculate quality score using the computed metrics
     quality = calculate_quality_score(
