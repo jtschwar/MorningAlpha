@@ -8,6 +8,7 @@ from typing import List
 # ---------------------------------------------------------------------------
 
 TECHNICAL_FEATURE_COLUMNS: List[str] = [
+    # Original 15
     "return_pct",
     "sharpe_ratio",
     "sortino_ratio",
@@ -23,6 +24,51 @@ TECHNICAL_FEATURE_COLUMNS: List[str] = [
     "market_cap",
     "market_cap_cat",
     "exchange",
+    # Tier 1: already returned by calculate_all_metrics, now wired up
+    "volatility_20d",
+    "volatility_ratio",
+    "avg_drawdown",
+    "volume_consistency",
+    "distance_from_high",
+    # Tier 2: extended technical indicators (OHLCV-derived, point-in-time)
+    "rsi_7",
+    "rsi_21",
+    "macd",
+    "macd_signal",
+    "macd_hist",
+    "bollinger_pct_b",
+    "bollinger_bandwidth",
+    "stoch_k",
+    "stoch_d",
+    "roc_5",
+    "roc_10",
+    "roc_21",
+    "atr_14",
+    "price_to_sma20",
+    "price_to_sma50",
+    "price_to_sma200",
+    # Tier 3: cross-sectional alpha features
+    "return_vs_sector",      # return_pct minus sector median — separates alpha from beta
+    "return_pct_x_regime",   # return_pct × spy_momentum_regime — regime-conditional momentum.
+                             # Positive in trending markets, negative in reversal markets.
+                             # Cross-sectional (varies by stock) → rank-normalized.
+]
+
+# ---------------------------------------------------------------------------
+# Market context features — same value for all stocks on a given date.
+# Cross-sectionally constant → excluded from per-date rank normalization.
+# Winsorized globally; tree models use raw scale directly.
+# ---------------------------------------------------------------------------
+
+MARKET_CONTEXT_COLUMNS: List[str] = [
+    "spy_return_10d",      # SPY return over last 10 trading days
+    "spy_return_21d",      # SPY return over last 21 trading days
+    "spy_volatility_20d",  # SPY annualized 20-day realized volatility
+    "spy_rsi_14",          # SPY RSI(14) — momentum vs. oversold regime signal
+    "spy_above_sma200",    # 1.0 if SPY > 200-day SMA (bull market), 0.0 otherwise
+    "spy_momentum_regime", # SPY 10d return / expected 10d vol (Sharpe-like).
+                           # >0 = momentum regime, <0 = mean-reversion regime.
+                           # Constant per date — excluded from cross-sectional rank norm.
 ]
 
 # ---------------------------------------------------------------------------
@@ -64,7 +110,11 @@ SECTOR_MAP = {
 # Combined feature list (order matters for model input)
 # ---------------------------------------------------------------------------
 
-FEATURE_COLUMNS: List[str] = TECHNICAL_FEATURE_COLUMNS + FUNDAMENTAL_FEATURE_NAMES
+FEATURE_COLUMNS: List[str] = (
+    TECHNICAL_FEATURE_COLUMNS
+    + MARKET_CONTEXT_COLUMNS
+    + FUNDAMENTAL_FEATURE_NAMES
+)
 
 # Categorical features — ordinal encoded as int8, not rank-normalized
 CATEGORICAL_FEATURES: List[str] = [
@@ -74,8 +124,13 @@ CATEGORICAL_FEATURES: List[str] = [
     "has_fundamentals",
 ]
 
-# Continuous float features — winsorized and rank-normalized
-FLOAT_FEATURES: List[str] = [f for f in FEATURE_COLUMNS if f not in CATEGORICAL_FEATURES]
+# Continuous float features — winsorized AND cross-sectionally rank-normalized.
+# Market context features are excluded: they are constant per date, so
+# cross-sectional rank normalization would zero them out.
+FLOAT_FEATURES: List[str] = [
+    f for f in FEATURE_COLUMNS
+    if f not in CATEGORICAL_FEATURES and f not in MARKET_CONTEXT_COLUMNS
+]
 
 # Fundamental float features (subset of FLOAT_FEATURES, for median imputation)
 FUNDAMENTAL_FLOAT_FEATURES: List[str] = [

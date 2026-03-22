@@ -167,13 +167,16 @@ def tune_lgbm(X_tr, y_tr, X_va, y_va, n_trials: int = 30, finetune_model=None):
 
     def objective(trial):
         params = {
-            "num_leaves": trial.suggest_int("num_leaves", 31, 127),
-            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.1, log=True),
-            "feature_fraction": trial.suggest_float("feature_fraction", 0.6, 1.0),
-            "bagging_fraction": trial.suggest_float("bagging_fraction", 0.6, 1.0),
+            "num_leaves": trial.suggest_int("num_leaves", 15, 63),
+            "max_depth": trial.suggest_int("max_depth", 3, 8),
+            "learning_rate": trial.suggest_float("learning_rate", 0.005, 0.05, log=True),
+            "feature_fraction": trial.suggest_float("feature_fraction", 0.5, 0.9),
+            "bagging_fraction": trial.suggest_float("bagging_fraction", 0.5, 0.9),
             "bagging_freq": 5,
-            "min_child_samples": trial.suggest_int("min_child_samples", 10, 50),
-            "n_estimators": 500,
+            "min_child_samples": trial.suggest_int("min_child_samples", 30, 150),
+            "lambda_l1": trial.suggest_float("lambda_l1", 1e-3, 10.0, log=True),
+            "lambda_l2": trial.suggest_float("lambda_l2", 1e-3, 10.0, log=True),
+            "n_estimators": 1000,
             "verbose": -1,
             "objective": "regression",
             "metric": "rmse",
@@ -203,7 +206,7 @@ def train_lgbm(X_tr, y_tr, X_va, y_va, X_te, y_te, best_params: dict, finetune_m
     from morningalpha.ml.baselines import LightGBMModel
 
     params = {
-        "n_estimators": 1000,
+        "n_estimators": 2000,
         "verbose": -1,
         **best_params,
     }
@@ -318,7 +321,7 @@ def generate_plots(model, X_tr, y_tr, X_va, y_va, X_te, y_te, feat_cols, plot_di
 @click.command("train")
 @click.option("--dataset", default="data/training/dataset.parquet", show_default=True, help="Path to dataset parquet.")
 @click.option("--model", "model_type", default="lgbm", type=click.Choice(["lgbm", "ridge"]), show_default=True, help="Model type.")
-@click.option("--target", default="forward_10d", show_default=True, help="Target label column.")
+@click.option("--target", default="forward_10d_rank", show_default=True, help="Target label column. Use forward_10d_rank (default) for cross-sectional ranking, or forward_10d for raw return regression.")
 @click.option("--name", default=None, help="Model checkpoint name (default: {model_type}_v1).")
 @click.option("--output", default=None, help="Path to save checkpoint (default: ~/.morningalpha/models/{name}.pkl).")
 @click.option("--n-trials", "n_trials", default=30, show_default=True, help="Optuna hyperparameter search trials (lgbm only).")

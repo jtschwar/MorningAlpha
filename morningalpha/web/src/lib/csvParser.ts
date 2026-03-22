@@ -85,6 +85,8 @@ export function parseCSV(csv: string): ParseResult {
   const shortFloatIdx = col('ShortFloat')
   const instOwnershipIdx = col('InstOwnership')
 
+  const mlScoreIdx = col('MLScore')
+
   const hasFundamentals = sectorIdx >= 0
 
   const num = (values: string[], idx: number): number | null => {
@@ -169,6 +171,7 @@ export function parseCSV(csv: string): ParseResult {
         shortFloat: num(values, shortFloatIdx),
         instOwnership: num(values, instOwnershipIdx),
       } : null,
+      mlScore: num(values, mlScoreIdx),
       // Will be filled by computeScores
       investmentScore: null,
       riskRewardRatio: null,

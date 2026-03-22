@@ -104,6 +104,8 @@ export interface Stock {
   VolumeROC: number | null
   // Merged from fundamentals.csv at load time
   fundamentals?: FundamentalData | null
+  // ML model predicted score (0–100 percentile rank, written by alpha spread)
+  mlScore: number | null
   // Computed at load time by computeScores()
   investmentScore: number | null
   riskRewardRatio: number | null

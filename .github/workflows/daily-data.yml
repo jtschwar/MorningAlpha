@@ -29,6 +29,11 @@ jobs:
           # No Alpha Vantage key needed for spread (uses yfinance)
           PYTHONUNBUFFERED: '1'
 
+      - name: Score with ML models
+        run: alpha ml score --data-dir data/latest --models-dir models
+        env:
+          PYTHONUNBUFFERED: '1'
+
       - name: Commit data
         run: |
           git config user.name "github-actions[bot]"

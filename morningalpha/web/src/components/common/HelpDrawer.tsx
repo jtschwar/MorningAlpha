@@ -71,9 +71,11 @@ const SECTIONS: Section[] = [
 
 interface Props {
   initialSection?: string
+  sections?: Section[]
 }
 
-export default function HelpDrawer({ initialSection }: Props) {
+export default function HelpDrawer({ initialSection, sections: sectionsProp }: Props) {
+  const activeSections = sectionsProp ?? SECTIONS
   const [open, setOpen] = useState(false)
   const [expanded, setExpanded] = useState<string>(initialSection ?? '')
 
@@ -115,7 +117,7 @@ export default function HelpDrawer({ initialSection }: Props) {
         </div>
 
         <div className={styles.sections}>
-          {SECTIONS.map(s => (
+          {activeSections.map(s => (
             <div key={s.id} className={styles.section}>
               <button
                 className={`${styles.sectionBtn} ${expanded === s.id ? styles.sectionOpen : ''}`}

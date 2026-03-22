@@ -1,0 +1,11 @@
+{
+  "champion": "lgbm_v4",
+  "models": [
+    {
+      "id": "lgbm_v4",
+      "type": "lgbm",
+      "description": "LightGBM v4 — 7yr lookback, 58 features, test IC 0.130",
+      "status": "champion"
+    }
+  ]
+}
