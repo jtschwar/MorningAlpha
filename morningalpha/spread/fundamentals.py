@@ -90,7 +90,7 @@ def fetch_fundamentals(
               help='Number of tickers per batch before pausing')
 @click.option('--pause', default=1.0, show_default=True,
               help='Seconds to sleep between batches')
-@click.option('--universe', multiple=True, default=['nasdaq', 'sp500'], show_default=True,
+@click.option('--universe', multiple=True, default=['nasdaq', 'nyse'], show_default=True,
               type=click.Choice(['nasdaq', 'nyse', 'sp500'], case_sensitive=False))
 def fundamentals(out, batch_size, pause, universe):
     """Fetch fundamental metrics for the stock universe."""

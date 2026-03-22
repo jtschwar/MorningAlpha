@@ -672,9 +672,23 @@ def _compute_features_at_date(
 
     return_pct = ((prices.iloc[-1] / prices.iloc[0]) - 1) * 100
 
-    mc = ticker_meta.get("market_cap", np.nan)
-    if mc is None:
+    # Point-in-time market cap proxy: scale current market cap by price ratio.
+    # current_mc comes from the CSV (snapshot date), current_price is the
+    # latest close in the full OHLCV (not subset), so we adjust for price change.
+    current_mc = ticker_meta.get("market_cap", np.nan)
+    if current_mc is None:
+        current_mc = np.nan
+    try:
+        current_price = float(ohlcv["Close"].dropna().iloc[-1])
+        snapshot_price = float(prices.iloc[-1])
+        if not np.isnan(current_mc) and current_price > 0 and snapshot_price > 0:
+            mc = current_mc * (snapshot_price / current_price)
+        else:
+            mc = np.nan
+    except Exception:
         mc = np.nan
+
+    mc_cat = _categorize_market_cap(mc)
 
     # --- Tier 1 + original 15 ---
     technical = {
@@ -691,7 +705,7 @@ def _compute_features_at_date(
         "volume_surge": np.float32(metrics.get("volume_surge", np.nan)),
         "entry_score": np.float32(metrics.get("entry_score", np.nan)),
         "market_cap": np.float64(mc),
-        "market_cap_cat": int(ticker_meta.get("market_cap_cat", 0)),
+        "market_cap_cat": int(mc_cat),
         "exchange": int(ticker_meta.get("exchange", 2)),
         # Tier 1: already in calculate_all_metrics, now wired up
         "volatility_20d": np.float32(metrics.get("volatility_20d", np.nan)),
@@ -820,13 +834,13 @@ def _apply_preprocessing(df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
 
     # --- Rank-normalize cross-sectionally (per snapshot date) ---
     # Market context features are intentionally excluded from this step.
-    for date_val, group_idx in df.groupby("date").groups.items():
+    for _, group_idx in df.groupby("date").groups.items():
         group = df.loc[group_idx, float_feats]
         for col in float_feats:
             ranks = group[col].rank(method="average", na_option="keep")
             n = int(ranks.notna().sum())
             if n > 1:
-                df.loc[group_idx, col] = (2.0 * (ranks - 1.0) / (n - 1.0) - 1.0).astype("float64")
+                df.loc[group_idx, col] = (2.0 * (ranks - 1.0) / (n - 1.0) - 1.0).astype("float32")
             else:
                 df.loc[group_idx, col] = 0.0
 
@@ -907,6 +921,21 @@ def dataset(lookback, output, tickers_from, horizons, no_overlap, refresh_only, 
     else:
         tickers, meta_from_csv = _load_ticker_universe()
         console.print(f"Loaded [bold]{len(tickers)}[/bold] tickers from universe")
+        # Backfill market cap from fundamentals CSV for universe tickers
+        if fundamentals_lookup:
+            filled = 0
+            for t, meta in meta_from_csv.items():
+                if np.isnan(meta.get("market_cap", np.nan)):
+                    mc_raw = fundamentals_lookup.get(t, {}).get("marketCap")
+                    if mc_raw is not None:
+                        try:
+                            mc = float(mc_raw)
+                            meta["market_cap"] = mc
+                            meta["market_cap_cat"] = _categorize_market_cap(mc)
+                            filled += 1
+                        except (ValueError, TypeError):
+                            pass
+            console.print(f"[dim]Backfilled market cap for {filled} tickers from fundamentals CSV.[/dim]")
 
     # --- Fetch / load OHLCV ---
     with Progress(

@@ -24,7 +24,7 @@ jobs:
         run: pip install -e .
 
       - name: Run spread pipeline (all windows)
-        run: alpha spread --universe nasdaq --universe nyse --universe sp500 --output-dir data/latest
+        run: alpha spread --universe nasdaq --universe nyse --universe sp500 --output-dir data/latest --min-market-cap 1.0
         env:
           # No Alpha Vantage key needed for spread (uses yfinance)
           PYTHONUNBUFFERED: '1'

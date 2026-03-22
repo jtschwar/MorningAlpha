@@ -552,7 +552,9 @@ def analyze_stocks(
     batch_size: int = 200,
     pause: float = 0.8,
     progress_callback: Optional[callable] = None,
-    fetch_market_cap: bool = True
+    fetch_market_cap: bool = True,
+    min_market_cap: float = 0.0,
+    market_cap_lookup: Optional[Dict[str, float]] = None,
 ) -> pd.DataFrame:
     """
     High-level API to analyze top stock gainers WITH metrics.
@@ -617,6 +619,15 @@ def analyze_stocks(
     # Log per-exchange breakdown so workflow output is diagnosable
     for exch, count in tmp["Exchange"].value_counts().items():
         print(f"  {exch}: {count} stocks with valid data")
+
+    # Apply market cap pre-filter before top-N selection
+    if min_market_cap > 0 and market_cap_lookup:
+        min_cap_raw = min_market_cap * 1_000_000_000
+        before = len(tmp)
+        tmp = tmp[tmp["Ticker"].map(
+            lambda t: (market_cap_lookup.get(t) or 0) >= min_cap_raw
+        )].copy()
+        print(f"  Market cap filter (>= ${min_market_cap:.1f}B): {before} → {len(tmp)} stocks")
 
     if top_per_exchange:
         # Take top N per exchange so every exchange has meaningful representation.

@@ -154,8 +154,12 @@ def run_ridge(X_tr, y_tr, X_va, y_va, X_te, y_te, feat_cols, alpha=1.0):
 # LightGBM + Optuna
 # ---------------------------------------------------------------------------
 
-def tune_lgbm(X_tr, y_tr, X_va, y_va, n_trials: int = 30, finetune_model=None):
-    """Optuna-based hyperparameter search for LightGBM."""
+def tune_lgbm(X_tr, y_tr, d_tr, X_va, y_va, n_trials: int = 30, finetune_model=None):
+    """Optuna-based hyperparameter search for LightGBM using walk-forward CV.
+
+    Uses purged k-fold on the training set so Optuna sees multiple market
+    regimes rather than overfitting to a single val period.
+    """
     try:
         import optuna
         optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -165,39 +169,63 @@ def tune_lgbm(X_tr, y_tr, X_va, y_va, n_trials: int = 30, finetune_model=None):
 
     import lightgbm as lgb
 
+    # Pre-compute walk-forward splits on training data (positional indices)
+    wf_splits = purged_kfold_splits(d_tr.reset_index(drop=True), n_splits=5, embargo_days=10)
+    if not wf_splits:
+        console.print("[yellow]Walk-forward splits unavailable — falling back to single val fold[/yellow]")
+        wf_splits = None
+
     def objective(trial):
         params = {
-            "num_leaves": trial.suggest_int("num_leaves", 15, 63),
-            "max_depth": trial.suggest_int("max_depth", 3, 8),
+            "num_leaves": trial.suggest_int("num_leaves", 7, 31),
+            "max_depth": trial.suggest_int("max_depth", 3, 6),
             "learning_rate": trial.suggest_float("learning_rate", 0.005, 0.05, log=True),
-            "feature_fraction": trial.suggest_float("feature_fraction", 0.5, 0.9),
+            "feature_fraction": trial.suggest_float("feature_fraction", 0.4, 0.8),
             "bagging_fraction": trial.suggest_float("bagging_fraction", 0.5, 0.9),
             "bagging_freq": 5,
-            "min_child_samples": trial.suggest_int("min_child_samples", 30, 150),
-            "lambda_l1": trial.suggest_float("lambda_l1", 1e-3, 10.0, log=True),
-            "lambda_l2": trial.suggest_float("lambda_l2", 1e-3, 10.0, log=True),
-            "n_estimators": 1000,
+            "min_child_samples": trial.suggest_int("min_child_samples", 100, 500),
+            "lambda_l1": trial.suggest_float("lambda_l1", 0.1, 100.0, log=True),
+            "lambda_l2": trial.suggest_float("lambda_l2", 0.1, 100.0, log=True),
+            "n_estimators": 500,
             "verbose": -1,
             "objective": "regression",
             "metric": "rmse",
         }
         init_model = finetune_model.model.booster_ if finetune_model else None
-        model = lgb.LGBMRegressor(**params)
-        model.fit(
-            X_tr, y_tr,
-            eval_set=[(X_va, y_va)],
-            callbacks=[lgb.early_stopping(30, verbose=False), lgb.log_evaluation(-1)],
-            init_model=init_model,
-        )
-        preds = model.predict(X_va)
-        ic = rank_ic(preds, y_va)
-        return -ic  # minimize negative IC
+
+        if wf_splits:
+            fold_ics = []
+            for tr_idx, va_idx in wf_splits:
+                X_f_tr = X_tr.iloc[tr_idx]
+                y_f_tr = y_tr[tr_idx]
+                X_f_va = X_tr.iloc[va_idx]
+                y_f_va = y_tr[va_idx]
+                m = lgb.LGBMRegressor(**params)
+                m.fit(
+                    X_f_tr, y_f_tr,
+                    eval_set=[(X_f_va, y_f_va)],
+                    callbacks=[lgb.early_stopping(30, verbose=False), lgb.log_evaluation(-1)],
+                    init_model=init_model,
+                )
+                ic = rank_ic(m.predict(X_f_va), y_f_va)
+                if not np.isnan(ic):
+                    fold_ics.append(ic)
+            return -np.mean(fold_ics) if fold_ics else 0.0
+        else:
+            model = lgb.LGBMRegressor(**params)
+            model.fit(
+                X_tr, y_tr,
+                eval_set=[(X_va, y_va)],
+                callbacks=[lgb.early_stopping(30, verbose=False), lgb.log_evaluation(-1)],
+                init_model=init_model,
+            )
+            return -rank_ic(model.predict(X_va), y_va)
 
     study = optuna.create_study(direction="minimize")
-    with console.status(f"[bold]Optuna hyperparameter search ({n_trials} trials)...[/bold]"):
+    with console.status(f"[bold]Optuna walk-forward CV ({n_trials} trials, 5 folds)...[/bold]"):
         study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
 
-    console.print(f"Best trial IC: {-study.best_value:.4f}")
+    console.print(f"Best trial CV IC: {-study.best_value:.4f}")
     return study.best_params
 
 
@@ -206,7 +234,7 @@ def train_lgbm(X_tr, y_tr, X_va, y_va, X_te, y_te, best_params: dict, finetune_m
     from morningalpha.ml.baselines import LightGBMModel
 
     params = {
-        "n_estimators": 2000,
+        "n_estimators": 1000,
         "verbose": -1,
         **best_params,
     }
@@ -372,7 +400,7 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
     # --- LightGBM ---
     if model_type == "lgbm":
         console.print("\n[bold cyan]--- LightGBM ---[/bold cyan]")
-        best_params = tune_lgbm(X_tr, y_tr, X_va, y_va, n_trials=n_trials, finetune_model=finetune_model)
+        best_params = tune_lgbm(X_tr, y_tr, d_tr, X_va, y_va, n_trials=n_trials, finetune_model=finetune_model)
         final_model, lgbm_results = train_lgbm(X_tr, y_tr, X_va, y_va, X_te, y_te, best_params, finetune_model)
 
         # Summary table
