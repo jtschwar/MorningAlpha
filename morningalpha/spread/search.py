@@ -381,10 +381,10 @@ def fetch_returns_with_metrics(
     # Market caps will be fetched AFTER we have results (only for top stocks)
     market_caps = {}
     
-    # Extend lookback to 300 days so SMA200 (needs ~200 trading days) and other
-    # long-window indicators are computable. Period return/metrics are still
-    # calculated on [start, end] — the extra history is only used for indicators.
-    actual_start = start - pd.Timedelta(days=300)
+    # Extend lookback to 400 days so long-horizon momentum indicators
+    # (Momentum12_1, SMA200) are computable — these need ~252 trading days
+    # (~365 calendar days). Period return/metrics still use [start, end] only.
+    actual_start = start - pd.Timedelta(days=400)
     
     for i, batch in enumerate(batches):
         data = yf.download(
@@ -543,6 +543,7 @@ def fetch_returns_with_metrics(
 
 def analyze_stocks(
     universe: List[str] = None,
+    universe_df: Optional[pd.DataFrame] = None,
     include_nasdaq: bool = True,
     include_nyse: bool = True,
     include_sp500: bool = True,
@@ -552,15 +553,15 @@ def analyze_stocks(
     batch_size: int = 200,
     pause: float = 0.8,
     progress_callback: Optional[callable] = None,
-    fetch_market_cap: bool = True,
     min_market_cap: float = 0.0,
     market_cap_lookup: Optional[Dict[str, float]] = None,
 ) -> pd.DataFrame:
     """
     High-level API to analyze top stock gainers WITH metrics.
-    
+
     Args:
         universe: Optional list of specific tickers to analyze
+        universe_df: Optional pre-built DataFrame (Ticker/Name/Exchange) — skips make_universe
         include_nasdaq: Include NASDAQ stocks
         include_nyse: Include NYSE stocks
         include_sp500: Include S&P 500 stocks
@@ -569,13 +570,14 @@ def analyze_stocks(
         batch_size: Tickers per batch
         pause: Seconds between batches
         progress_callback: Optional callback(current, total, message) for progress
-        fetch_market_cap: Whether to fetch market cap data (only for top stocks, slower)
-    
+
     Returns:
         DataFrame with top gainers, sorted by return
     """
     # Build universe
-    if universe:
+    if universe_df is not None:
+        uni = universe_df.copy()
+    elif universe:
         uni = pd.DataFrame({
             'Ticker': universe,
             'Name': [''] * len(universe),
@@ -620,15 +622,6 @@ def analyze_stocks(
     for exch, count in tmp["Exchange"].value_counts().items():
         print(f"  {exch}: {count} stocks with valid data")
 
-    # Apply market cap pre-filter before top-N selection
-    if min_market_cap > 0 and market_cap_lookup:
-        min_cap_raw = min_market_cap * 1_000_000_000
-        before = len(tmp)
-        tmp = tmp[tmp["Ticker"].map(
-            lambda t: (market_cap_lookup.get(t) or 0) >= min_cap_raw
-        )].copy()
-        print(f"  Market cap filter (>= ${min_market_cap:.1f}B): {before} → {len(tmp)} stocks")
-
     if top_per_exchange:
         # Take top N per exchange so every exchange has meaningful representation.
         parts = [
@@ -642,36 +635,8 @@ def analyze_stocks(
     else:
         result = tmp.nlargest(top, "ReturnPct").sort_values("ReturnPct", ascending=False).reset_index(drop=True)
     
-    # Fetch market cap + fundamentals for the screened stocks
-    if fetch_market_cap:
-        if progress_callback:
-            progress_callback(0, 0, f"Fetching fundamentals for {len(result)} stocks...")
+    # Fundamentals are merged from fundamentals.csv in access.py — no live fetch needed.
 
-        ticker_info: dict = {}
-        top_tickers = result["Ticker"].tolist()
-        info_batch_size = 50
-
-        for i in range(0, len(top_tickers), info_batch_size):
-            batch = top_tickers[i:i + info_batch_size]
-            batch_info = fetch_ticker_info_batch(batch, pause=0.05)
-            ticker_info.update(batch_info)
-
-            if progress_callback:
-                progress_callback(
-                    i + len(batch), len(top_tickers),
-                    f"Fetching fundamentals... ({i + len(batch)}/{len(top_tickers)})",
-                )
-
-        # Write all fundamental fields into result DataFrame
-        all_cols = ['MarketCap', 'MarketCapCategory'] + list(_FUNDAMENTAL_INFO_FIELDS.keys())
-        for col in all_cols:
-            result[col] = result["Ticker"].map(lambda t, c=col: ticker_info.get(t, {}).get(c))
-    else:
-        result["MarketCap"] = None
-        result["MarketCapCategory"] = None
-        for col in _FUNDAMENTAL_INFO_FIELDS:
-            result[col] = None
-    
     # Rename the return column
     result = result.rename(columns={"ReturnPct": f"Return_{metric.upper()}_%"})
     result.index = result.index + 1

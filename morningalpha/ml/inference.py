@@ -69,20 +69,13 @@ _SPREAD_TO_ML: dict = {
     "Momentum12_1":         "momentum_12_1",
     "MomentumIntermediate": "momentum_intermediate",
     "MomentumAccelLong":    "momentum_accel_long",
-    # Fundamentals — raw yfinance column names that end up in the CSV
-    "returnOnEquity":          "roe",
-    "debtToEquity":            "debt_to_equity",
-    "revenueGrowth":           "revenue_growth",
-    "profitMargins":           "profit_margin",
-    "currentRatio":            "current_ratio",
-    "shortPercentOfFloat":     "short_pct_float",
-    # Pre-computed ML fundamental columns already in the CSV
-    "earnings_yield":    "earnings_yield",
-    "book_to_market":    "book_to_market",
-    "sales_to_price":    "sales_to_price",
-    "fcf_yield":         "fcf_yield",
-    "asset_growth":      "asset_growth",
-    "accruals_ratio":    "accruals_ratio",
+    # Fundamentals — actual column names from the spread CSV (merged from fundamentals.csv)
+    "ROE":          "roe",
+    "DebtEquity":   "debt_to_equity",
+    "RevenueGrowth":"revenue_growth",
+    "NetMargin":    "profit_margin",
+    "CurrentRatio": "current_ratio",
+    "ShortFloat":   "short_pct_float",
 }
 
 _MARKET_CAP_CAT_MAP = {
@@ -190,6 +183,13 @@ def _build_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
     for src, dst in _SPREAD_TO_ML.items():
         if src in df.columns:
             feat[dst] = pd.to_numeric(df[src], errors="coerce")
+
+    # Derived fundamentals: compute from price ratios in the spread CSV
+    # earnings_yield = 1/PE, book_to_market = 1/PB, sales_to_price = 1/PS
+    for ratio_col, feat_name in [("PE", "earnings_yield"), ("PB", "book_to_market"), ("PS", "sales_to_price")]:
+        if ratio_col in df.columns:
+            ratio = pd.to_numeric(df[ratio_col], errors="coerce")
+            feat[feat_name] = (1.0 / ratio).replace([np.inf, -np.inf], np.nan)
 
     # Categorical: market_cap_cat
     if "MarketCapCategory" in df.columns:

@@ -1,9 +1,9 @@
-name: Monthly Fundamentals Update
+name: Weekly Fundamentals Update
 
 on:
   schedule:
-    # First Monday of every month at 5:00pm ET after market close (22:00 UTC)
-    - cron: '0 22 1 * *'  # 1st of every month at 22:00 UTC
+    # Every Monday at 5:00pm ET after market close (22:00 UTC)
+    - cron: '0 22 * * 1'
   workflow_dispatch:
 
 permissions:

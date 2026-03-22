@@ -20,7 +20,6 @@ TECHNICAL_FEATURE_COLUMNS: List[str] = [
     "momentum_accel",
     "volume_surge",
     "entry_score",
-    "market_cap",
     "market_cap_cat",
     "exchange",
     # Tier 1: already returned by calculate_all_metrics, now wired up
@@ -91,11 +90,8 @@ FUNDAMENTAL_FEATURE_NAMES: List[str] = [
     "debt_to_equity",
     "revenue_growth",
     "profit_margin",
-    "fcf_yield",
     "current_ratio",
     "short_pct_float",
-    "asset_growth",
-    "accruals_ratio",
     "earnings_yield_vs_sector",   # earnings_yield minus sector median — value relative to peers
     "book_to_market_vs_sector",   # book_to_market minus sector median — value relative to peers
     "earnings_yield_quality",  # earnings_yield × ROE — value + quality composite

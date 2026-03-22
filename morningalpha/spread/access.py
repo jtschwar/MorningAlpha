@@ -62,22 +62,15 @@ click.rich_click.STYLE_ERRORS_SUGGESTION = "magenta italic"
     help='Seconds to sleep between batches',
     show_default=True
 )
-@click.option(
-    '--no-market-cap',
-    is_flag=True,
-    default=False,
-    help='Skip market cap fetching (faster, but no market cap data)',
-    show_default=True
-)
 @click.option('--top-nasdaq', type=int, default=700, show_default=True,
               help='Max NASDAQ stocks when using --output-dir')
 @click.option('--top-nyse', type=int, default=300, show_default=True,
               help='Max NYSE stocks when using --output-dir')
 @click.option('--top-sp500', type=int, default=500, show_default=True,
               help='Max S&P500 stocks when using --output-dir (set high to include all ~503)')
-@click.option('--min-market-cap', 'min_market_cap', type=float, default=0.0, show_default=True,
+@click.option('--min-market-cap', 'min_market_cap', type=float, default=0.3, show_default=True,
               help='Minimum market cap in billions (e.g. 1.0 = $1B). 0 = no filter.')
-def spread(universe, metric, top, out, batch_size, pause, no_market_cap, output_dir,
+def spread(universe, metric, top, out, batch_size, pause, output_dir,
            top_nasdaq, top_nyse, top_sp500, min_market_cap):
     """
     [bold cyan]📈 Stock Gainers Analyzer[/bold cyan]
@@ -104,39 +97,41 @@ def spread(universe, metric, top, out, batch_size, pause, no_market_cap, output_
         period_map = [('2wk', '2w'), ('1m', '1m'), ('3m', '3m'), ('6m', '6m')]
         for metric_code, file_suffix in period_map:
             dest = str(Path(output_dir) / f'stocks_{file_suffix}.csv')
-            get_spread(universe, metric_code, top, dest, batch_size, pause, no_market_cap,
+            get_spread(universe, metric_code, top, dest, batch_size, pause,
                        top_per_exchange=per_exchange, min_market_cap=min_market_cap)
     else:
-        get_spread(universe, metric, top, out, batch_size, pause, no_market_cap,
+        get_spread(universe, metric, top, out, batch_size, pause,
                    min_market_cap=min_market_cap)
 
-def get_spread(universe, metric, top, out, batch_size, pause, no_market_cap, top_per_exchange=None, min_market_cap=0.0):
+def get_spread(universe, metric, top, out, batch_size, pause, top_per_exchange=None, min_market_cap=0.3):
     """
     Execute the spread analysis.
     """
-    from morningalpha.spread.search import analyze_stocks 
+    import os
+    import pandas as pd
+    from morningalpha.spread.search import analyze_stocks
     from morningalpha.spread.search import make_universe
     from morningalpha.spread.search import period_bounds
-    
+
     from rich.console import Console
     from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
     from rich.panel import Panel
     from rich.table import Table
 
     console = Console()
-    
+
     console.print(Panel.fit(
         "[bold cyan]📊 Stock Gainers Analyzer[/bold cyan]\n"
         "[dim]Powered by yfinance[/dim]",
         border_style="cyan"
     ))
-    
+
     universe_list = list(universe) if universe else ['nasdaq', 'sp500']
     include_nasdaq = 'nasdaq' in universe_list
     include_nyse = 'nyse' in universe_list
     include_sp500 = 'sp500' in universe_list
 
-    # Build universe with progress
+    # Build full universe once
     with console.status("[bold green]Building stock universe...") as status:
         if include_nasdaq:
             status.update("[bold cyan]Fetching NASDAQ listings...")
@@ -144,9 +139,34 @@ def get_spread(universe, metric, top, out, batch_size, pause, no_market_cap, top
             status.update("[bold cyan]Fetching NYSE listings...")
         if include_sp500:
             status.update("[bold cyan]Fetching S&P 500 listings...")
-        
+
         uni = make_universe(include_nasdaq, include_nyse, include_sp500)
         console.log(f"✓ Built universe: {len(uni)} stocks")
+
+    # Load fundamentals.csv once — used for both the universe pre-filter and the
+    # post-results merge so we only read the file once per spread run.
+    fund_csv = "data/latest/fundamentals.csv"
+    fund_df = pd.read_csv(fund_csv) if os.path.exists(fund_csv) else None
+
+    # Pre-filter universe by market cap BEFORE OHLCV download.
+    # Avoids fetching price history for micro-caps that can never make the output.
+    if fund_df is not None and min_market_cap > 0:
+        min_cap_raw = min_market_cap * 1_000_000_000
+        known = fund_df.dropna(subset=["MarketCap"])
+        passes = set(known.loc[known["MarketCap"] >= min_cap_raw, "Ticker"])
+        # Tickers absent from fundamentals.csv (new listings etc.) pass through by default
+        unknown = set(uni["Ticker"]) - set(fund_df["Ticker"])
+        keep = passes | unknown
+        before = len(uni)
+        uni = uni[uni["Ticker"].isin(keep)].copy().reset_index(drop=True)
+        console.log(
+            f"✓ Pre-filtered by market cap (>= ${min_market_cap:.1f}B): "
+            f"{before} → {len(uni)} stocks ({len(unknown)} unknown passed through)"
+        )
+    elif min_market_cap > 0:
+        console.print(
+            "[yellow]⚠ data/latest/fundamentals.csv not found — skipping market cap pre-filter[/yellow]"
+        )
 
     start, end = period_bounds(metric)
     console.print(f"[bold]Period:[/bold] {start.date()} to {end.date()} ({metric.upper()})\n")
@@ -161,31 +181,15 @@ def get_spread(universe, metric, top, out, batch_size, pause, no_market_cap, top
         TimeRemainingColumn(),
         console=console,
     ) as progress:
-        
+
         task = progress.add_task("[cyan]Downloading stock data...", total=100)
-        
+
         def progress_callback(current, total, message):
             if total > 0:
                 progress.update(task, completed=current, total=total, description=f"[cyan]{message}")
-        
-        # Use the API function
-        # Build market cap lookup from fundamentals CSV for pre-filtering
-        mc_lookup: dict = {}
-        if min_market_cap > 0:
-            import os, csv
-            fund_csv = "data/latest/fundamentals.csv"
-            if os.path.exists(fund_csv):
-                with open(fund_csv, newline="") as f:
-                    for row in csv.DictReader(f):
-                        t = row.get("Ticker") or row.get("ticker", "")
-                        mc_raw = row.get("MarketCap")
-                        if t and mc_raw:
-                            try:
-                                mc_lookup[t.strip()] = float(mc_raw)
-                            except (ValueError, TypeError):
-                                pass
 
         result = analyze_stocks(
+            universe_df=uni,          # pre-filtered, preserves Exchange for per-exchange top-N
             include_nasdaq=include_nasdaq,
             include_nyse=include_nyse,
             include_sp500=include_sp500,
@@ -195,17 +199,10 @@ def get_spread(universe, metric, top, out, batch_size, pause, no_market_cap, top
             batch_size=batch_size,
             pause=pause,
             progress_callback=progress_callback,
-            fetch_market_cap=not no_market_cap,
-            min_market_cap=min_market_cap,
-            market_cap_lookup=mc_lookup if mc_lookup else None,
         )
 
-    # Merge fundamentals from pre-built CSV (populated by `alpha fundamentals`)
-    import os, pandas as pd
-    fund_csv = "data/latest/fundamentals.csv"
-    if os.path.exists(fund_csv):
-        fund_df = pd.read_csv(fund_csv)
-        # Only keep columns not already in result (avoid clobbering MarketCap etc.)
+    # Merge fundamentals from pre-built CSV (already loaded above)
+    if fund_df is not None:
         new_cols = ["Ticker"] + [c for c in fund_df.columns if c != "Ticker" and c not in result.columns]
         result = result.merge(fund_df[new_cols], on="Ticker", how="left")
     else:
