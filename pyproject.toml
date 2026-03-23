@@ -42,7 +42,8 @@ dependencies = [
     "rich>=13.0",
     "huggingface_hub>=0.20",
     "optuna>=3.0",
-    "pyarrow"
+    "pyarrow",
+    "scipy>=1.10"
 ]
 
 [project.scripts]
@@ -52,6 +53,9 @@ alpha = "morningalpha.main:routines"
 [tool.hatch.version]
 path = "morningalpha/__init__.py"
 pattern = "__version__ = ['\"](?P<version>[^'\"]*)['\"]"
+
+[project.optional-dependencies]
+torch = ["torch>=2.0"]
 
 [tool.hatch.metadata]
 allow-direct-references = true

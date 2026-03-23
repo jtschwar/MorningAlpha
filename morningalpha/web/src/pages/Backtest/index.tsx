@@ -383,7 +383,9 @@ function FeaturesTab({ data }: { data: ModelDetail }) {
   const sorted = [...top].sort((a, b) => a.importance - b.importance) // ascending for horizontal bar
 
   const featureNames = sorted.map(f => f.feature)
-  const importances = sorted.map(f => f.importance)
+  const rawImportances = sorted.map(f => f.importance)
+  const maxImp = Math.max(...rawImportances, 1e-9)
+  const importances = rawImportances.map(v => v / maxImp)
   const colors = sorted.map(f => CATEGORY_COLOR[f.category] ?? '#64748b')
 
   const categories = [...new Set(top.map(f => f.category))]
@@ -407,7 +409,7 @@ function FeaturesTab({ data }: { data: ModelDetail }) {
             x: importances,
             y: featureNames,
             marker: { color: colors },
-            hovertemplate: '<b>%{y}</b><br>Importance: %{x:.4f}<extra></extra>',
+            hovertemplate: '<b>%{y}</b><br>Relative importance: %{x:.2f}<extra></extra>',
           }]}
           layout={{
             ...PLOT_LAYOUT_BASE,
@@ -420,8 +422,8 @@ function FeaturesTab({ data }: { data: ModelDetail }) {
             },
             xaxis: {
               ...PLOT_LAYOUT_BASE.xaxis,
-              title: { text: 'Importance', standoff: 8 },
-              tickformat: '.3f',
+              title: { text: 'Relative Importance (normalized to top feature)', standoff: 8 },
+              range: [0, 1.05],
             },
           }}
           config={PLOT_CONFIG}

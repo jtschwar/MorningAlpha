@@ -105,6 +105,13 @@ def _load_test_data(config: dict) -> pd.DataFrame:
 
 def _run_inference(booster, df: pd.DataFrame, feat_cols: List[str]) -> pd.DataFrame:
     """Run model inference on the test set. Returns df with pred_score column."""
+    # Prefer the model's own feature list — it reflects the exact columns used at
+    # training time (e.g. value features dropped for momentum-universe models).
+    try:
+        feat_cols = list(booster.model.feature_name_)
+    except AttributeError:
+        pass
+
     available = [c for c in feat_cols if c in df.columns]
     missing = set(feat_cols) - set(available)
     if missing:
@@ -258,6 +265,10 @@ def _decile_returns(df: pd.DataFrame) -> List[dict]:
 
 def _feature_importance(booster, df: pd.DataFrame, feat_cols: List[str]) -> List[dict]:
     """Mean |SHAP| across a sample of test rows. Falls back to split-based importance."""
+    try:
+        feat_cols = list(booster.model.feature_name_)
+    except AttributeError:
+        pass
     available = [c for c in feat_cols if c in df.columns]
     X = df[available].fillna(0).astype(np.float32)
 
