@@ -44,8 +44,11 @@ _SPREAD_TO_ML: dict = {
     "PriceVs20dHigh":     "price_vs_20d_high",
     "VolumeSurge":        "volume_surge",
     "EntryScore":         "entry_score",
-    "MarketCap":          "market_cap",
     "AnnualizedVol":      "volatility_20d",
+    "DistanceFromHigh":   "distance_from_high",
+    "AvgDrawdown":        "avg_drawdown",
+    "VolumeConsistency":  "volume_consistency",
+    "VolatilityRatio":    "volatility_ratio",
     # Tier 2 technicals
     "RSI7":               "rsi_7",
     "RSI21":              "rsi_21",
