@@ -93,13 +93,24 @@ def score(data_dir, models_dir):
 
     df3m = pd.read_csv(source_path, index_col=0)
 
+    # Backfill MarketCap from fundamentals.csv if the spread CSV has it empty
+    # (happens when spread CSVs predate the fundamentals-merge fix in access.py).
+    fund_path = data_path / "fundamentals.csv"
+    mc_col = df3m.get("MarketCap", pd.Series(dtype=float))
+    if fund_path.exists() and (mc_col.isna().all() or "MarketCap" not in df3m.columns):
+        fund_df = pd.read_csv(fund_path, usecols=["Ticker", "MarketCap"])
+        df3m = df3m.drop(columns=["MarketCap"], errors="ignore")
+        df3m = df3m.merge(fund_df, on="Ticker", how="left")
+        console.print("[dim]MarketCap backfilled from fundamentals.csv[/dim]")
+
     # Filter to large-enough stocks before scoring — micro/small caps produce
     # noisy signals (illiquid, mean-reversion artifacts) and are untradeable at scale.
     MIN_MARKET_CAP = 1_000_000_000  # $1B
-    if "MarketCap" in df3m.columns:
-        eligible = df3m["MarketCap"].apply(pd.to_numeric, errors="coerce") >= MIN_MARKET_CAP
-        n_filtered = (~eligible).sum()
-        df_score = df3m[eligible].copy()
+    mc_numeric = df3m["MarketCap"].apply(pd.to_numeric, errors="coerce") if "MarketCap" in df3m.columns else pd.Series(dtype=float)
+    if mc_numeric.notna().any():
+        eligible = mc_numeric >= MIN_MARKET_CAP
+        n_filtered = int((~eligible & mc_numeric.notna()).sum())
+        df_score = df3m[eligible | mc_numeric.isna()].copy()
         if n_filtered:
             console.print(f"[dim]Filtered out {n_filtered} stocks below ${MIN_MARKET_CAP/1e9:.0f}B market cap[/dim]")
     else:

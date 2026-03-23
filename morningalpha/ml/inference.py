@@ -49,6 +49,7 @@ _SPREAD_TO_ML: dict = {
     "AvgDrawdown":        "avg_drawdown",
     "VolumeConsistency":  "volume_consistency",
     "VolatilityRatio":    "volatility_ratio",
+    "VolumeUpDnRatio":   "volume_trend_confirmation",
     # Tier 2 technicals
     "RSI7":               "rsi_7",
     "RSI21":              "rsi_21",
@@ -253,6 +254,8 @@ def _build_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
         feat["sector_momentum_rank"] = (
             sector_grp["momentum_12_1"].transform(lambda x: x.rank(pct=True))
         ).fillna(0.5)
+        # RS rating: universe-wide percentile rank of momentum_12_1 (IBD-style)
+        feat["rs_rating"] = feat["momentum_12_1"].rank(pct=True).fillna(0.5)
     if "earnings_yield" in feat.columns and "momentum_12_1" in feat.columns:
         feat["value_x_momentum"] = feat["earnings_yield"] * feat["momentum_12_1"]
     if "roe" in feat.columns and "momentum_12_1" in feat.columns:
@@ -279,7 +282,17 @@ def _build_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _predict_raw(model, X: pd.DataFrame) -> np.ndarray:
-    """Run model.predict() and return raw scores as numpy array."""
+    """Run model.predict() and return raw scores as numpy array.
+
+    If the model was trained on a subset of FEATURE_COLUMNS (e.g. value features
+    were excluded for a momentum-only model), subset X to match.
+    """
+    try:
+        trained_features = model.model.feature_name_
+        if list(trained_features) != list(X.columns):
+            X = X[list(trained_features)]
+    except AttributeError:
+        pass
     return model.predict(X)
 
 

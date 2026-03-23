@@ -387,7 +387,10 @@ def _upsert_model_config(model_dir: Path, name: str, model_type: str, test_ic: f
 @click.option("--checkpoint", default=None, help="Source checkpoint path for fine-tuning.")
 @click.option("--no-plots", "no_plots", is_flag=True, default=False, help="Skip diagnostic plot generation.")
 @click.option("--exclude-features", "exclude_features", default=None, help="Comma-separated feature names to exclude (for ablation experiments).")
-def train(dataset, model_type, target, name, output, n_trials, finetune, checkpoint, no_plots, exclude_features):
+@click.option("--momentum-universe", "momentum_universe", is_flag=True, default=False,
+              help="Filter training data to confirmed uptrends (momentum_12_1 > 10, price_to_sma200 > 0) "
+                   "and exclude pure value features. Trains a momentum-continuation model.")
+def train(dataset, model_type, target, name, output, n_trials, finetune, checkpoint, no_plots, exclude_features, momentum_universe):
     """Train a model on the labeled dataset.
 
     \b
@@ -415,6 +418,36 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
         X_va = X_va[feat_cols]
         X_te = X_te[feat_cols]
         console.print(f"[yellow]Excluding {len(excluded)} features: {', '.join(sorted(excluded))}[/yellow]")
+
+    # Momentum-universe mode: filter to confirmed uptrends + drop pure value features
+    if momentum_universe:
+        _VALUE_FEATURES = {
+            "earnings_yield", "book_to_market", "sales_to_price",
+            "earnings_yield_vs_sector", "book_to_market_vs_sector",
+            "earnings_yield_quality", "debt_to_equity", "current_ratio",
+        }
+        # Filter training rows to confirmed mid-run uptrends (10% < mom12_1 < 400%)
+        # Upper cap excludes extreme outliers (e.g. +1000% stocks) where the model
+        # learns mean-reversion rather than momentum continuation.
+        def _momentum_mask(df_split):
+            mom = df_split.get("momentum_12_1", pd.Series(0, index=df_split.index))
+            sma = df_split.get("price_to_sma200", pd.Series(0, index=df_split.index))
+            return (mom > 0.10) & (mom < 4.00) & (sma > 0)
+        tr_mask = _momentum_mask(df_tr)
+        va_mask = _momentum_mask(df_va)
+        te_mask = _momentum_mask(df_te)
+        before = len(X_tr)
+        X_tr, y_tr, d_tr, df_tr = X_tr[tr_mask], y_tr[tr_mask], d_tr[tr_mask], df_tr[tr_mask]
+        X_va, y_va, d_va, df_va = X_va[va_mask], y_va[va_mask], d_va[va_mask], df_va[va_mask]
+        X_te, y_te, d_te, df_te = X_te[te_mask], y_te[te_mask], d_te[te_mask], df_te[te_mask]
+        console.print(
+            f"[cyan]Momentum universe filter: {before:,} → {len(X_tr):,} train rows "
+            f"(kept stocks with 10% < momentum_12_1 < 400% and price above SMA200)[/cyan]"
+        )
+        # Drop value features — they penalise growth stocks
+        feat_cols = [f for f in feat_cols if f not in _VALUE_FEATURES]
+        X_tr = X_tr[feat_cols]; X_va = X_va[feat_cols]; X_te = X_te[feat_cols]
+        console.print(f"[cyan]Dropped {len(_VALUE_FEATURES)} value features — using {len(feat_cols)} momentum features[/cyan]")
 
     # Load finetune checkpoint if requested
     finetune_model = None

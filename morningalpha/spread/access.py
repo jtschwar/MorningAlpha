@@ -201,12 +201,27 @@ def get_spread(universe, metric, top, out, batch_size, pause, top_per_exchange=N
             progress_callback=progress_callback,
         )
 
-    # Merge fundamentals from pre-built CSV (already loaded above)
+    # Merge fundamentals from pre-built CSV (already loaded above).
+    # Always overwrite MarketCap from fundamentals.csv — the OHLCV pass leaves it empty.
     if fund_df is not None:
+        # Drop empty MarketCap/MarketCapCategory columns so fundamentals.csv values land correctly
+        result = result.drop(columns=[c for c in ["MarketCap", "MarketCapCategory"] if c in result.columns])
         new_cols = ["Ticker"] + [c for c in fund_df.columns if c != "Ticker" and c not in result.columns]
         result = result.merge(fund_df[new_cols], on="Ticker", how="left")
     else:
         console.print("[yellow]⚠ data/latest/fundamentals.csv not found — run `alpha fundamentals` to generate it[/yellow]")
+
+    # Derive MarketCapCategory from MarketCap (fundamentals.csv has raw value, not category string)
+    def _cap_category(mc):
+        if pd.isna(mc) or mc <= 0: return None
+        if mc >= 200e9: return "Mega"
+        if mc >= 10e9:  return "Large"
+        if mc >= 2e9:   return "Mid"
+        if mc >= 300e6: return "Small"
+        return "Micro"
+
+    if "MarketCap" in result.columns and "MarketCapCategory" not in result.columns:
+        result["MarketCapCategory"] = result["MarketCap"].apply(_cap_category)
 
     # Save results
     with console.status("[bold cyan]Saving results..."):

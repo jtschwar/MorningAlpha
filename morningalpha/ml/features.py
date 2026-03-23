@@ -51,6 +51,8 @@ TECHNICAL_FEATURE_COLUMNS: List[str] = [
     "momentum_12_1",         # Jegadeesh-Titman: return from month -12 to -1 (skip last month)
     "momentum_intermediate", # Novy-Marx: return from month -12 to -7 (intermediate horizon)
     "momentum_accel_long",   # 3-month ROC minus momentum_12_1 (long-term trend acceleration)
+    "rs_rating",             # Universe-wide percentile rank of momentum_12_1 (0–1, IBD-style RS)
+    "volume_trend_confirmation", # Up-day vol / down-day vol over last 21 days — confirms trend with volume
     # Tier 3: cross-sectional alpha features
     "sector_return_rank",    # percentile rank of return_pct within sector (0–1) — cross-sectional alpha vs peers
     "return_pct_x_regime",   # return_pct × spy_momentum_regime — regime-conditional momentum.

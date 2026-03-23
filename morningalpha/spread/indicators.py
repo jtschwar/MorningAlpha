@@ -97,6 +97,7 @@ def compute_all_indicators(ohlcv_df: pd.DataFrame) -> dict:
             "Momentum12_1",
             "MomentumIntermediate",
             "MomentumAccelLong",
+            "VolumeUpDnRatio",
         ]
         return {k: np.nan for k in nan_keys}
 
@@ -166,6 +167,20 @@ def compute_all_indicators(ohlcv_df: pd.DataFrame) -> dict:
         result["PctDaysPositive21d"] = float((recent > 0).mean()) if len(recent) > 0 else np.nan
     except Exception:
         result["PctDaysPositive21d"] = np.nan
+
+    # VolumeUpDnRatio — up-day volume / down-day volume over last 21 days.
+    # >1 means more volume on up days (healthy trend); <1 = distribution (warning signal).
+    try:
+        if n >= 22 and len(volume) >= 22:
+            rets_21 = close.pct_change().dropna().iloc[-21:]
+            vol_21  = volume.iloc[-len(rets_21):]
+            up_vol  = vol_21[rets_21.values > 0].sum()
+            dn_vol  = vol_21[rets_21.values <= 0].sum()
+            result["VolumeUpDnRatio"] = float(up_vol / dn_vol) if dn_vol > 0 else 2.0
+        else:
+            result["VolumeUpDnRatio"] = np.nan
+    except Exception:
+        result["VolumeUpDnRatio"] = np.nan
 
     # Long-horizon momentum (academic factors — require 252 days of history)
     # Momentum12_1: Jegadeesh-Titman — return from month -12 to -1 (skip last month)

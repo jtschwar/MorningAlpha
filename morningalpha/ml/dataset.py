@@ -660,6 +660,24 @@ def _compute_extended_technicals(subset: pd.DataFrame) -> dict:
     except Exception:
         result["pct_days_positive_21d"] = np.nan
 
+    # --- Volume trend confirmation (up-day vol / down-day vol, 21 days) ---
+    # >1 means more volume on up days (healthy trend); <1 = distribution (warning signal)
+    try:
+        if "Volume" in subset.columns and n >= 22:
+            vol_series = subset["Volume"].reindex(prices.index).dropna()
+            daily_rets = prices.pct_change().dropna()
+            common_idx = daily_rets.index.intersection(vol_series.index)
+            if len(common_idx) >= 21:
+                dr = daily_rets.loc[common_idx].iloc[-21:]
+                vl = vol_series.loc[common_idx].iloc[-21:]
+                up_vol = vl[dr.values > 0].sum()
+                dn_vol = vl[dr.values <= 0].sum()
+                result["volume_trend_confirmation"] = float(up_vol / dn_vol) if dn_vol > 0 else 2.0
+        else:
+            result["volume_trend_confirmation"] = np.nan
+    except Exception:
+        result["volume_trend_confirmation"] = np.nan
+
     # --- Long-horizon momentum (academic factors) ---
     # momentum_12_1: Jegadeesh-Titman — return from month -12 to -1 (skip last month)
     # momentum_intermediate: Novy-Marx — return from month -12 to -7 (most predictive window)
@@ -1169,6 +1187,17 @@ def dataset(lookback, output, tickers_from, horizons, no_overlap, refresh_only, 
         df.loc[both, "quality_x_momentum"] = (
             df.loc[both, "roe"] * df.loc[both, "momentum_12_1"]
         )
+
+    # --- RS rating: universe-wide percentile rank of momentum_12_1 per date (0–1) ---
+    # This is the IBD-style Relative Strength number. A stock with rs_rating=0.99
+    # has stronger 12-month momentum than 99% of all stocks on that date.
+    if "momentum_12_1" in df.columns:
+        df["rs_rating"] = (
+            df.groupby("date")["momentum_12_1"]
+            .transform(lambda x: x.rank(pct=True))
+        )
+    else:
+        df["rs_rating"] = np.nan
 
     # --- Rank-normalize labels cross-sectionally per date ---
     # forward_{h}d_rank is the primary training target; raw forward_{h}d is kept for evaluation.
