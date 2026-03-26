@@ -193,7 +193,14 @@ def _build_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
     for ratio_col, feat_name in [("PE", "earnings_yield"), ("PB", "book_to_market"), ("PS", "sales_to_price")]:
         if ratio_col in df.columns:
             ratio = pd.to_numeric(df[ratio_col], errors="coerce")
-            feat[feat_name] = (1.0 / ratio).replace([np.inf, -np.inf], np.nan)
+            if feat_name == "earnings_yield":
+                # Only meaningful for profitable companies (positive PE).
+                # Cap at 0.20 (P/E floor = 5) to prevent pre-revenue data artifacts
+                # from dominating sector-relative rankings.
+                ratio = ratio.where(ratio > 0)
+                feat[feat_name] = (1.0 / ratio).replace([np.inf, -np.inf], np.nan).clip(upper=0.20)
+            else:
+                feat[feat_name] = (1.0 / ratio).replace([np.inf, -np.inf], np.nan)
 
     # Categorical: market_cap_cat
     if "MarketCapCategory" in df.columns:

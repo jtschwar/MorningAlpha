@@ -71,22 +71,22 @@
   ],
   "target": "forward_63d_composite_rank",
   "best_params": {
-    "num_leaves": 27,
-    "max_depth": 6,
-    "learning_rate": 0.007158534523900165,
-    "feature_fraction": 0.6719569364649879,
-    "bagging_fraction": 0.6171303768841123,
-    "min_child_samples": 385,
-    "lambda_l1": 0.8605759741324727,
-    "lambda_l2": 0.6786004191363045
+    "num_leaves": 28,
+    "max_depth": 5,
+    "learning_rate": 0.011087155074888305,
+    "feature_fraction": 0.5127560580092333,
+    "bagging_fraction": 0.6889996912564883,
+    "min_child_samples": 133,
+    "lambda_l1": 6.949610163203486,
+    "lambda_l2": 2.5587407811266987
   },
   "results": {
-    "train_ic": 0.35807272455776923,
-    "val_ic": 0.19860256491094186,
-    "test_ic": 0.18392811670741105,
-    "train_hit": 0.6191531082070566,
-    "val_hit": 0.5687445979347051,
-    "test_hit": 0.5642499154896456
+    "train_ic": 0.3629088818486118,
+    "val_ic": 0.19467004868978705,
+    "test_ic": 0.1874482500758624,
+    "train_hit": 0.6206467508469357,
+    "val_hit": 0.5659068682765365,
+    "test_hit": 0.5647087994632517
   },
-  "persistence_ic": -0.0204783359728957
+  "persistence_ic": -0.019569908575630842
 }

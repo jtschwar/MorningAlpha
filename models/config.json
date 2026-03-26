@@ -4,8 +4,14 @@
     {
       "id": "lgbm_composite_63d",
       "type": "lgbm",
-      "description": "Quality-growth model \u2014 composite target (return 30% + Sharpe 35% + consistency 20% + drawdown 15%), test IC 0.184, hit rate 56.4%",
-      "status": "champion"
+      "description": "LGBM \u2014 test IC 0.187",
+      "status": "candidate"
+    },
+    {
+      "id": "lgbm_sector_relative_63d",
+      "type": "lgbm",
+      "description": "LGBM \u2014 test IC 0.167",
+      "status": "candidate"
     }
   ]
 }

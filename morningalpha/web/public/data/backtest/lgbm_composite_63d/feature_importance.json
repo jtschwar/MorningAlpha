@@ -1,102 +1,102 @@
 [
   {
     "feature": "earnings_yield",
-    "importance": 0.050723,
+    "importance": 0.048611,
     "category": "fundamental"
   },
   {
     "feature": "book_to_market",
-    "importance": 0.023744,
+    "importance": 0.023829,
+    "category": "fundamental"
+  },
+  {
+    "feature": "earnings_yield_vs_sector",
+    "importance": 0.018832,
     "category": "fundamental"
   },
   {
     "feature": "max_drawdown",
-    "importance": 0.018237,
+    "importance": 0.01844,
     "category": "technical"
-  },
-  {
-    "feature": "earnings_yield_vs_sector",
-    "importance": 0.017864,
-    "category": "fundamental"
   },
   {
     "feature": "profit_margin",
-    "importance": 0.017721,
+    "importance": 0.015841,
     "category": "fundamental"
-  },
-  {
-    "feature": "atr_14",
-    "importance": 0.015076,
-    "category": "technical"
   },
   {
     "feature": "market_cap_cat",
-    "importance": 0.014849,
+    "importance": 0.015296,
     "category": "technical"
   },
   {
-    "feature": "sales_to_price",
-    "importance": 0.011375,
-    "category": "fundamental"
+    "feature": "atr_14",
+    "importance": 0.013562,
+    "category": "technical"
   },
   {
     "feature": "roe",
-    "importance": 0.010782,
+    "importance": 0.011323,
     "category": "fundamental"
   },
   {
-    "feature": "spy_volatility_20d",
-    "importance": 0.00963,
-    "category": "market_context"
+    "feature": "sales_to_price",
+    "importance": 0.009182,
+    "category": "fundamental"
   },
   {
     "feature": "consistency_score",
-    "importance": 0.00832,
+    "importance": 0.009044,
     "category": "technical"
   },
   {
-    "feature": "short_pct_float",
-    "importance": 0.007814,
-    "category": "fundamental"
+    "feature": "spy_volatility_20d",
+    "importance": 0.008973,
+    "category": "market_context"
   },
   {
     "feature": "sector",
-    "importance": 0.007741,
+    "importance": 0.007761,
+    "category": "fundamental"
+  },
+  {
+    "feature": "short_pct_float",
+    "importance": 0.007308,
     "category": "fundamental"
   },
   {
     "feature": "debt_to_equity",
-    "importance": 0.006425,
+    "importance": 0.006478,
+    "category": "fundamental"
+  },
+  {
+    "feature": "book_to_market_vs_sector",
+    "importance": 0.005866,
     "category": "fundamental"
   },
   {
     "feature": "sharpe_ratio",
-    "importance": 0.006402,
-    "category": "technical"
-  },
-  {
-    "feature": "book_to_market_vs_sector",
-    "importance": 0.006243,
-    "category": "fundamental"
-  },
-  {
-    "feature": "quality_x_momentum",
-    "importance": 0.005678,
+    "importance": 0.005705,
     "category": "technical"
   },
   {
     "feature": "volume_consistency",
-    "importance": 0.005579,
-    "category": "technical"
-  },
-  {
-    "feature": "volatility_ratio",
-    "importance": 0.005548,
+    "importance": 0.005611,
     "category": "technical"
   },
   {
     "feature": "current_ratio",
-    "importance": 0.005093,
+    "importance": 0.005376,
     "category": "fundamental"
+  },
+  {
+    "feature": "volatility_ratio",
+    "importance": 0.005184,
+    "category": "technical"
+  },
+  {
+    "feature": "quality_x_momentum",
+    "importance": 0.004808,
+    "category": "technical"
   }
 ]

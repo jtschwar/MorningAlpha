@@ -313,10 +313,14 @@ def _compile_derived_features(df: pd.DataFrame) -> pd.DataFrame:
         price_mask = df[price_col].notna() & (df[price_col] != 0)
         if price_mask.any():
             if "trailingEps" in df.columns:
-                df.loc[price_mask, "earnings_yield"] = (
-                    df.loc[price_mask, "trailingEps"].astype(float, errors="ignore")
-                    / df.loc[price_mask, price_col].astype(float, errors="ignore")
-                )
+                eps = df.loc[price_mask, "trailingEps"].astype(float, errors="ignore")
+                price = df.loc[price_mask, price_col].astype(float, errors="ignore")
+                # Only meaningful for profitable companies; cap at 0.20 (P/E floor=5)
+                # to prevent data artifacts from pre-revenue stocks dominating sector ranks
+                profitable = eps > 0
+                df.loc[price_mask & profitable, "earnings_yield"] = (
+                    eps[profitable] / price[profitable]
+                ).clip(upper=0.20)
             if "bookValue" in df.columns:
                 df.loc[price_mask, "book_to_market"] = (
                     df.loc[price_mask, "bookValue"].astype(float, errors="ignore")
