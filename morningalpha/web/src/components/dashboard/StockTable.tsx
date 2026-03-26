@@ -114,6 +114,12 @@ const COLUMN_DEFS: Record<string, ColDef> = {
     helpSection: 'scores',
     render: s => <td key="Score"><ScoreBadge value={s.investmentScore} /></td>,
   },
+  'ML Score': {
+    label: 'ML Score',
+    sortKey: 'mlScore',
+    helpSection: 'scores',
+    render: s => <td key="ML Score"><ScoreBadge value={s.mlScore} /></td>,
+  },
   'Mkt Cap': {
     label: 'Mkt Cap',
     sortKey: 'marketCap',

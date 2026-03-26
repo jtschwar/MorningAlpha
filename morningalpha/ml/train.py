@@ -379,7 +379,7 @@ def _upsert_model_config(model_dir: Path, name: str, model_type: str, test_ic: f
 @click.command("train")
 @click.option("--dataset", default="data/training/dataset.parquet", show_default=True, help="Path to dataset parquet.")
 @click.option("--model", "model_type", default="lgbm", type=click.Choice(["lgbm", "ridge"]), show_default=True, help="Model type.")
-@click.option("--target", default="forward_10d_rank", show_default=True, help="Target label column. Use forward_10d_rank (default) for cross-sectional ranking, or forward_10d for raw return regression.")
+@click.option("--target", default="forward_63d_composite_rank", show_default=True, help="Target label column. forward_63d_composite_rank (default) blends return/Sharpe/consistency/drawdown to predict quality-adjusted growth. forward_10d_rank for pure short-term return ranking. forward_63d_market_excess_rank for raw excess-return ranking.")
 @click.option("--name", default=None, help="Model checkpoint name (default: {model_type}_v1).")
 @click.option("--output", default=None, help="Path to save checkpoint (default: ~/.morningalpha/models/{name}.pkl).")
 @click.option("--n-trials", "n_trials", default=30, show_default=True, help="Optuna hyperparameter search trials (lgbm only).")

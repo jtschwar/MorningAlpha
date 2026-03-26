@@ -29,7 +29,7 @@ interface LeaderboardEntry {
 }
 
 interface IcEntry { month: string; ic: number }
-interface CumIcEntry { date: string; cumulative_ic: number }
+interface CumIcEntry { month: string; cumulative_ic: number }
 interface EquityEntry { date: string; cumulative_return: number; underwater: number }
 interface DecileEntry { decile: number; ann_return: number }
 interface FeatureEntry { feature: string; importance: number; category: string }
@@ -208,7 +208,7 @@ function IcTab({ data }: { data: ModelDetail }) {
   const ics = icOverTime.map(d => d.ic)
   const barColors = ics.map(colorByIC)
 
-  const cumDates = cumIc.map(d => d.date)
+  const cumDates = cumIc.map(d => d.month)
   const cumVals = cumIc.map(d => d.cumulative_ic)
 
   return (
@@ -216,6 +216,11 @@ function IcTab({ data }: { data: ModelDetail }) {
       {/* Monthly IC bars */}
       <div className={styles.chartCard}>
         <div className={styles.chartTitle}>Monthly IC</div>
+        <div className={styles.chartDesc}>
+          Average rank correlation between the model's predicted scores and actual forward returns for each month.
+          Green bars mean the model correctly ranked outperformers — aim for consistently positive values above 0.05.
+          A single bad month is fine; persistent red bars would indicate the signal has broken down.
+        </div>
         <Plot
           data={[{
             type: 'bar',
@@ -250,6 +255,11 @@ function IcTab({ data }: { data: ModelDetail }) {
       {/* Cumulative IC line */}
       <div className={styles.chartCard}>
         <div className={styles.chartTitle}>Cumulative IC</div>
+        <div className={styles.chartDesc}>
+          Running sum of monthly IC over the test period. A steadily rising line means the model generates
+          consistent signal every month, not just a lucky streak in one period. Plateaus or dips show months
+          where predictive power weakened — useful for spotting regime sensitivity.
+        </div>
         <Plot
           data={[{
             type: 'scatter',
@@ -294,6 +304,11 @@ function EquityTab({ data }: { data: ModelDetail }) {
       {/* L/S equity curve */}
       <div className={styles.chartCard}>
         <div className={styles.chartTitle}>L/S Portfolio — Cumulative Return</div>
+        <div className={styles.chartDesc}>
+          Simulated portfolio that goes long the top-ranked 10% of stocks and short the bottom 10%,
+          rebalanced at each non-overlapping snapshot. Starts at 1.0×. A value of 2.0× means the strategy
+          doubled over the test period. 10 bps round-trip transaction cost applied per period.
+        </div>
         <Plot
           data={[{
             type: 'scatter',
@@ -323,6 +338,11 @@ function EquityTab({ data }: { data: ModelDetail }) {
       {/* Underwater / drawdown */}
       <div className={styles.chartCard}>
         <div className={styles.chartTitle}>Drawdown (Underwater)</div>
+        <div className={styles.chartDesc}>
+          How far the L/S portfolio sits below its all-time high at each point in time. −15% means the
+          portfolio is 15% below its peak. The curve recovering back to 0% means it has fully recovered.
+          Shallow, short drawdowns indicate the model holds up well across different market conditions.
+        </div>
         <Plot
           data={[{
             type: 'scatter',
@@ -352,6 +372,12 @@ function EquityTab({ data }: { data: ModelDetail }) {
       {/* Decile returns */}
       <div className={styles.chartCard}>
         <div className={styles.chartTitle}>Decile Returns (Ann.) — D1=short, D10=long</div>
+        <div className={styles.chartDesc}>
+          Stocks ranked into 10 equal buckets by predicted score, D1 lowest to D10 highest.
+          A working model shows a monotonically rising staircase — the model separates winners from losers
+          across the full distribution, not just at the extremes. The gap between D10 and D1 is the
+          gross long-short spread before transaction costs.
+        </div>
         <Plot
           data={[{
             type: 'bar',
@@ -363,6 +389,10 @@ function EquityTab({ data }: { data: ModelDetail }) {
           layout={{
             ...PLOT_LAYOUT_BASE,
             height: 240,
+            xaxis: {
+              ...PLOT_LAYOUT_BASE.xaxis,
+              type: 'category',
+            },
             yaxis: {
               ...PLOT_LAYOUT_BASE.yaxis,
               title: { text: 'Ann. Return', standoff: 8 },
@@ -610,6 +640,9 @@ export default function BacktestPage() {
       <div className={styles.page}>
         <div className={styles.pageHeader}>
           <h1 className={styles.pageTitle}>ML Model Evaluation</h1>
+          {selectedEntry && (
+            <span className={styles.modelBadge}>{selectedEntry.model_id}</span>
+          )}
           {selectedEntry && (
             <span className={styles.periodBadge}>
               Test period: {selectedEntry.test_period.start} → {selectedEntry.test_period.end}

@@ -868,12 +868,32 @@ def _compute_labels(
         price_h = prices.iloc[idx_pos + h]
         labels[f"forward_{h}d"] = float((price_h / price_t) - 1)
 
-    if 10 in horizons:
-        future_slice = prices.iloc[idx_pos : idx_pos + 11]
+        # Quality components of the forward return window
+        future_slice = prices.iloc[idx_pos : idx_pos + h + 1]
+        daily_rets = future_slice.pct_change().dropna().values
+
+        # Max drawdown over forward window
         rolling_max = future_slice.expanding().max()
         drawdowns = (future_slice - rolling_max) / rolling_max
         max_dd = float(drawdowns.min())
-        labels["adj_forward_10d"] = labels["forward_10d"] - 0.5 * abs(max_dd)
+        labels[f"forward_{h}d_max_drawdown"] = max_dd
+
+        # Drawdown-adjusted return (generalised from adj_forward_10d)
+        labels[f"adj_forward_{h}d"] = labels[f"forward_{h}d"] - 0.5 * abs(max_dd)
+
+        # Forward Sharpe: annualised mean/std of daily returns in the window
+        if len(daily_rets) >= 5:
+            std = float(np.std(daily_rets, ddof=1))
+            labels[f"forward_{h}d_sharpe"] = (
+                float(np.mean(daily_rets) / std * np.sqrt(252)) if std > 1e-8 else 0.0
+            )
+        else:
+            labels[f"forward_{h}d_sharpe"] = float("nan")
+
+        # Consistency: fraction of positive daily returns
+        labels[f"forward_{h}d_consistency"] = (
+            float((daily_rets > 0).mean()) if len(daily_rets) > 0 else float("nan")
+        )
 
     return labels
 
@@ -1205,6 +1225,33 @@ def dataset(lookback, output, tickers_from, horizons, no_overlap, refresh_only, 
         col = f"forward_{h}d"
         if col in df.columns:
             df[f"{col}_rank"] = df.groupby("date")[col].transform(_rank_norm_series)
+
+    # --- Composite quality target ---
+    # Mirrors the traditional investment score weighting:
+    #   Return 30% | Sharpe 35% | Consistency 20% | Drawdown protection 15%
+    # Trains the model to predict which stocks will have the best QUALITY returns
+    # going forward, not just the highest raw return.
+    for h in horizons_list:
+        needed = [f"forward_{h}d", f"forward_{h}d_sharpe", f"forward_{h}d_consistency", f"forward_{h}d_max_drawdown"]
+        if not all(c in df.columns for c in needed):
+            continue
+        # Rank each component cross-sectionally per date (0→1, higher = better)
+        r_return      = df.groupby("date")[f"forward_{h}d"].transform(lambda x: x.rank(pct=True))
+        r_sharpe      = df.groupby("date")[f"forward_{h}d_sharpe"].transform(lambda x: x.rank(pct=True))
+        r_consistency = df.groupby("date")[f"forward_{h}d_consistency"].transform(lambda x: x.rank(pct=True))
+        # Drawdown is negative — invert so lower drawdown scores higher
+        r_drawdown    = df.groupby("date")[f"forward_{h}d_max_drawdown"].transform(lambda x: (-x).rank(pct=True))
+
+        _tmp = f"_tmp_composite_{h}d"
+        df[_tmp] = (
+            0.30 * r_return
+            + 0.35 * r_sharpe
+            + 0.20 * r_consistency
+            + 0.15 * r_drawdown
+        )
+        # Final cross-sectional rank-normalize to (−1, 1) to match other targets
+        df[f"forward_{h}d_composite_rank"] = df.groupby("date")[_tmp].transform(_rank_norm_series)
+        df.drop(columns=[_tmp], inplace=True)
 
     # --- Market-excess and sector-relative return targets ---
     spy_fwd_lookup = _compute_spy_forward_return_lookup(spy_ohlcv, all_dates, horizons_list)

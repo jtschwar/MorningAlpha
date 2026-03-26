@@ -226,6 +226,7 @@ export default function DenseIndicatorGrid({ stock, fundamentals: f, ohlcv, peri
     { label: 'ROC 5D',    value: fmtPct(stock?.ROC5 ?? null, 1, true),  color: stock?.ROC5 != null ? (stock.ROC5 > 0 ? 'pos' : stock.ROC5 < 0 ? 'neg' : '') : 'neutral' },
     { label: 'ROC 10D',   value: fmtPct(stock?.ROC10 ?? null, 1, true), color: stock?.ROC10 != null ? (stock.ROC10 > 0 ? 'pos' : stock.ROC10 < 0 ? 'neg' : '') : 'neutral' },
     { label: 'ROC 21D',   value: hideROC21 ? '—' : fmtPct(stock?.ROC21 ?? null, 1, true), color: hideROC21 ? 'neutral' : (stock?.ROC21 != null ? (stock.ROC21 > 0 ? 'pos' : stock.ROC21 < 0 ? 'neg' : '') : 'neutral') },
+    { label: 'ML SCORE',  value: fmt(stock?.mlScore ?? null, 1), color: stock?.mlScore != null ? (stock.mlScore >= 70 ? 'pos' : stock.mlScore < 40 ? 'neg' : '') : 'neutral' },
   ]
 
   // ── Section 3: Technical Indicators ──────────────────────────────────────

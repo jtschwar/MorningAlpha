@@ -2,6 +2,7 @@ export type WindowPeriod = '2w' | '1m' | '3m' | '6m'
 
 export type SortKey =
   | 'investmentScore'
+  | 'mlScore'
   | 'return'
   | 'quality'
   | 'sharpe'
@@ -162,7 +163,7 @@ export interface AppState {
 }
 
 export const DEFAULT_VISIBLE_COLUMNS = [
-  'Rank', 'Ticker', 'Name', 'Exchange', 'Return %', 'Sharpe', 'Quality', 'Entry', 'Max DD', 'RSI', 'Score'
+  'Rank', 'Ticker', 'Name', 'Exchange', 'Return %', 'Sharpe', 'Quality', 'Entry', 'Max DD', 'RSI', 'Score', 'ML Score'
 ]
 
 export const DEFAULT_FILTERS: FilterState = {

@@ -1,0 +1,102 @@
+[
+  {
+    "date": "2024-11-12",
+    "cumulative_return": 0.999641,
+    "underwater": 0.0
+  },
+  {
+    "date": "2024-12-03",
+    "cumulative_return": 0.9674,
+    "underwater": -0.032253
+  },
+  {
+    "date": "2024-12-24",
+    "cumulative_return": 0.903267,
+    "underwater": -0.096409
+  },
+  {
+    "date": "2025-01-14",
+    "cumulative_return": 1.091259,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-02-04",
+    "cumulative_return": 1.18528,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-02-25",
+    "cumulative_return": 1.397359,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-03-18",
+    "cumulative_return": 1.39045,
+    "underwater": -0.004944
+  },
+  {
+    "date": "2025-04-08",
+    "cumulative_return": 1.545093,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-04-29",
+    "cumulative_return": 1.823206,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-05-20",
+    "cumulative_return": 1.83041,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-06-10",
+    "cumulative_return": 1.739725,
+    "underwater": -0.049544
+  },
+  {
+    "date": "2025-07-01",
+    "cumulative_return": 1.276888,
+    "underwater": -0.302403
+  },
+  {
+    "date": "2025-07-22",
+    "cumulative_return": 1.283122,
+    "underwater": -0.298997
+  },
+  {
+    "date": "2025-08-12",
+    "cumulative_return": 1.404696,
+    "underwater": -0.232578
+  },
+  {
+    "date": "2025-09-02",
+    "cumulative_return": 1.182316,
+    "underwater": -0.35407
+  },
+  {
+    "date": "2025-09-23",
+    "cumulative_return": 1.139416,
+    "underwater": -0.377508
+  },
+  {
+    "date": "2025-10-14",
+    "cumulative_return": 1.227159,
+    "underwater": -0.329571
+  },
+  {
+    "date": "2025-11-04",
+    "cumulative_return": 1.24818,
+    "underwater": -0.318087
+  },
+  {
+    "date": "2025-11-25",
+    "cumulative_return": 1.209626,
+    "underwater": -0.33915
+  },
+  {
+    "date": "2025-12-16",
+    "cumulative_return": 0.994837,
+    "underwater": -0.456495
+  }
+]

@@ -21,6 +21,17 @@
   margin: 0;
 }
 
+.modelBadge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-blue);
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+
 .periodBadge {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -102,6 +113,45 @@
   border-bottom-color: var(--accent-blue);
 }
 
+/* Horizon filter — right-aligned within tab bar */
+.horizonFilter {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding-bottom: 1px;
+}
+
+.horizonLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-right: 4px;
+}
+
+.horizonBtn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 3px 10px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.horizonBtn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+.horizonBtnActive {
+  color: var(--accent-blue);
+  border-color: var(--accent-blue);
+  background: rgba(59, 130, 246, 0.10);
+}
+
 /* Tab content area */
 .tabContent {
   min-height: 300px;
@@ -127,6 +177,14 @@
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.chartDesc {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.5;
   margin-bottom: 10px;
 }
 

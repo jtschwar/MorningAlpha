@@ -1,0 +1,102 @@
+[
+  {
+    "feature": "earnings_yield",
+    "importance": 0.026085,
+    "category": "fundamental"
+  },
+  {
+    "feature": "book_to_market",
+    "importance": 0.011238,
+    "category": "fundamental"
+  },
+  {
+    "feature": "earnings_yield_vs_sector",
+    "importance": 0.010209,
+    "category": "fundamental"
+  },
+  {
+    "feature": "market_cap_cat",
+    "importance": 0.00949,
+    "category": "technical"
+  },
+  {
+    "feature": "profit_margin",
+    "importance": 0.007059,
+    "category": "fundamental"
+  },
+  {
+    "feature": "max_drawdown",
+    "importance": 0.00677,
+    "category": "technical"
+  },
+  {
+    "feature": "spy_volatility_20d",
+    "importance": 0.006272,
+    "category": "market_context"
+  },
+  {
+    "feature": "volatility_20d",
+    "importance": 0.005811,
+    "category": "technical"
+  },
+  {
+    "feature": "roe",
+    "importance": 0.005488,
+    "category": "fundamental"
+  },
+  {
+    "feature": "book_to_market_vs_sector",
+    "importance": 0.004385,
+    "category": "fundamental"
+  },
+  {
+    "feature": "macd_signal",
+    "importance": 0.003904,
+    "category": "technical"
+  },
+  {
+    "feature": "sector",
+    "importance": 0.003888,
+    "category": "fundamental"
+  },
+  {
+    "feature": "sales_to_price",
+    "importance": 0.003486,
+    "category": "fundamental"
+  },
+  {
+    "feature": "spy_momentum_regime",
+    "importance": 0.003327,
+    "category": "market_context"
+  },
+  {
+    "feature": "roc_21",
+    "importance": 0.003319,
+    "category": "technical"
+  },
+  {
+    "feature": "price_to_sma200",
+    "importance": 0.003261,
+    "category": "technical"
+  },
+  {
+    "feature": "spy_return_21d",
+    "importance": 0.003212,
+    "category": "market_context"
+  },
+  {
+    "feature": "spy_rsi_14",
+    "importance": 0.002707,
+    "category": "market_context"
+  },
+  {
+    "feature": "volume_surge",
+    "importance": 0.002699,
+    "category": "technical"
+  },
+  {
+    "feature": "spy_return_10d",
+    "importance": 0.002693,
+    "category": "market_context"
+  }
+]

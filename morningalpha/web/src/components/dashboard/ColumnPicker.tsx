@@ -10,7 +10,7 @@ interface ColumnGroup {
 export const COLUMN_GROUPS: ColumnGroup[] = [
   {
     label: 'Core',
-    columns: ['Name', 'Exchange', 'Return %', 'Sharpe', 'Sortino', 'Quality', 'Entry', 'Max DD', 'RSI', 'Score'],
+    columns: ['Name', 'Exchange', 'Return %', 'Sharpe', 'Sortino', 'Quality', 'Entry', 'Max DD', 'RSI', 'Score', 'ML Score'],
   },
   {
     label: 'Technical — Trend',

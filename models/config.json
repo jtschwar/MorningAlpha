@@ -1,10 +1,10 @@
 {
-  "champion": "lgbm_momentum",
+  "champion": "lgbm_composite_63d",
   "models": [
     {
-      "id": "lgbm_momentum",
+      "id": "lgbm_composite_63d",
       "type": "lgbm",
-      "description": "Momentum-continuation model — 63d market-excess target, IC 0.080, hit rate 75%",
+      "description": "Quality-growth model \u2014 composite target (return 30% + Sharpe 35% + consistency 20% + drawdown 15%), test IC 0.184, hit rate 56.4%",
       "status": "champion"
     }
   ]

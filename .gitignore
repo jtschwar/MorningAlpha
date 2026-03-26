@@ -221,7 +221,7 @@ data/fundamentals/
 # React/Vite build artifacts
 morningalpha/web/node_modules/
 morningalpha/web/dist/
-morningalpha/web/public/data/
+morningalpha/web/public/data/latest/
 
 # Un-ignore web source lib/ (the root `lib/` rule above would otherwise swallow it)
 !morningalpha/web/src/lib/

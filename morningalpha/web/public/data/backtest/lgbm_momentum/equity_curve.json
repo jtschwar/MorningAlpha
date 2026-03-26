@@ -1,0 +1,37 @@
+[
+  {
+    "date": "2024-11-12",
+    "cumulative_return": 1.026014,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-01-14",
+    "cumulative_return": 0.990261,
+    "underwater": -0.034846
+  },
+  {
+    "date": "2025-03-18",
+    "cumulative_return": 1.048496,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-05-20",
+    "cumulative_return": 0.634301,
+    "underwater": -0.395038
+  },
+  {
+    "date": "2025-07-22",
+    "cumulative_return": 0.571598,
+    "underwater": -0.45484
+  },
+  {
+    "date": "2025-09-23",
+    "cumulative_return": 0.509945,
+    "underwater": -0.513642
+  },
+  {
+    "date": "2025-11-25",
+    "cumulative_return": 0.581015,
+    "underwater": -0.445859
+  }
+]

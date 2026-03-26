@@ -1,0 +1,1407 @@
+[
+  {
+    "date": "2025-01-06",
+    "cumulative_return": 1.288149,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-01-07",
+    "cumulative_return": 1.508866,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-01-08",
+    "cumulative_return": 1.571293,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-01-10",
+    "cumulative_return": 1.418476,
+    "underwater": -0.097255
+  },
+  {
+    "date": "2025-01-13",
+    "cumulative_return": 1.457649,
+    "underwater": -0.072325
+  },
+  {
+    "date": "2025-01-14",
+    "cumulative_return": 1.355268,
+    "underwater": -0.137482
+  },
+  {
+    "date": "2025-01-15",
+    "cumulative_return": 1.415196,
+    "underwater": -0.099343
+  },
+  {
+    "date": "2025-01-16",
+    "cumulative_return": 1.604435,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-01-17",
+    "cumulative_return": 1.631436,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-01-21",
+    "cumulative_return": 1.768236,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-01-22",
+    "cumulative_return": 1.553322,
+    "underwater": -0.121541
+  },
+  {
+    "date": "2025-01-23",
+    "cumulative_return": 1.546391,
+    "underwater": -0.125461
+  },
+  {
+    "date": "2025-01-24",
+    "cumulative_return": 1.258195,
+    "underwater": -0.288446
+  },
+  {
+    "date": "2025-01-27",
+    "cumulative_return": 1.143992,
+    "underwater": -0.353032
+  },
+  {
+    "date": "2025-01-28",
+    "cumulative_return": 1.149356,
+    "underwater": -0.349999
+  },
+  {
+    "date": "2025-01-29",
+    "cumulative_return": 1.134361,
+    "underwater": -0.358479
+  },
+  {
+    "date": "2025-01-30",
+    "cumulative_return": 1.237324,
+    "underwater": -0.30025
+  },
+  {
+    "date": "2025-01-31",
+    "cumulative_return": 1.107057,
+    "underwater": -0.37392
+  },
+  {
+    "date": "2025-02-03",
+    "cumulative_return": 1.088173,
+    "underwater": -0.3846
+  },
+  {
+    "date": "2025-02-04",
+    "cumulative_return": 1.262847,
+    "underwater": -0.285815
+  },
+  {
+    "date": "2025-02-05",
+    "cumulative_return": 1.195828,
+    "underwater": -0.323717
+  },
+  {
+    "date": "2025-02-06",
+    "cumulative_return": 1.190576,
+    "underwater": -0.326687
+  },
+  {
+    "date": "2025-02-07",
+    "cumulative_return": 1.246865,
+    "underwater": -0.294854
+  },
+  {
+    "date": "2025-02-10",
+    "cumulative_return": 1.401152,
+    "underwater": -0.207599
+  },
+  {
+    "date": "2025-02-11",
+    "cumulative_return": 1.471628,
+    "underwater": -0.167742
+  },
+  {
+    "date": "2025-02-12",
+    "cumulative_return": 1.396543,
+    "underwater": -0.210206
+  },
+  {
+    "date": "2025-02-13",
+    "cumulative_return": 1.361308,
+    "underwater": -0.230132
+  },
+  {
+    "date": "2025-02-14",
+    "cumulative_return": 1.641582,
+    "underwater": -0.071627
+  },
+  {
+    "date": "2025-02-18",
+    "cumulative_return": 1.849459,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-02-19",
+    "cumulative_return": 2.301527,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-02-20",
+    "cumulative_return": 2.685293,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-02-21",
+    "cumulative_return": 2.856257,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-02-24",
+    "cumulative_return": 3.00666,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-02-25",
+    "cumulative_return": 3.190298,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-02-26",
+    "cumulative_return": 3.232321,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-02-27",
+    "cumulative_return": 2.791114,
+    "underwater": -0.136499
+  },
+  {
+    "date": "2025-02-28",
+    "cumulative_return": 2.916448,
+    "underwater": -0.097723
+  },
+  {
+    "date": "2025-03-03",
+    "cumulative_return": 2.940752,
+    "underwater": -0.090204
+  },
+  {
+    "date": "2025-03-04",
+    "cumulative_return": 2.808647,
+    "underwater": -0.131074
+  },
+  {
+    "date": "2025-03-05",
+    "cumulative_return": 2.811866,
+    "underwater": -0.130078
+  },
+  {
+    "date": "2025-03-06",
+    "cumulative_return": 3.313479,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-03-07",
+    "cumulative_return": 2.619152,
+    "underwater": -0.209546
+  },
+  {
+    "date": "2025-03-10",
+    "cumulative_return": 2.582108,
+    "underwater": -0.220726
+  },
+  {
+    "date": "2025-03-11",
+    "cumulative_return": 2.525097,
+    "underwater": -0.237932
+  },
+  {
+    "date": "2025-03-12",
+    "cumulative_return": 2.594352,
+    "underwater": -0.217031
+  },
+  {
+    "date": "2025-03-13",
+    "cumulative_return": 2.826762,
+    "underwater": -0.14689
+  },
+  {
+    "date": "2025-03-14",
+    "cumulative_return": 3.057641,
+    "underwater": -0.077211
+  },
+  {
+    "date": "2025-03-17",
+    "cumulative_return": 3.300886,
+    "underwater": -0.003801
+  },
+  {
+    "date": "2025-03-18",
+    "cumulative_return": 3.583711,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-03-19",
+    "cumulative_return": 3.69519,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-03-20",
+    "cumulative_return": 4.059366,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-03-21",
+    "cumulative_return": 4.131191,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-03-24",
+    "cumulative_return": 4.52583,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-03-25",
+    "cumulative_return": 4.785859,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-03-26",
+    "cumulative_return": 4.870684,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-03-27",
+    "cumulative_return": 4.464012,
+    "underwater": -0.083494
+  },
+  {
+    "date": "2025-03-28",
+    "cumulative_return": 4.869414,
+    "underwater": -0.000261
+  },
+  {
+    "date": "2025-03-31",
+    "cumulative_return": 5.343743,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-04-01",
+    "cumulative_return": 5.206884,
+    "underwater": -0.025611
+  },
+  {
+    "date": "2025-04-02",
+    "cumulative_return": 5.108816,
+    "underwater": -0.043963
+  },
+  {
+    "date": "2025-04-03",
+    "cumulative_return": 5.00112,
+    "underwater": -0.064117
+  },
+  {
+    "date": "2025-04-04",
+    "cumulative_return": 4.792128,
+    "underwater": -0.103226
+  },
+  {
+    "date": "2025-04-07",
+    "cumulative_return": 5.03781,
+    "underwater": -0.057251
+  },
+  {
+    "date": "2025-04-08",
+    "cumulative_return": 4.609481,
+    "underwater": -0.137406
+  },
+  {
+    "date": "2025-04-09",
+    "cumulative_return": 4.707491,
+    "underwater": -0.119065
+  },
+  {
+    "date": "2025-04-10",
+    "cumulative_return": 4.370944,
+    "underwater": -0.182045
+  },
+  {
+    "date": "2025-04-11",
+    "cumulative_return": 4.712329,
+    "underwater": -0.11816
+  },
+  {
+    "date": "2025-04-14",
+    "cumulative_return": 5.033424,
+    "underwater": -0.058072
+  },
+  {
+    "date": "2025-04-15",
+    "cumulative_return": 5.156239,
+    "underwater": -0.035089
+  },
+  {
+    "date": "2025-04-16",
+    "cumulative_return": 5.231252,
+    "underwater": -0.021051
+  },
+  {
+    "date": "2025-04-17",
+    "cumulative_return": 5.603927,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-04-21",
+    "cumulative_return": 6.716506,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-04-22",
+    "cumulative_return": 7.158702,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-04-23",
+    "cumulative_return": 6.522144,
+    "underwater": -0.088921
+  },
+  {
+    "date": "2025-04-24",
+    "cumulative_return": 6.847075,
+    "underwater": -0.043531
+  },
+  {
+    "date": "2025-04-25",
+    "cumulative_return": 8.169381,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-04-28",
+    "cumulative_return": 8.171212,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-04-29",
+    "cumulative_return": 7.006173,
+    "underwater": -0.142578
+  },
+  {
+    "date": "2025-04-30",
+    "cumulative_return": 7.671826,
+    "underwater": -0.061115
+  },
+  {
+    "date": "2025-05-01",
+    "cumulative_return": 7.458354,
+    "underwater": -0.08724
+  },
+  {
+    "date": "2025-05-02",
+    "cumulative_return": 8.378541,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-05-05",
+    "cumulative_return": 10.191375,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-05-06",
+    "cumulative_return": 9.068671,
+    "underwater": -0.110162
+  },
+  {
+    "date": "2025-05-07",
+    "cumulative_return": 8.637442,
+    "underwater": -0.152475
+  },
+  {
+    "date": "2025-05-08",
+    "cumulative_return": 8.354253,
+    "underwater": -0.180262
+  },
+  {
+    "date": "2025-05-09",
+    "cumulative_return": 6.270532,
+    "underwater": -0.384722
+  },
+  {
+    "date": "2025-05-12",
+    "cumulative_return": 6.279324,
+    "underwater": -0.383859
+  },
+  {
+    "date": "2025-05-13",
+    "cumulative_return": 6.377971,
+    "underwater": -0.37418
+  },
+  {
+    "date": "2025-05-14",
+    "cumulative_return": 6.506751,
+    "underwater": -0.361543
+  },
+  {
+    "date": "2025-05-15",
+    "cumulative_return": 6.51607,
+    "underwater": -0.360629
+  },
+  {
+    "date": "2025-05-16",
+    "cumulative_return": 6.633005,
+    "underwater": -0.349155
+  },
+  {
+    "date": "2025-05-19",
+    "cumulative_return": 6.502955,
+    "underwater": -0.361916
+  },
+  {
+    "date": "2025-05-20",
+    "cumulative_return": 6.009701,
+    "underwater": -0.410315
+  },
+  {
+    "date": "2025-05-21",
+    "cumulative_return": 4.591914,
+    "underwater": -0.549431
+  },
+  {
+    "date": "2025-05-22",
+    "cumulative_return": 4.383713,
+    "underwater": -0.56986
+  },
+  {
+    "date": "2025-05-23",
+    "cumulative_return": 5.081356,
+    "underwater": -0.501406
+  },
+  {
+    "date": "2025-05-27",
+    "cumulative_return": 5.418042,
+    "underwater": -0.46837
+  },
+  {
+    "date": "2025-05-28",
+    "cumulative_return": 6.172951,
+    "underwater": -0.394297
+  },
+  {
+    "date": "2025-05-29",
+    "cumulative_return": 5.787083,
+    "underwater": -0.432159
+  },
+  {
+    "date": "2025-05-30",
+    "cumulative_return": 5.671321,
+    "underwater": -0.443518
+  },
+  {
+    "date": "2025-06-02",
+    "cumulative_return": 4.654676,
+    "underwater": -0.543273
+  },
+  {
+    "date": "2025-06-03",
+    "cumulative_return": 4.334359,
+    "underwater": -0.574703
+  },
+  {
+    "date": "2025-06-04",
+    "cumulative_return": 4.88048,
+    "underwater": -0.521117
+  },
+  {
+    "date": "2025-06-05",
+    "cumulative_return": 4.468136,
+    "underwater": -0.561577
+  },
+  {
+    "date": "2025-06-06",
+    "cumulative_return": 4.511627,
+    "underwater": -0.557309
+  },
+  {
+    "date": "2025-06-09",
+    "cumulative_return": 4.269801,
+    "underwater": -0.581038
+  },
+  {
+    "date": "2025-06-10",
+    "cumulative_return": 4.524108,
+    "underwater": -0.556085
+  },
+  {
+    "date": "2025-06-11",
+    "cumulative_return": 3.856431,
+    "underwater": -0.621599
+  },
+  {
+    "date": "2025-06-12",
+    "cumulative_return": 3.853031,
+    "underwater": -0.621932
+  },
+  {
+    "date": "2025-06-13",
+    "cumulative_return": 4.121513,
+    "underwater": -0.595588
+  },
+  {
+    "date": "2025-06-16",
+    "cumulative_return": 4.308065,
+    "underwater": -0.577283
+  },
+  {
+    "date": "2025-06-17",
+    "cumulative_return": 4.473519,
+    "underwater": -0.561049
+  },
+  {
+    "date": "2025-06-18",
+    "cumulative_return": 3.629971,
+    "underwater": -0.643819
+  },
+  {
+    "date": "2025-06-20",
+    "cumulative_return": 3.594514,
+    "underwater": -0.647298
+  },
+  {
+    "date": "2025-06-23",
+    "cumulative_return": 3.444063,
+    "underwater": -0.662061
+  },
+  {
+    "date": "2025-06-24",
+    "cumulative_return": 3.244321,
+    "underwater": -0.68166
+  },
+  {
+    "date": "2025-06-25",
+    "cumulative_return": 2.774089,
+    "underwater": -0.7278
+  },
+  {
+    "date": "2025-06-26",
+    "cumulative_return": 2.886922,
+    "underwater": -0.716729
+  },
+  {
+    "date": "2025-06-27",
+    "cumulative_return": 2.729828,
+    "underwater": -0.732143
+  },
+  {
+    "date": "2025-06-30",
+    "cumulative_return": 2.076527,
+    "underwater": -0.796247
+  },
+  {
+    "date": "2025-07-01",
+    "cumulative_return": 1.830843,
+    "underwater": -0.820354
+  },
+  {
+    "date": "2025-07-02",
+    "cumulative_return": 1.679166,
+    "underwater": -0.835237
+  },
+  {
+    "date": "2025-07-03",
+    "cumulative_return": 1.840813,
+    "underwater": -0.819375
+  },
+  {
+    "date": "2025-07-07",
+    "cumulative_return": 1.838146,
+    "underwater": -0.819637
+  },
+  {
+    "date": "2025-07-08",
+    "cumulative_return": 1.765634,
+    "underwater": -0.826752
+  },
+  {
+    "date": "2025-07-09",
+    "cumulative_return": 1.754454,
+    "underwater": -0.827849
+  },
+  {
+    "date": "2025-07-10",
+    "cumulative_return": 1.671048,
+    "underwater": -0.836033
+  },
+  {
+    "date": "2025-07-11",
+    "cumulative_return": 1.47416,
+    "underwater": -0.855352
+  },
+  {
+    "date": "2025-07-14",
+    "cumulative_return": 1.421814,
+    "underwater": -0.860489
+  },
+  {
+    "date": "2025-07-15",
+    "cumulative_return": 1.615542,
+    "underwater": -0.841479
+  },
+  {
+    "date": "2025-07-16",
+    "cumulative_return": 1.589399,
+    "underwater": -0.844045
+  },
+  {
+    "date": "2025-07-17",
+    "cumulative_return": 1.778377,
+    "underwater": -0.825502
+  },
+  {
+    "date": "2025-07-18",
+    "cumulative_return": 1.819802,
+    "underwater": -0.821437
+  },
+  {
+    "date": "2025-07-21",
+    "cumulative_return": 1.819918,
+    "underwater": -0.821426
+  },
+  {
+    "date": "2025-07-22",
+    "cumulative_return": 1.850347,
+    "underwater": -0.81844
+  },
+  {
+    "date": "2025-07-23",
+    "cumulative_return": 1.715105,
+    "underwater": -0.83171
+  },
+  {
+    "date": "2025-07-24",
+    "cumulative_return": 1.772146,
+    "underwater": -0.826113
+  },
+  {
+    "date": "2025-07-25",
+    "cumulative_return": 1.707088,
+    "underwater": -0.832497
+  },
+  {
+    "date": "2025-07-28",
+    "cumulative_return": 1.751657,
+    "underwater": -0.828124
+  },
+  {
+    "date": "2025-07-29",
+    "cumulative_return": 1.72743,
+    "underwater": -0.830501
+  },
+  {
+    "date": "2025-07-30",
+    "cumulative_return": 1.584027,
+    "underwater": -0.844572
+  },
+  {
+    "date": "2025-07-31",
+    "cumulative_return": 1.243346,
+    "underwater": -0.878
+  },
+  {
+    "date": "2025-08-01",
+    "cumulative_return": 1.276049,
+    "underwater": -0.874791
+  },
+  {
+    "date": "2025-08-04",
+    "cumulative_return": 1.157471,
+    "underwater": -0.886426
+  },
+  {
+    "date": "2025-08-05",
+    "cumulative_return": 1.144309,
+    "underwater": -0.887718
+  },
+  {
+    "date": "2025-08-06",
+    "cumulative_return": 0.975671,
+    "underwater": -0.904265
+  },
+  {
+    "date": "2025-08-07",
+    "cumulative_return": 0.899525,
+    "underwater": -0.911737
+  },
+  {
+    "date": "2025-08-08",
+    "cumulative_return": 0.973866,
+    "underwater": -0.904442
+  },
+  {
+    "date": "2025-08-11",
+    "cumulative_return": 0.918829,
+    "underwater": -0.909842
+  },
+  {
+    "date": "2025-08-12",
+    "cumulative_return": 0.949077,
+    "underwater": -0.906875
+  },
+  {
+    "date": "2025-08-13",
+    "cumulative_return": 1.057317,
+    "underwater": -0.896254
+  },
+  {
+    "date": "2025-08-14",
+    "cumulative_return": 1.070023,
+    "underwater": -0.895007
+  },
+  {
+    "date": "2025-08-15",
+    "cumulative_return": 1.069325,
+    "underwater": -0.895076
+  },
+  {
+    "date": "2025-08-18",
+    "cumulative_return": 1.086151,
+    "underwater": -0.893424
+  },
+  {
+    "date": "2025-08-19",
+    "cumulative_return": 1.051616,
+    "underwater": -0.896813
+  },
+  {
+    "date": "2025-08-20",
+    "cumulative_return": 0.836519,
+    "underwater": -0.917919
+  },
+  {
+    "date": "2025-08-21",
+    "cumulative_return": 0.815293,
+    "underwater": -0.920002
+  },
+  {
+    "date": "2025-08-22",
+    "cumulative_return": 0.857233,
+    "underwater": -0.915886
+  },
+  {
+    "date": "2025-08-25",
+    "cumulative_return": 0.807185,
+    "underwater": -0.920797
+  },
+  {
+    "date": "2025-08-26",
+    "cumulative_return": 0.865081,
+    "underwater": -0.915116
+  },
+  {
+    "date": "2025-08-27",
+    "cumulative_return": 0.832067,
+    "underwater": -0.918356
+  },
+  {
+    "date": "2025-08-28",
+    "cumulative_return": 0.833706,
+    "underwater": -0.918195
+  },
+  {
+    "date": "2025-08-29",
+    "cumulative_return": 0.746835,
+    "underwater": -0.926719
+  },
+  {
+    "date": "2025-09-02",
+    "cumulative_return": 0.640303,
+    "underwater": -0.937172
+  },
+  {
+    "date": "2025-09-03",
+    "cumulative_return": 0.625147,
+    "underwater": -0.938659
+  },
+  {
+    "date": "2025-09-04",
+    "cumulative_return": 0.451546,
+    "underwater": -0.955693
+  },
+  {
+    "date": "2025-09-05",
+    "cumulative_return": 0.370261,
+    "underwater": -0.963669
+  },
+  {
+    "date": "2025-09-08",
+    "cumulative_return": 0.346233,
+    "underwater": -0.966027
+  },
+  {
+    "date": "2025-09-09",
+    "cumulative_return": 0.319365,
+    "underwater": -0.968663
+  },
+  {
+    "date": "2025-09-10",
+    "cumulative_return": 0.283665,
+    "underwater": -0.972166
+  },
+  {
+    "date": "2025-09-11",
+    "cumulative_return": 0.227988,
+    "underwater": -0.977629
+  },
+  {
+    "date": "2025-09-12",
+    "cumulative_return": 0.204957,
+    "underwater": -0.979889
+  },
+  {
+    "date": "2025-09-15",
+    "cumulative_return": 0.171969,
+    "underwater": -0.983126
+  },
+  {
+    "date": "2025-09-16",
+    "cumulative_return": 0.162003,
+    "underwater": -0.984104
+  },
+  {
+    "date": "2025-09-17",
+    "cumulative_return": 0.153378,
+    "underwater": -0.98495
+  },
+  {
+    "date": "2025-09-18",
+    "cumulative_return": 0.120025,
+    "underwater": -0.988223
+  },
+  {
+    "date": "2025-09-19",
+    "cumulative_return": 0.117747,
+    "underwater": -0.988446
+  },
+  {
+    "date": "2025-09-22",
+    "cumulative_return": 0.112079,
+    "underwater": -0.989003
+  },
+  {
+    "date": "2025-09-23",
+    "cumulative_return": 0.103582,
+    "underwater": -0.989836
+  },
+  {
+    "date": "2025-09-24",
+    "cumulative_return": 0.087645,
+    "underwater": -0.9914
+  },
+  {
+    "date": "2025-09-25",
+    "cumulative_return": 0.078682,
+    "underwater": -0.99228
+  },
+  {
+    "date": "2025-09-26",
+    "cumulative_return": 0.059869,
+    "underwater": -0.994126
+  },
+  {
+    "date": "2025-09-29",
+    "cumulative_return": 0.055772,
+    "underwater": -0.994528
+  },
+  {
+    "date": "2025-09-30",
+    "cumulative_return": 0.05271,
+    "underwater": -0.994828
+  },
+  {
+    "date": "2025-10-01",
+    "cumulative_return": 0.04974,
+    "underwater": -0.995119
+  },
+  {
+    "date": "2025-10-02",
+    "cumulative_return": 0.05044,
+    "underwater": -0.995051
+  },
+  {
+    "date": "2025-10-03",
+    "cumulative_return": 0.049982,
+    "underwater": -0.995096
+  },
+  {
+    "date": "2025-10-06",
+    "cumulative_return": 0.048974,
+    "underwater": -0.995195
+  },
+  {
+    "date": "2025-10-07",
+    "cumulative_return": 0.048236,
+    "underwater": -0.995267
+  },
+  {
+    "date": "2025-10-08",
+    "cumulative_return": 0.053956,
+    "underwater": -0.994706
+  },
+  {
+    "date": "2025-10-09",
+    "cumulative_return": 0.055817,
+    "underwater": -0.994523
+  },
+  {
+    "date": "2025-10-10",
+    "cumulative_return": 0.066821,
+    "underwater": -0.993443
+  },
+  {
+    "date": "2025-10-13",
+    "cumulative_return": 0.05665,
+    "underwater": -0.994441
+  },
+  {
+    "date": "2025-10-14",
+    "cumulative_return": 0.061606,
+    "underwater": -0.993955
+  },
+  {
+    "date": "2025-10-15",
+    "cumulative_return": 0.059526,
+    "underwater": -0.994159
+  },
+  {
+    "date": "2025-10-16",
+    "cumulative_return": 0.065392,
+    "underwater": -0.993584
+  },
+  {
+    "date": "2025-10-17",
+    "cumulative_return": 0.066018,
+    "underwater": -0.993522
+  },
+  {
+    "date": "2025-10-20",
+    "cumulative_return": 0.070581,
+    "underwater": -0.993074
+  },
+  {
+    "date": "2025-10-21",
+    "cumulative_return": 0.07107,
+    "underwater": -0.993026
+  },
+  {
+    "date": "2025-10-22",
+    "cumulative_return": 0.074875,
+    "underwater": -0.992653
+  },
+  {
+    "date": "2025-10-23",
+    "cumulative_return": 0.080403,
+    "underwater": -0.992111
+  },
+  {
+    "date": "2025-10-24",
+    "cumulative_return": 0.099861,
+    "underwater": -0.990201
+  },
+  {
+    "date": "2025-10-27",
+    "cumulative_return": 0.103269,
+    "underwater": -0.989867
+  },
+  {
+    "date": "2025-10-28",
+    "cumulative_return": 0.112742,
+    "underwater": -0.988938
+  },
+  {
+    "date": "2025-10-29",
+    "cumulative_return": 0.117556,
+    "underwater": -0.988465
+  },
+  {
+    "date": "2025-10-30",
+    "cumulative_return": 0.13375,
+    "underwater": -0.986876
+  },
+  {
+    "date": "2025-10-31",
+    "cumulative_return": 0.159802,
+    "underwater": -0.98432
+  },
+  {
+    "date": "2025-11-03",
+    "cumulative_return": 0.189169,
+    "underwater": -0.981438
+  },
+  {
+    "date": "2025-11-04",
+    "cumulative_return": 0.189146,
+    "underwater": -0.981441
+  },
+  {
+    "date": "2025-11-05",
+    "cumulative_return": 0.211512,
+    "underwater": -0.979246
+  },
+  {
+    "date": "2025-11-06",
+    "cumulative_return": 0.220191,
+    "underwater": -0.978394
+  },
+  {
+    "date": "2025-11-07",
+    "cumulative_return": 0.213092,
+    "underwater": -0.979091
+  },
+  {
+    "date": "2025-11-10",
+    "cumulative_return": 0.222591,
+    "underwater": -0.978159
+  },
+  {
+    "date": "2025-11-11",
+    "cumulative_return": 0.221749,
+    "underwater": -0.978241
+  },
+  {
+    "date": "2025-11-12",
+    "cumulative_return": 0.216406,
+    "underwater": -0.978766
+  },
+  {
+    "date": "2025-11-13",
+    "cumulative_return": 0.202404,
+    "underwater": -0.98014
+  },
+  {
+    "date": "2025-11-14",
+    "cumulative_return": 0.219344,
+    "underwater": -0.978478
+  },
+  {
+    "date": "2025-11-17",
+    "cumulative_return": 0.19531,
+    "underwater": -0.980836
+  },
+  {
+    "date": "2025-11-18",
+    "cumulative_return": 0.189184,
+    "underwater": -0.981437
+  },
+  {
+    "date": "2025-11-19",
+    "cumulative_return": 0.178498,
+    "underwater": -0.982485
+  },
+  {
+    "date": "2025-11-20",
+    "cumulative_return": 0.17774,
+    "underwater": -0.98256
+  },
+  {
+    "date": "2025-11-21",
+    "cumulative_return": 0.149862,
+    "underwater": -0.985295
+  },
+  {
+    "date": "2025-11-24",
+    "cumulative_return": 0.148949,
+    "underwater": -0.985385
+  },
+  {
+    "date": "2025-11-25",
+    "cumulative_return": 0.144416,
+    "underwater": -0.98583
+  },
+  {
+    "date": "2025-11-26",
+    "cumulative_return": 0.142243,
+    "underwater": -0.986043
+  },
+  {
+    "date": "2025-11-28",
+    "cumulative_return": 0.147894,
+    "underwater": -0.985488
+  },
+  {
+    "date": "2025-12-01",
+    "cumulative_return": 0.130699,
+    "underwater": -0.987176
+  },
+  {
+    "date": "2025-12-02",
+    "cumulative_return": 0.130625,
+    "underwater": -0.987183
+  },
+  {
+    "date": "2025-12-03",
+    "cumulative_return": 0.13453,
+    "underwater": -0.9868
+  },
+  {
+    "date": "2025-12-04",
+    "cumulative_return": 0.136983,
+    "underwater": -0.986559
+  },
+  {
+    "date": "2025-12-05",
+    "cumulative_return": 0.155281,
+    "underwater": -0.984764
+  },
+  {
+    "date": "2025-12-08",
+    "cumulative_return": 0.167927,
+    "underwater": -0.983523
+  },
+  {
+    "date": "2025-12-09",
+    "cumulative_return": 0.152211,
+    "underwater": -0.985065
+  },
+  {
+    "date": "2025-12-10",
+    "cumulative_return": 0.159488,
+    "underwater": -0.984351
+  },
+  {
+    "date": "2025-12-11",
+    "cumulative_return": 0.160715,
+    "underwater": -0.98423
+  },
+  {
+    "date": "2025-12-12",
+    "cumulative_return": 0.179209,
+    "underwater": -0.982416
+  },
+  {
+    "date": "2025-12-15",
+    "cumulative_return": 0.184336,
+    "underwater": -0.981913
+  },
+  {
+    "date": "2025-12-16",
+    "cumulative_return": 0.187465,
+    "underwater": -0.981606
+  },
+  {
+    "date": "2025-12-17",
+    "cumulative_return": 0.177586,
+    "underwater": -0.982575
+  },
+  {
+    "date": "2025-12-18",
+    "cumulative_return": 0.16814,
+    "underwater": -0.983502
+  },
+  {
+    "date": "2025-12-19",
+    "cumulative_return": 0.166161,
+    "underwater": -0.983696
+  },
+  {
+    "date": "2025-12-22",
+    "cumulative_return": 0.182171,
+    "underwater": -0.982125
+  },
+  {
+    "date": "2025-12-23",
+    "cumulative_return": 0.179441,
+    "underwater": -0.982393
+  },
+  {
+    "date": "2025-12-24",
+    "cumulative_return": 0.168086,
+    "underwater": -0.983507
+  },
+  {
+    "date": "2025-12-26",
+    "cumulative_return": 0.167634,
+    "underwater": -0.983551
+  },
+  {
+    "date": "2025-12-29",
+    "cumulative_return": 0.18732,
+    "underwater": -0.98162
+  },
+  {
+    "date": "2025-12-30",
+    "cumulative_return": 0.192117,
+    "underwater": -0.981149
+  },
+  {
+    "date": "2025-12-31",
+    "cumulative_return": 0.181312,
+    "underwater": -0.982209
+  },
+  {
+    "date": "2026-01-02",
+    "cumulative_return": 0.161185,
+    "underwater": -0.984184
+  },
+  {
+    "date": "2026-01-05",
+    "cumulative_return": 0.182277,
+    "underwater": -0.982115
+  },
+  {
+    "date": "2026-01-06",
+    "cumulative_return": 0.163482,
+    "underwater": -0.983959
+  },
+  {
+    "date": "2026-01-07",
+    "cumulative_return": 0.146659,
+    "underwater": -0.98561
+  },
+  {
+    "date": "2026-01-08",
+    "cumulative_return": 0.138334,
+    "underwater": -0.986426
+  },
+  {
+    "date": "2026-01-09",
+    "cumulative_return": 0.149833,
+    "underwater": -0.985298
+  },
+  {
+    "date": "2026-01-12",
+    "cumulative_return": 0.152146,
+    "underwater": -0.985071
+  },
+  {
+    "date": "2026-01-13",
+    "cumulative_return": 0.150535,
+    "underwater": -0.985229
+  },
+  {
+    "date": "2026-01-14",
+    "cumulative_return": 0.155938,
+    "underwater": -0.984699
+  },
+  {
+    "date": "2026-01-15",
+    "cumulative_return": 0.177281,
+    "underwater": -0.982605
+  },
+  {
+    "date": "2026-01-16",
+    "cumulative_return": 0.180245,
+    "underwater": -0.982314
+  },
+  {
+    "date": "2026-01-20",
+    "cumulative_return": 0.211279,
+    "underwater": -0.979269
+  },
+  {
+    "date": "2026-01-21",
+    "cumulative_return": 0.257392,
+    "underwater": -0.974744
+  },
+  {
+    "date": "2026-01-22",
+    "cumulative_return": 0.28907,
+    "underwater": -0.971636
+  },
+  {
+    "date": "2026-01-23",
+    "cumulative_return": 0.311113,
+    "underwater": -0.969473
+  },
+  {
+    "date": "2026-01-26",
+    "cumulative_return": 0.336804,
+    "underwater": -0.966952
+  },
+  {
+    "date": "2026-01-27",
+    "cumulative_return": 0.361259,
+    "underwater": -0.964553
+  },
+  {
+    "date": "2026-01-28",
+    "cumulative_return": 0.388965,
+    "underwater": -0.961834
+  },
+  {
+    "date": "2026-01-29",
+    "cumulative_return": 0.384145,
+    "underwater": -0.962307
+  },
+  {
+    "date": "2026-01-30",
+    "cumulative_return": 0.461364,
+    "underwater": -0.95473
+  },
+  {
+    "date": "2026-02-02",
+    "cumulative_return": 0.461802,
+    "underwater": -0.954687
+  },
+  {
+    "date": "2026-02-03",
+    "cumulative_return": 0.480959,
+    "underwater": -0.952807
+  },
+  {
+    "date": "2026-02-04",
+    "cumulative_return": 0.517697,
+    "underwater": -0.949202
+  },
+  {
+    "date": "2026-02-05",
+    "cumulative_return": 0.535514,
+    "underwater": -0.947454
+  },
+  {
+    "date": "2026-02-06",
+    "cumulative_return": 0.528357,
+    "underwater": -0.948156
+  },
+  {
+    "date": "2026-02-09",
+    "cumulative_return": 0.536689,
+    "underwater": -0.947339
+  },
+  {
+    "date": "2026-02-10",
+    "cumulative_return": 0.539517,
+    "underwater": -0.947061
+  },
+  {
+    "date": "2026-02-11",
+    "cumulative_return": 0.499973,
+    "underwater": -0.950942
+  },
+  {
+    "date": "2026-02-12",
+    "cumulative_return": 0.490816,
+    "underwater": -0.95184
+  },
+  {
+    "date": "2026-02-13",
+    "cumulative_return": 0.465169,
+    "underwater": -0.954357
+  },
+  {
+    "date": "2026-02-17",
+    "cumulative_return": 0.514509,
+    "underwater": -0.949515
+  },
+  {
+    "date": "2026-02-18",
+    "cumulative_return": 0.465393,
+    "underwater": -0.954335
+  },
+  {
+    "date": "2026-02-19",
+    "cumulative_return": 0.499067,
+    "underwater": -0.95103
+  }
+]

@@ -1,0 +1,182 @@
+[
+  {
+    "model_id": "lgbm_v4",
+    "model_type": "LGBM",
+    "n_features": 58,
+    "test_period": {
+      "start": "2025-01-06",
+      "end": "2026-02-19"
+    },
+    "ic_mean": 0.0268,
+    "ic_std": 0.1205,
+    "icir": 0.223,
+    "ic_hit_rate": 0.571,
+    "ic_tstat": 0.833,
+    "n_months": 14,
+    "ls_sharpe": 0.119,
+    "ls_ann_return": 0.0599,
+    "ls_max_drawdown": -0.9953,
+    "n_periods": 281,
+    "persistence_ic": 0.121,
+    "n_test_rows": 68617,
+    "n_test_dates": 281
+  },
+  {
+    "model_id": "lgbm_v1",
+    "model_type": "LGBM",
+    "n_features": 58,
+    "test_period": {
+      "start": "2025-01-06",
+      "end": "2026-02-19"
+    },
+    "ic_mean": 0.0509,
+    "ic_std": 0.0772,
+    "icir": 0.659,
+    "ic_hit_rate": 0.857,
+    "ic_tstat": 2.466,
+    "n_months": 14,
+    "ls_sharpe": 0.479,
+    "ls_ann_return": 0.246,
+    "ls_max_drawdown": -0.9582,
+    "n_periods": 281,
+    "persistence_ic": -0.0101,
+    "n_test_rows": 68617,
+    "n_test_dates": 281
+  },
+  {
+    "model_id": "lgbm_composite_63d",
+    "model_type": "LGBM",
+    "target": "forward_63d_composite_rank",
+    "horizon": 63,
+    "n_features": 66,
+    "test_period": {
+      "start": "2024-11-12",
+      "end": "2025-12-17"
+    },
+    "top_decile": {
+      "ann_return": 0.7467,
+      "sharpe": 1.414,
+      "consistency": 0.76
+    },
+    "universe": {
+      "ann_return": 0.2559,
+      "sharpe": 1.014,
+      "consistency": 0.691
+    },
+    "ic_mean": 0.1505,
+    "ic_std": 0.0944,
+    "icir": 1.594,
+    "ic_hit_rate": 1.0,
+    "ic_tstat": 5.964,
+    "n_months": 14,
+    "ls_sharpe": 1.303,
+    "ls_ann_return": 0.4633,
+    "ls_max_drawdown": -0.1924,
+    "n_periods": 7,
+    "persistence_ic": -0.0205,
+    "n_test_rows": 68039,
+    "n_test_dates": 275
+  },
+  {
+    "model_id": "lgbm_momentum",
+    "model_type": "LGBM",
+    "target": "forward_63d_composite_rank",
+    "horizon": 63,
+    "n_features": 66,
+    "test_period": {
+      "start": "2024-11-12",
+      "end": "2025-12-17"
+    },
+    "top_decile": {
+      "ann_return": 0.654,
+      "sharpe": 1.19,
+      "consistency": 0.684
+    },
+    "universe": {
+      "ann_return": 0.2559,
+      "sharpe": 1.014,
+      "consistency": 0.691
+    },
+    "ic_mean": 0.0449,
+    "ic_std": 0.0817,
+    "icir": 0.549,
+    "ic_hit_rate": 0.714,
+    "ic_tstat": 2.054,
+    "n_months": 14,
+    "ls_sharpe": -0.684,
+    "ls_ann_return": -0.2156,
+    "ls_max_drawdown": -0.5136,
+    "n_periods": 7,
+    "persistence_ic": -0.0205,
+    "n_test_rows": 68039,
+    "n_test_dates": 275
+  },
+  {
+    "model_id": "lgbm_v5_63d",
+    "model_type": "LGBM",
+    "target": "forward_63d_composite_rank",
+    "horizon": 63,
+    "n_features": 66,
+    "test_period": {
+      "start": "2024-11-12",
+      "end": "2025-12-17"
+    },
+    "top_decile": {
+      "ann_return": 0.5923,
+      "sharpe": 1.34,
+      "consistency": 0.749
+    },
+    "universe": {
+      "ann_return": 0.2559,
+      "sharpe": 1.014,
+      "consistency": 0.691
+    },
+    "ic_mean": 0.1184,
+    "ic_std": 0.1028,
+    "icir": 1.151,
+    "ic_hit_rate": 0.929,
+    "ic_tstat": 4.308,
+    "n_months": 14,
+    "ls_sharpe": -0.228,
+    "ls_ann_return": -0.0462,
+    "ls_max_drawdown": -0.2842,
+    "n_periods": 7,
+    "persistence_ic": -0.0205,
+    "n_test_rows": 68039,
+    "n_test_dates": 275
+  },
+  {
+    "model_id": "lgbm_v5_21d",
+    "model_type": "LGBM",
+    "target": "forward_21d_composite_rank",
+    "horizon": 21,
+    "n_features": 66,
+    "test_period": {
+      "start": "2024-11-12",
+      "end": "2025-12-17"
+    },
+    "top_decile": {
+      "ann_return": 0.381,
+      "sharpe": 1.056,
+      "consistency": 0.622
+    },
+    "universe": {
+      "ann_return": 0.2597,
+      "sharpe": 1.068,
+      "consistency": 0.658
+    },
+    "ic_mean": 0.0416,
+    "ic_std": 0.1068,
+    "icir": 0.39,
+    "ic_hit_rate": 0.714,
+    "ic_tstat": 1.457,
+    "n_months": 14,
+    "ls_sharpe": 0.199,
+    "ls_ann_return": 0.0871,
+    "ls_max_drawdown": -0.4565,
+    "n_periods": 20,
+    "persistence_ic": -0.0205,
+    "n_test_rows": 68039,
+    "n_test_dates": 275
+  }
+]

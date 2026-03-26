@@ -37,9 +37,6 @@ MODEL_DIR = _REPO_MODELS if _REPO_MODELS.exists() else _HOME_MODELS
 DATASET_PATH = Path("data/training/dataset.parquet")
 DEFAULT_OUT = Path("morningalpha/web/public/data/backtest")
 
-# 10-day non-overlapping windows → ~25.2 periods per year
-PERIODS_PER_YEAR = 252 / 10
-
 # Round-trip transaction cost (10 bps)
 TX_COST = 0.001
 
@@ -127,13 +124,15 @@ def _run_inference(booster, df: pd.DataFrame, feat_cols: List[str]) -> pd.DataFr
 # IC metrics
 # ---------------------------------------------------------------------------
 
-def _compute_snapshot_ic(df: pd.DataFrame) -> pd.DataFrame:
-    """Compute cross-sectional rank IC per snapshot date."""
+def _compute_snapshot_ic(df: pd.DataFrame, target_col: str) -> pd.DataFrame:
+    """Compute cross-sectional rank IC per snapshot date against the training target."""
+    if target_col not in df.columns:
+        return pd.DataFrame(columns=["date", "ic"])
     rows = []
     for date, grp in df.groupby("date"):
         if len(grp) < 10:
             continue
-        ic, _ = spearmanr(grp["pred_score"], grp["forward_10d_rank"])
+        ic, _ = spearmanr(grp["pred_score"], grp[target_col])
         if not np.isnan(ic):
             rows.append({"date": pd.Timestamp(date), "ic": float(ic)})
     return pd.DataFrame(rows).sort_values("date").reset_index(drop=True)
@@ -180,20 +179,31 @@ def _ic_summary(monthly: pd.DataFrame, snapshot_ic: pd.DataFrame) -> dict:
 # Long-short portfolio
 # ---------------------------------------------------------------------------
 
-def _build_ls_portfolio(df: pd.DataFrame) -> pd.DataFrame:
+def _build_ls_portfolio(df: pd.DataFrame, fwd_col: str, horizon: int) -> pd.DataFrame:
     """
     Equal-weighted long top decile / short bottom decile, rebalanced each snapshot.
+    Only uses non-overlapping snapshots (strided by horizon days) so each period's
+    forward return window is independent — avoids compounding overlapping positions.
     Returns a DataFrame with columns: date, period_return, cumulative_return, underwater.
-    forward_10d is winsorized at 1st/99th percentile to remove data errors.
+    The realized return column is winsorized at 1st/99th percentile to remove data errors.
     """
-    # Winsorize forward_10d to remove extreme outliers (e.g. max=22999)
-    lo = df["forward_10d"].quantile(0.01)
-    hi = df["forward_10d"].quantile(0.99)
+    periods_per_year = 252 / horizon
+    lo = df[fwd_col].quantile(0.01)
+    hi = df[fwd_col].quantile(0.99)
     df = df.copy()
-    df["fwd"] = df["forward_10d"].clip(lo, hi)
+    df["fwd"] = df[fwd_col].clip(lo, hi)
+
+    # Stride snapshot dates by horizon to ensure non-overlapping return windows
+    all_dates = sorted(df["date"].unique())
+    selected_dates = [all_dates[0]]
+    for d in all_dates[1:]:
+        gap = (pd.Timestamp(d) - pd.Timestamp(selected_dates[-1])).days
+        if gap >= horizon:
+            selected_dates.append(d)
 
     rows = []
-    for date, grp in df.groupby("date"):
+    for date in selected_dates:
+        grp = df[df["date"] == date]
         if len(grp) < 20:
             continue
         grp = grp.sort_values("pred_score")
@@ -203,14 +213,13 @@ def _build_ls_portfolio(df: pd.DataFrame) -> pd.DataFrame:
         short_ret = float(grp["fwd"].iloc[:n_decile].mean())
         long_ret = float(grp["fwd"].iloc[-n_decile:].mean())
 
-        # Long − Short − round-trip cost
         period_ret = long_ret - short_ret - TX_COST
         rows.append({"date": pd.Timestamp(date), "period_return": period_ret})
 
     portfolio = pd.DataFrame(rows).sort_values("date").reset_index(drop=True)
     portfolio["cumulative_return"] = (1 + portfolio["period_return"]).cumprod()
+    portfolio["_periods_per_year"] = periods_per_year
 
-    # Underwater (drawdown from peak)
     running_max = portfolio["cumulative_return"].cummax()
     portfolio["underwater"] = (portfolio["cumulative_return"] - running_max) / running_max
 
@@ -220,10 +229,11 @@ def _build_ls_portfolio(df: pd.DataFrame) -> pd.DataFrame:
 def _ls_summary(portfolio: pd.DataFrame) -> dict:
     """Compute annualized Sharpe, return, and max drawdown from the L/S portfolio."""
     rets = portfolio["period_return"].values
+    periods_per_year = float(portfolio["_periods_per_year"].iloc[0])
     mean_r = float(np.mean(rets))
     std_r = float(np.std(rets, ddof=1)) if len(rets) > 1 else float("nan")
-    sharpe = (mean_r / std_r) * np.sqrt(PERIODS_PER_YEAR) if std_r > 0 else float("nan")
-    ann_return = float((1 + mean_r) ** PERIODS_PER_YEAR - 1)
+    sharpe = (mean_r / std_r) * np.sqrt(periods_per_year) if std_r > 0 else float("nan")
+    ann_return = float((1 + mean_r) ** periods_per_year - 1)
     max_dd = float(portfolio["underwater"].min())
     return {
         "ls_sharpe": round(sharpe, 3),
@@ -233,16 +243,58 @@ def _ls_summary(portfolio: pd.DataFrame) -> dict:
     }
 
 
+def _top_decile_quality(df: pd.DataFrame, fwd_col: str, horizon: int) -> dict:
+    """Quality metrics for the top-decile long book vs. the full universe.
+
+    These are the metrics that matter for a quality-growth model:
+    - Does the top decile deliver better Sharpe than average?
+    - Is the upside consistent (high % positive periods)?
+    - How does top-decile average return compare to the bottom decile and the universe?
+    """
+    periods_per_year = 252 / horizon
+    lo = df[fwd_col].quantile(0.01)
+    hi = df[fwd_col].quantile(0.99)
+    df = df.copy()
+    df["fwd"] = df[fwd_col].clip(lo, hi)
+
+    top_rets, bottom_rets, all_rets = [], [], []
+    for date, grp in df.groupby("date"):
+        if len(grp) < 20:
+            continue
+        grp = grp.sort_values("pred_score")
+        n = len(grp)
+        n_decile = max(1, n // 10)
+        top_rets.append(float(grp["fwd"].iloc[-n_decile:].mean()))
+        bottom_rets.append(float(grp["fwd"].iloc[:n_decile].mean()))
+        all_rets.append(float(grp["fwd"].mean()))
+
+    def _stats(rets):
+        a = np.array(rets)
+        mean_r = float(np.mean(a))
+        std_r = float(np.std(a, ddof=1)) if len(a) > 1 else float("nan")
+        sharpe = (mean_r / std_r) * np.sqrt(periods_per_year) if std_r and std_r > 0 else float("nan")
+        consistency = float((a > 0).mean())
+        ann = float((1 + mean_r) ** periods_per_year - 1)
+        return {"ann_return": round(ann, 4), "sharpe": round(sharpe, 3), "consistency": round(consistency, 3)}
+
+    return {
+        "top_decile": _stats(top_rets),
+        "bottom_decile": _stats(bottom_rets),
+        "universe": _stats(all_rets),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Decile returns
 # ---------------------------------------------------------------------------
 
-def _decile_returns(df: pd.DataFrame) -> List[dict]:
+def _decile_returns(df: pd.DataFrame, fwd_col: str, horizon: int) -> List[dict]:
     """Annualized mean return per prediction decile (1 = lowest score)."""
-    lo = df["forward_10d"].quantile(0.01)
-    hi = df["forward_10d"].quantile(0.99)
+    periods_per_year = 252 / horizon
+    lo = df[fwd_col].quantile(0.01)
+    hi = df[fwd_col].quantile(0.99)
     df = df.copy()
-    df["fwd"] = df["forward_10d"].clip(lo, hi)
+    df["fwd"] = df[fwd_col].clip(lo, hi)
 
     df["decile"] = df.groupby("date")["pred_score"].transform(
         lambda x: pd.qcut(x.rank(method="first"), 10, labels=False) + 1
@@ -254,7 +306,7 @@ def _decile_returns(df: pd.DataFrame) -> List[dict]:
     result = []
     for d in range(1, 11):
         mean_period = float(df[df["decile"] == d]["fwd"].mean())
-        ann = float((1 + mean_period) ** PERIODS_PER_YEAR - 1)
+        ann = float((1 + mean_period) ** periods_per_year - 1)
         result.append({"decile": d, "ann_return": round(ann, 4)})
     return result
 
@@ -326,6 +378,7 @@ def _write_model_files(
     portfolio: pd.DataFrame,
     decile_rets: List[dict],
     feature_imp: List[dict],
+    quality: dict,
 ) -> None:
     model_dir = out_dir / model_id
     console.print(f"\n[bold]Writing {model_id} files → {model_dir}/[/bold]")
@@ -362,26 +415,36 @@ def _write_model_files(
     # feature_importance.json (top 20)
     _write_json(model_dir / "feature_importance.json", feature_imp[:20])
 
+    # top_decile_quality.json — primary signal for quality-growth models
+    _write_json(model_dir / "top_decile_quality.json", quality)
+
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
 @click.command("backtest")
-@click.option("--model", "model_id", default="lgbm_v4", show_default=True,
-              help="Model checkpoint name (must exist in ~/.morningalpha/models/).")
+@click.option("--model", "model_id", default="lgbm_composite_63d", show_default=True,
+              help="Model checkpoint name (must exist in models/).")
 @click.option("--out", "out_dir", default=str(DEFAULT_OUT), show_default=True,
               help="Output directory for JSON files.")
 @click.option("--dataset", "dataset_path", default=str(DATASET_PATH), show_default=True,
               help="Path to training dataset parquet.")
-def backtest(model_id: str, out_dir: str, dataset_path: str):
+@click.option("--target", "target_col", default=None,
+              help="Training target column (auto-detected from feature_config.json if omitted).")
+@click.option("--horizon", default=None, type=int,
+              help="Forward return horizon in trading days (auto-detected from target name if omitted).")
+def backtest(model_id: str, out_dir: str, dataset_path: str, target_col: Optional[str], horizon: Optional[int]):
     """Run the full evaluation suite for a trained model and write dashboard JSON.
 
     \b
     Examples:
       alpha ml backtest
-      alpha ml backtest --model lgbm_v4 --out morningalpha/web/public/data/backtest/
+      alpha ml backtest --model lgbm_composite_63d
+      alpha ml backtest --model lgbm_v4 --target forward_10d_rank --horizon 10
     """
+    import re
+
     global DATASET_PATH
     DATASET_PATH = Path(dataset_path)
     out = Path(out_dir)
@@ -392,50 +455,79 @@ def backtest(model_id: str, out_dir: str, dataset_path: str):
     feat_cols = config["feature_columns"]
     persistence_ic = config.get("persistence_ic", float("nan"))
 
+    # Resolve target and horizon
+    if target_col is None:
+        target_col = config.get("target", "forward_10d_rank")
+    if horizon is None:
+        # Auto-detect from target name: forward_63d_* → 63
+        m = re.search(r"forward_(\d+)d", target_col)
+        horizon = int(m.group(1)) if m else 10
+    fwd_col = f"forward_{horizon}d"
+
+    console.print(f"  Target: [cyan]{target_col}[/cyan]  Horizon: [cyan]{horizon}d[/cyan]  Realized: [cyan]{fwd_col}[/cyan]")
+
     console.print(f"[bold cyan]Loading dataset: {DATASET_PATH}[/bold cyan]")
     df = _load_test_data(config)
+
+    if fwd_col not in df.columns:
+        console.print(f"[red]Realized return column '{fwd_col}' not found in dataset. "
+                      f"Rebuild dataset with --horizons including {horizon}.[/red]")
+        raise SystemExit(1)
 
     # --- Inference ---
     console.print("\n[bold cyan]Running inference...[/bold cyan]")
     df = _run_inference(booster, df, feat_cols)
 
-    # --- IC metrics ---
-    console.print("\n[bold cyan]Computing IC metrics...[/bold cyan]")
-    snap_ic = _compute_snapshot_ic(df)
+    # --- IC vs training target (secondary signal — noisy for momentum plays) ---
+    console.print("\n[bold cyan]Computing IC vs training target...[/bold cyan]")
+    snap_ic = _compute_snapshot_ic(df, target_col)
     monthly = _monthly_ic(snap_ic)
     ic_stats = _ic_summary(monthly, snap_ic)
 
-    # --- L/S portfolio ---
+    # --- L/S portfolio (what actually matters) ---
     console.print("[bold cyan]Building long-short portfolio...[/bold cyan]")
-    portfolio = _build_ls_portfolio(df)
+    portfolio = _build_ls_portfolio(df, fwd_col, horizon)
     ls_stats = _ls_summary(portfolio)
+
+    # --- Top decile quality (the primary signal for quality-growth model) ---
+    console.print("[bold cyan]Computing top-decile quality metrics...[/bold cyan]")
+    quality = _top_decile_quality(df, fwd_col, horizon)
 
     # --- Decile returns ---
     console.print("[bold cyan]Computing decile returns...[/bold cyan]")
-    decile_rets = _decile_returns(df)
+    decile_rets = _decile_returns(df, fwd_col, horizon)
 
     # --- Feature importance ---
     console.print("[bold cyan]Computing SHAP feature importance...[/bold cyan]")
     feat_imp = _feature_importance(booster, df, feat_cols)
 
     # --- Summary table ---
-    table = Table(title=f"Backtest Results — {model_id}", show_header=True)
+    table = Table(title=f"Backtest Results — {model_id}", show_header=True, show_lines=True)
     table.add_column("Metric")
     table.add_column("Value", justify="right")
-    table.add_row("IC Mean (monthly)", f"{ic_stats['ic_mean']:.4f}")
-    table.add_row("IC Std", f"{ic_stats['ic_std']:.4f}")
-    table.add_row("ICIR", f"{ic_stats['icir']:.3f}")
-    table.add_row("IC Hit Rate", f"{ic_stats['ic_hit_rate']:.1%}")
-    table.add_row("IC t-stat", f"{ic_stats['ic_tstat']:.2f}")
-    table.add_row("L/S Sharpe", f"{ls_stats['ls_sharpe']:.3f}")
-    table.add_row("L/S Ann. Return", f"{ls_stats['ls_ann_return']:.2%}")
-    table.add_row("L/S Max Drawdown", f"{ls_stats['ls_max_drawdown']:.2%}")
-    table.add_row("Persistence IC (test)", f"{persistence_ic:.4f}")
+    table.add_row("[bold cyan]Top Decile[/bold cyan]", "")
+    table.add_row("  Ann. Return", f"{quality['top_decile']['ann_return']:.2%}")
+    table.add_row("  Sharpe", f"{quality['top_decile']['sharpe']:.3f}")
+    table.add_row("  Consistency (% positive periods)", f"{quality['top_decile']['consistency']:.1%}")
+    table.add_row("[bold]Universe[/bold]", "")
+    table.add_row("  Ann. Return", f"{quality['universe']['ann_return']:.2%}")
+    table.add_row("  Sharpe", f"{quality['universe']['sharpe']:.3f}")
+    table.add_row("  Consistency", f"{quality['universe']['consistency']:.1%}")
+    table.add_row("[bold]Bottom Decile[/bold]", "")
+    table.add_row("  Ann. Return", f"{quality['bottom_decile']['ann_return']:.2%}")
+    table.add_row("  Sharpe", f"{quality['bottom_decile']['sharpe']:.3f}")
+    table.add_row("  Consistency", f"{quality['bottom_decile']['consistency']:.1%}")
+    table.add_row("[bold]Long-Short (non-overlapping)[/bold]", "")
+    table.add_row("  L/S Sharpe", f"{ls_stats['ls_sharpe']:.3f}")
+    table.add_row("  L/S Ann. Return", f"{ls_stats['ls_ann_return']:.2%}")
+    table.add_row("  L/S Max Drawdown", f"{ls_stats['ls_max_drawdown']:.2%}")
+    table.add_row("[dim]IC Mean (monthly)[/dim]", f"[dim]{ic_stats['ic_mean']:.4f}[/dim]")
+    table.add_row("[dim]ICIR[/dim]", f"[dim]{ic_stats['icir']:.3f}[/dim]")
     console.print(table)
 
     # --- Write JSON ---
     _write_model_files(
-        model_id, out, monthly, snap_ic, portfolio, decile_rets, feat_imp
+        model_id, out, monthly, snap_ic, portfolio, decile_rets, feat_imp, quality
     )
 
     # --- leaderboard.json ---
@@ -452,11 +544,15 @@ def backtest(model_id: str, out_dir: str, dataset_path: str):
     entry = {
         "model_id": model_id,
         "model_type": config.get("model_type", "lgbm").upper(),
+        "target": target_col,
+        "horizon": horizon,
         "n_features": len(feat_cols),
         "test_period": {
             "start": df["date"].min().strftime("%Y-%m-%d"),
             "end": df["date"].max().strftime("%Y-%m-%d"),
         },
+        "top_decile": quality["top_decile"],
+        "universe": quality["universe"],
         **ic_stats,
         **ls_stats,
         "persistence_ic": round(float(persistence_ic), 4),

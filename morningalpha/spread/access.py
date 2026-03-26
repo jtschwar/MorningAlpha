@@ -62,9 +62,9 @@ click.rich_click.STYLE_ERRORS_SUGGESTION = "magenta italic"
     help='Seconds to sleep between batches',
     show_default=True
 )
-@click.option('--top-nasdaq', type=int, default=700, show_default=True,
+@click.option('--top-nasdaq', type=int, default=1250, show_default=True,
               help='Max NASDAQ stocks when using --output-dir')
-@click.option('--top-nyse', type=int, default=300, show_default=True,
+@click.option('--top-nyse', type=int, default=750, show_default=True,
               help='Max NYSE stocks when using --output-dir')
 @click.option('--top-sp500', type=int, default=500, show_default=True,
               help='Max S&P500 stocks when using --output-dir (set high to include all ~503)')

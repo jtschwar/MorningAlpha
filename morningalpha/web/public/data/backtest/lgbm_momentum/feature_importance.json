@@ -1,0 +1,102 @@
+[
+  {
+    "feature": "spy_momentum_regime",
+    "importance": 0.009132,
+    "category": "market_context"
+  },
+  {
+    "feature": "value_x_momentum",
+    "importance": 0.007303,
+    "category": "technical"
+  },
+  {
+    "feature": "spy_rsi_14",
+    "importance": 0.003888,
+    "category": "market_context"
+  },
+  {
+    "feature": "spy_return_10d",
+    "importance": 0.002509,
+    "category": "market_context"
+  },
+  {
+    "feature": "price_vs_52wk_high",
+    "importance": 0.001756,
+    "category": "technical"
+  },
+  {
+    "feature": "roe",
+    "importance": 0.001577,
+    "category": "fundamental"
+  },
+  {
+    "feature": "sector_momentum_rank",
+    "importance": 0.001458,
+    "category": "technical"
+  },
+  {
+    "feature": "avg_drawdown",
+    "importance": 0.001447,
+    "category": "technical"
+  },
+  {
+    "feature": "macd_signal",
+    "importance": 0.001411,
+    "category": "technical"
+  },
+  {
+    "feature": "sector",
+    "importance": 0.001375,
+    "category": "fundamental"
+  },
+  {
+    "feature": "market_cap_cat",
+    "importance": 0.00128,
+    "category": "technical"
+  },
+  {
+    "feature": "entry_score",
+    "importance": 0.001231,
+    "category": "technical"
+  },
+  {
+    "feature": "spy_volatility_20d",
+    "importance": 0.000621,
+    "category": "market_context"
+  },
+  {
+    "feature": "momentum_accel_long",
+    "importance": 0.000608,
+    "category": "technical"
+  },
+  {
+    "feature": "atr_14",
+    "importance": 0.000578,
+    "category": "technical"
+  },
+  {
+    "feature": "momentum_intermediate",
+    "importance": 0.000568,
+    "category": "technical"
+  },
+  {
+    "feature": "spy_return_21d",
+    "importance": 0.000524,
+    "category": "market_context"
+  },
+  {
+    "feature": "consistency_score",
+    "importance": 0.000464,
+    "category": "technical"
+  },
+  {
+    "feature": "max_drawdown",
+    "importance": 0.000435,
+    "category": "technical"
+  },
+  {
+    "feature": "price_to_sma200",
+    "importance": 0.000291,
+    "category": "technical"
+  }
+]
