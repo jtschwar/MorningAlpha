@@ -121,7 +121,7 @@ def score(data_dir, models_dir):
     # price > SMA200: filters downtrends and value traps.
     # MomentumAccel > -0.5: allows mildly decelerating stocks (common in down weeks)
     #   while still filtering stocks with sharply reversing momentum.
-    MOMENTUM_ACCEL_THRESHOLD = -0.75
+    MOMENTUM_ACCEL_THRESHOLD = -1.5
     gate_mask = pd.Series(True, index=df_score.index)
     if "PriceToSMA200Pct" in df_score.columns:
         sma200_pct = pd.to_numeric(df_score["PriceToSMA200Pct"], errors="coerce")

@@ -35,6 +35,19 @@
   color: var(--accent-green);
 }
 
+.timestamp {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.timestampLabel {
+  font-size: 10px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .dot {
   width: 6px;
   height: 6px;

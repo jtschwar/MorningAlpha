@@ -15,7 +15,7 @@ const PERIOD_PATHS: { period: WindowPeriod; path: string }[] = [
 export default function CsvUpload() {
   const { dispatch } = useStock()
   const [autoStatus, setAutoStatus] = useState<'idle' | 'loading' | 'loaded' | 'failed'>('idle')
-  const [generatedAt, setGeneratedAt] = useState<string | null>(null)
+  const [generatedAt, setGeneratedAt] = useState<{ date: string; time: string } | null>(null)
   const [dragging, setDragging] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -40,10 +40,10 @@ export default function CsvUpload() {
           if (res.ok) {
             const { generated_at } = await res.json()
             const d = new Date(generated_at)
-            setGeneratedAt(
-              d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
-              d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-            )
+            setGeneratedAt({
+              date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+              time: d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+            })
           }
         } catch { /* no timestamp available */ }
         // Load remaining periods in the background
@@ -81,7 +81,12 @@ export default function CsvUpload() {
     return (
       <div className={styles.loaded}>
         <span className={styles.dot} />
-        {generatedAt ?? 'Auto-loaded'}
+        {generatedAt ? (
+          <span className={styles.timestamp}>
+            <span className={styles.timestampLabel}>Last Updated</span>
+            <span>{generatedAt.date} {generatedAt.time}</span>
+          </span>
+        ) : 'Auto-loaded'}
         <input
           ref={fileRef}
           type="file"
