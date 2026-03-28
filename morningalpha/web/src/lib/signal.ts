@@ -168,6 +168,59 @@ export function computeSignal(
 }
 
 /**
+ * Generate a 1–2 sentence plain-English summary for the full filtered universe.
+ */
+export function summarizeUniverse(stocks: Stock[]): string {
+  if (stocks.length === 0) return ''
+
+  const returns = stocks.map(s => s.ReturnPct)
+  const positiveCount = returns.filter(r => r > 0).length
+  const positivePct = Math.round((positiveCount / stocks.length) * 100)
+  const avgReturn = returns.reduce((a, b) => a + b, 0) / returns.length
+
+  const bestStock = [...stocks].sort((a, b) => b.ReturnPct - a.ReturnPct)[0]
+
+  const sharpes = stocks.map(s => s.SharpeRatio).filter((v): v is number => v != null)
+  const avgSharpe = sharpes.length ? sharpes.reduce((a, b) => a + b, 0) / sharpes.length : null
+
+  const overboughtCount = stocks.filter(s => s.RSI != null && s.RSI > 70).length
+  const oversoldCount = stocks.filter(s => s.RSI != null && s.RSI < 30).length
+
+  const highQualityCount = stocks.filter(s => s.QualityScore != null && s.QualityScore >= 70).length
+
+  // ── Sentence 1: breadth + avg return ────────────────────────────────
+  const returnStr = `${avgReturn >= 0 ? '+' : ''}${avgReturn.toFixed(1)}%`
+  let s1 = `${positivePct}% of ${stocks.length} stocks are positive — avg ${returnStr}.`
+
+  // Add best performer
+  if (bestStock) {
+    s1 += ` Best: ${bestStock.Ticker} (+${bestStock.ReturnPct.toFixed(1)}%).`
+  }
+
+  // ── Sentence 2: market regime or notable conditions ──────────────────
+  let s2 = ''
+  if (avgSharpe != null) {
+    const regimeStr =
+      avgSharpe >= 1.5 ? 'trending strongly'
+      : avgSharpe >= 0.8 ? 'in good shape'
+      : avgSharpe >= 0.3 ? 'choppy'
+      : 'under pressure'
+    s2 = `Avg Sharpe ${avgSharpe.toFixed(2)} — market ${regimeStr}.`
+  }
+
+  if (overboughtCount > 5) {
+    s2 += ` ${overboughtCount} stocks overbought (RSI > 70) — watch for pullbacks.`
+  } else if (oversoldCount > 5) {
+    s2 += ` ${oversoldCount} stocks oversold (RSI < 30) — potential bounce candidates.`
+  } else if (highQualityCount > 0) {
+    const pct = Math.round((highQualityCount / stocks.length) * 100)
+    s2 += ` ${pct}% rated high quality (score ≥ 70).`
+  }
+
+  return s2 ? `${s1} ${s2}` : s1
+}
+
+/**
  * Generate a 1–2 sentence plain-English summary for the top K stocks.
  * Uses only CSV data (no fundamentals/OHLCV needed).
  */

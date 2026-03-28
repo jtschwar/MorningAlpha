@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import StatCard from '../common/StatCard'
 import type { Stock } from '../../store/types'
+import { summarizeUniverse } from '../../lib/signal'
 import styles from './KpiStrip.module.css'
 
 interface Props {
@@ -8,6 +9,8 @@ interface Props {
 }
 
 export default function KpiStrip({ stocks }: Props) {
+  const summary = useMemo(() => summarizeUniverse(stocks), [stocks])
+
   const stats = useMemo(() => {
     if (stocks.length === 0) return null
 
@@ -29,6 +32,8 @@ export default function KpiStrip({ stocks }: Props) {
   if (!stats) return null
 
   return (
+    <div>
+      {summary && <p className={styles.summary}>{summary}</p>}
     <div className={styles.strip}>
       <StatCard label="Stocks" value={stats.count} />
       <StatCard
@@ -51,6 +56,7 @@ export default function KpiStrip({ stocks }: Props) {
         label="Avg Quality"
         value={stats.avgQuality != null ? stats.avgQuality.toFixed(1) : 'N/A'}
       />
+    </div>
     </div>
   )
 }
