@@ -51,6 +51,8 @@ TECHNICAL_FEATURE_COLUMNS: List[str] = [
     "momentum_12_1",         # Jegadeesh-Titman: return from month -12 to -1 (skip last month)
     "momentum_intermediate", # Novy-Marx: return from month -12 to -7 (intermediate horizon)
     "momentum_accel_long",   # 3-month ROC minus momentum_12_1 (long-term trend acceleration)
+    "log_momentum_12_1",     # log(1 + momentum_12_1) — compresses extreme values (2000%+) to prevent winsorization from flattening the signal
+    "info_discreteness",     # Discrete vs. continuous information arrival (Da & Warachka 2011)
     "rs_rating",             # Universe-wide percentile rank of momentum_12_1 (0–1, IBD-style RS)
     "volume_trend_confirmation", # Up-day vol / down-day vol over last 21 days — confirms trend with volume
     # Tier 3: cross-sectional alpha features
@@ -78,6 +80,15 @@ MARKET_CONTEXT_COLUMNS: List[str] = [
     "spy_momentum_regime", # SPY 10d return / expected 10d vol (Sharpe-like).
                            # >0 = momentum regime, <0 = mean-reversion regime.
                            # Constant per date — excluded from cross-sectional rank norm.
+    # VIX term structure — regime risk signal
+    "vix_level",           # CBOE VIX spot level
+    "vix_percentile",      # Percentile rank of vix_level vs trailing 252 trading days (0–1). More informative than raw level: VIX=20 means different things in different regimes.
+    "vix_1m_change",       # VIX change over last 22 trading days (rising = risk-off)
+    "vix_term_structure",  # VIX3M / VIX — contango (>1) = normal, backwardation (<1) = fear
+    # WML (momentum) factor — crowding and crash risk
+    "wml_realized_vol_126d",  # 6-month realized vol of Ken French momentum factor
+    "wml_trailing_1m",        # 1-month cumulative WML return (momentum factor trend)
+    "wml_trailing_3m",        # 3-month cumulative WML return (momentum regime)
 ]
 
 # ---------------------------------------------------------------------------

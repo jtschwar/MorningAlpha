@@ -73,6 +73,7 @@ _SPREAD_TO_ML: dict = {
     "Momentum12_1":         "momentum_12_1",
     "MomentumIntermediate": "momentum_intermediate",
     "MomentumAccelLong":    "momentum_accel_long",
+    "InfoDiscreteness":     "info_discreteness",
     # Fundamentals — actual column names from the spread CSV (merged from fundamentals.csv)
     "ROE":          "roe",
     "DebtEquity":   "debt_to_equity",
@@ -89,6 +90,9 @@ _MARKET_CAP_CAT_MAP = {
 _EXCHANGE_MAP = {
     "NASDAQ": 0, "NYSE": 1, "S&P500": 2,
 }
+
+_FACTOR_CACHE_DIR = Path("data/factors")
+_SCORE_CACHE = _FACTOR_CACHE_DIR / "mlscore_cache.parquet"
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +149,118 @@ def _compute_spy_features() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# VIX + WML factor features
+# ---------------------------------------------------------------------------
+
+def _compute_factor_features() -> dict:
+    """Fetch/refresh VIX term structure and WML factor features for today."""
+    import io, zipfile, urllib.request
+    result: dict = {}
+
+    # --- VIX term structure ---
+    try:
+        _FACTOR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        vix_cache = _FACTOR_CACHE_DIR / "vix_inference.parquet"
+        refresh_vix = True
+        if vix_cache.exists():
+            import datetime as _dt
+            age = (_dt.datetime.now() - _dt.datetime.fromtimestamp(vix_cache.stat().st_mtime))
+            if age.total_seconds() < 86400:
+                refresh_vix = False
+        if refresh_vix:
+            import yfinance as yf
+            raw = yf.download("^VIX ^VIX3M", period="3mo", interval="1d", progress=False, auto_adjust=False)
+            if not raw.empty:
+                if hasattr(raw.columns, "levels"):
+                    close = raw["Close"] if "Close" in raw.columns.get_level_values(0) else raw.xs("Close", axis=1, level=1)
+                else:
+                    close = raw[["Close"]]
+                df = pd.DataFrame({
+                    "VIX": close.get("^VIX", pd.Series(dtype=float)),
+                    "VIX3M": close.get("^VIX3M", pd.Series(dtype=float)),
+                }).dropna(how="all")
+                df.to_parquet(vix_cache)
+        if vix_cache.exists():
+            df = pd.read_parquet(vix_cache)
+            vix_s = df["VIX"].dropna()
+            vix3m_s = df["VIX3M"].dropna()
+            if len(vix_s) >= 22:
+                vix_val = float(vix_s.iloc[-1])
+                result["vix_level"] = vix_val
+                result["vix_1m_change"] = vix_val - float(vix_s.iloc[-22])
+                trailing = vix_s.iloc[-252:] if len(vix_s) >= 252 else vix_s
+                result["vix_percentile"] = float((trailing < vix_val).mean())
+                if len(vix3m_s) > 0 and vix_val > 0:
+                    result["vix_term_structure"] = float(vix3m_s.iloc[-1]) / vix_val
+    except Exception as exc:
+        logger.warning("VIX feature computation failed (%s) — VIX features will be 0", exc)
+
+    # --- WML factor features ---
+    try:
+        wml_cache = _FACTOR_CACHE_DIR / "umd_daily.parquet"
+        refresh_wml = True
+        if wml_cache.exists():
+            import datetime as _dt
+            age = (_dt.datetime.now() - _dt.datetime.fromtimestamp(wml_cache.stat().st_mtime))
+            if age.days < 7:
+                refresh_wml = False
+        if refresh_wml:
+            url = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Momentum_Factor_daily_CSV.zip"
+            with urllib.request.urlopen(url, timeout=30) as resp:
+                data = resp.read()
+            with zipfile.ZipFile(io.BytesIO(data)) as z:
+                fname = next(f for f in z.namelist() if f.lower().endswith(".csv"))
+                raw_text = z.read(fname).decode("utf-8", errors="replace")
+            lines = [l for l in raw_text.splitlines() if l.strip()[:8].strip().isdigit()]
+            df_wml = pd.read_csv(io.StringIO("\n".join(lines)), header=None, names=["Date", "Mom"])
+            df_wml["Date"] = pd.to_datetime(df_wml["Date"].astype(str).str.strip(), format="%Y%m%d", errors="coerce")
+            df_wml = df_wml.dropna(subset=["Date"]).set_index("Date")
+            df_wml["Mom"] = pd.to_numeric(df_wml["Mom"], errors="coerce") / 100.0
+            df_wml.to_parquet(wml_cache)
+        if wml_cache.exists():
+            wml = pd.read_parquet(wml_cache)["Mom"].dropna()
+            if len(wml) >= 126:
+                result["wml_realized_vol_126d"] = float(wml.iloc[-126:].std() * np.sqrt(252))
+            if len(wml) >= 21:
+                result["wml_trailing_1m"] = float((1 + wml.iloc[-21:]).prod() - 1)
+            if len(wml) >= 63:
+                result["wml_trailing_3m"] = float((1 + wml.iloc[-63:]).prod() - 1)
+    except Exception as exc:
+        logger.warning("WML feature computation failed (%s) — WML features will be 0", exc)
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Score delta
+# ---------------------------------------------------------------------------
+
+def _get_score_delta(tickers: pd.Series, current_scores: pd.Series) -> pd.Series:
+    """Compare current MLScores to the previous run's cached scores.
+
+    Falling score on a held stock = warning signal. NaN if no prior cache or ticker is new.
+    Saves current scores to cache for the next run.
+    """
+    delta = pd.Series(np.nan, index=current_scores.index)
+    if _SCORE_CACHE.exists():
+        try:
+            prev = pd.read_parquet(_SCORE_CACHE).set_index("Ticker")["MLScore"]
+            for idx, ticker in tickers.items():
+                if ticker in prev.index:
+                    delta[idx] = round(float(current_scores[idx]) - float(prev[ticker]), 1)
+        except Exception as exc:
+            logger.warning("Score cache read failed (%s) — MLScoreDelta will be NaN", exc)
+    try:
+        _SCORE_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame({"Ticker": tickers.values, "MLScore": current_scores.values}).to_parquet(
+            _SCORE_CACHE, index=False
+        )
+    except Exception as exc:
+        logger.warning("Score cache save failed (%s)", exc)
+    return delta
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -188,6 +304,11 @@ def _build_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
         if src in df.columns:
             feat[dst] = pd.to_numeric(df[src], errors="coerce")
 
+    # log_momentum_12_1: compress extreme values (2000%+ stocks) to prevent winsorization
+    # from flattening the signal. Computed from the already-mapped momentum_12_1.
+    if "momentum_12_1" in feat.columns:
+        feat["log_momentum_12_1"] = np.log1p(feat["momentum_12_1"].clip(lower=-0.99))
+
     # Derived fundamentals: compute from price ratios in the spread CSV
     # earnings_yield = 1/PE, book_to_market = 1/PB, sales_to_price = 1/PS
     for ratio_col, feat_name in [("PE", "earnings_yield"), ("PB", "book_to_market"), ("PS", "sales_to_price")]:
@@ -230,10 +351,12 @@ def _build_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
 
     feat["has_fundamentals"] = (feat["sector"] >= 0).astype("int8")
 
-    # Market context features (same for all stocks — today's SPY state)
+    # Market context features (same for all stocks — today's SPY state + VIX/WML)
     spy = _compute_spy_features()
+    factors = _compute_factor_features()
+    market_ctx = {**spy, **factors}
     for col in MARKET_CONTEXT_COLUMNS:
-        feat[col] = spy.get(col, 0.0)
+        feat[col] = market_ctx.get(col, 0.0)
 
     # Composite: earnings_yield × ROE — penalises cheap-but-deteriorating stocks
     if "earnings_yield" in feat.columns and "roe" in feat.columns:
@@ -309,7 +432,10 @@ def _score(df: pd.DataFrame, model_path: Path) -> pd.DataFrame:
         model = pickle.load(f)
     X = _build_feature_matrix(df)
     raw = _predict_raw(model, X)
-    df["MLScore"] = pd.Series(raw, index=df.index).rank(pct=True).mul(100).round(1).values
+    scores = pd.Series(raw, index=df.index).rank(pct=True).mul(100).round(1)
+    df["MLScore"] = scores.values
+    if "Ticker" in df.columns:
+        df["MLScoreDelta"] = _get_score_delta(df["Ticker"], scores).values
     return df
 
 

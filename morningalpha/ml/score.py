@@ -67,10 +67,11 @@ def score(data_dir, models_dir):
     champion_id = config.get("champion")
     model_entries = config.get("models", [])
 
-    # Only score models whose .pkl exists
+    # Only score models that are active (champion/candidate) and have a .pkl file
     active_models = [
         m for m in model_entries
-        if (models_path / f"{m['id']}.pkl").exists()
+        if m.get("status", "candidate") not in ("retired",)
+        and (models_path / f"{m['id']}.pkl").exists()
     ]
 
     if not active_models:
@@ -116,15 +117,21 @@ def score(data_dir, models_dir):
     else:
         df_score = df3m.copy()
 
-    # Momentum gate — only score stocks in an uptrend (price > SMA200).
-    # Prevents the model from ranking value traps above trend-qualified stocks.
+    # Momentum gate — only score stocks in an uptrend with accelerating momentum.
+    # price > SMA200: filters downtrends and value traps.
+    # MomentumAccel > 0: filters peaking/fading trends (e.g. stocks that ran but are stalling).
+    #   Stocks with decelerating momentum have already made their move — not the entry point we want.
+    gate_mask = pd.Series(True, index=df_score.index)
     if "PriceToSMA200Pct" in df_score.columns:
         sma200_pct = pd.to_numeric(df_score["PriceToSMA200Pct"], errors="coerce")
-        trending_up = sma200_pct > 0
-        n_gated = (~trending_up & sma200_pct.notna()).sum()
-        df_score = df_score[trending_up | sma200_pct.isna()].copy()
-        if n_gated:
-            console.print(f"[dim]Momentum gate (price > SMA200): removed {n_gated} downtrending stocks[/dim]")
+        gate_mask &= (sma200_pct > 0) | sma200_pct.isna()
+    if "MomentumAccel" in df_score.columns:
+        mom_accel = pd.to_numeric(df_score["MomentumAccel"], errors="coerce")
+        gate_mask &= (mom_accel > 0) | mom_accel.isna()
+    n_gated = (~gate_mask).sum()
+    df_score = df_score[gate_mask].copy()
+    if n_gated:
+        console.print(f"[dim]Momentum gate (price > SMA200 + MomentumAccel > 0): removed {n_gated} downtrending/fading stocks[/dim]")
 
     raw_scores: dict[str, np.ndarray] = {}
 
@@ -149,10 +156,55 @@ def score(data_dir, models_dir):
     else:
         df_score["MLScore"] = df_score[f"MLScore_{list(raw_scores.keys())[0]}"]
 
+    # Sector diversity cap: per-sector limits on final MLScore ranking.
+    # High-opportunity sectors (Technology, Healthcare) get more slots.
+    # Individual MLScore_* columns are preserved unchanged for analysis.
+    DEFAULT_SECTOR_CAP = 5
+    SECTOR_CAPS: dict[str, int] = {
+        "Technology": 15,
+        "Healthcare": 10,
+        "Financial Services": 10,
+        "Consumer Cyclical": 7,
+        "Communication Services": 7,
+        "Industrials": 3,   # shipping/transport stocks often have clean technicals but slow growth
+        "Energy": 3,
+        "Utilities": 2,
+    }
+    if "Sector" in df_score.columns:
+        sectors = df_score["Sector"].fillna("Unknown")
+        sector_rank = df_score.groupby(sectors)["MLScore"].rank(ascending=False, method="first")
+        cap_per_row = sectors.map(lambda s: SECTOR_CAPS.get(s, DEFAULT_SECTOR_CAP))
+        within_cap = sector_rank <= cap_per_row
+        diversity_bonus = within_cap.astype(float) * 1000
+        df_score["MLScore"] = (
+            (df_score["MLScore"] + diversity_bonus)
+            .rank(pct=True).mul(100).round(1)
+        )
+        n_deprioritized = int((~within_cap).sum())
+        cap_summary = ", ".join(f"{s}:{c}" for s, c in sorted(SECTOR_CAPS.items()))
+        console.print(
+            f"[dim]Sector diversity cap (default {DEFAULT_SECTOR_CAP}, overrides: {cap_summary}): "
+            f"{n_deprioritized} stocks deprioritized[/dim]"
+        )
+
+    # Score delta — compare to previous run's cached scores (falling = warning signal)
+    _score_cache_path = Path("data/factors/mlscore_cache.parquet")
+    try:
+        if _score_cache_path.exists():
+            prev = pd.read_parquet(_score_cache_path).set_index("Ticker")["MLScore"]
+            current = df_score.set_index("Ticker")["MLScore"]
+            delta = current.sub(prev, fill_value=float("nan")).reindex(current.index).round(1)
+            df_score["MLScoreDelta"] = delta.values
+        _score_cache_path.parent.mkdir(parents=True, exist_ok=True)
+        df_score[["Ticker", "MLScore"]].to_parquet(_score_cache_path, index=False)
+    except Exception as exc:
+        logger.warning("MLScoreDelta computation failed (%s) — delta will be absent", exc)
+
     # -----------------------------------------------------------------------
     # Step 2: Build ticker → score lookup from the eligible scored stocks
     # -----------------------------------------------------------------------
-    score_cols = ["MLScore"] + [f"MLScore_{m['id']}" for m in active_models if m["id"] in raw_scores]
+    delta_col = ["MLScoreDelta"] if "MLScoreDelta" in df_score.columns else []
+    score_cols = ["MLScore"] + delta_col + [f"MLScore_{m['id']}" for m in active_models if m["id"] in raw_scores]
     scores_by_ticker = df_score.set_index("Ticker")[score_cols]
 
     top_ticker = scores_by_ticker["MLScore"].idxmax()

@@ -426,13 +426,15 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
             "earnings_yield_vs_sector", "book_to_market_vs_sector",
             "earnings_yield_quality", "debt_to_equity", "current_ratio",
         }
-        # Filter training rows to confirmed mid-run uptrends (10% < mom12_1 < 400%)
-        # Upper cap excludes extreme outliers (e.g. +1000% stocks) where the model
-        # learns mean-reversion rather than momentum continuation.
+        # Filter training rows to confirmed mid-run uptrends (10% < mom12_1 < 5000%)
+        # Upper cap is intentionally high — extreme momentum stocks (AXTI 2234%, SNDK 1139%)
+        # are exactly what we want the model to learn from. Only exclude true data errors.
         def _momentum_mask(df_split):
             mom = df_split.get("momentum_12_1", pd.Series(0, index=df_split.index))
             sma = df_split.get("price_to_sma200", pd.Series(0, index=df_split.index))
-            return (mom > 0.10) & (mom < 4.00) & (sma > 0)
+            ret = df_split.get("return_pct", pd.Series(0, index=df_split.index))
+            # require stock already moving in current period (mid-breakout, up 20%+)
+            return (mom > 0.10) & (mom < 50.00) & (sma > 0) & (ret > 0.20)
         tr_mask = _momentum_mask(df_tr)
         va_mask = _momentum_mask(df_va)
         te_mask = _momentum_mask(df_te)

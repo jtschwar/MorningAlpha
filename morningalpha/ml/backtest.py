@@ -109,12 +109,12 @@ def _run_inference(booster, df: pd.DataFrame, feat_cols: List[str]) -> pd.DataFr
     except AttributeError:
         pass
 
-    available = [c for c in feat_cols if c in df.columns]
-    missing = set(feat_cols) - set(available)
+    missing = set(feat_cols) - set(df.columns)
     if missing:
         logger.warning("%d feature columns missing from dataset: %s", len(missing), missing)
 
-    X = df[available].fillna(0).astype(np.float32)
+    # Build full feature matrix — fill missing columns with 0 (same as inference)
+    X = df.reindex(columns=feat_cols, fill_value=0.0).fillna(0).astype(np.float32)
     df = df.copy()
     df["pred_score"] = booster.predict(X)
     return df

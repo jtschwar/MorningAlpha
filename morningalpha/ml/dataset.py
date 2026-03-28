@@ -455,6 +455,151 @@ def _compute_market_features_lookup(
     return lookup
 
 
+# ---------------------------------------------------------------------------
+# VIX + WML factor regime features (historical, per snapshot date)
+# ---------------------------------------------------------------------------
+
+_NULL_FACTOR_FEATURES: dict = {
+    "vix_level": np.nan,
+    "vix_percentile": np.nan,
+    "vix_1m_change": np.nan,
+    "vix_term_structure": np.nan,
+    "wml_realized_vol_126d": np.nan,
+    "wml_trailing_1m": np.nan,
+    "wml_trailing_3m": np.nan,
+}
+
+
+def _load_factor_data(lookback_days: int, from_cache: bool) -> dict:
+    """Fetch or load historical VIX/VIX3M and Ken French WML factor data.
+
+    Returns {"vix": DataFrame, "wml": Series} or empty values on failure.
+    All data is point-in-time safe (published at or before market close).
+    """
+    import io, zipfile, urllib.request
+
+    FACTOR_CACHE_DIR = RAW_CACHE_DIR / "factors"
+    FACTOR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    result = {"vix": None, "wml": None}
+
+    # --- VIX / VIX3M (Yahoo Finance) ---
+    vix_cache = FACTOR_CACHE_DIR / "vix_history.parquet"
+    need_vix = not vix_cache.exists() or (
+        not from_cache
+        and (datetime.now() - datetime.fromtimestamp(vix_cache.stat().st_mtime)).days > CACHE_TTL_DAYS
+    )
+    if need_vix and not from_cache:
+        try:
+            start = (datetime.now() - timedelta(days=lookback_days + 60)).strftime("%Y-%m-%d")
+            end = datetime.now().strftime("%Y-%m-%d")
+            raw = yf.download("^VIX ^VIX3M", start=start, end=end,
+                              interval="1d", progress=False, auto_adjust=False)
+            if not raw.empty:
+                close = raw["Close"] if isinstance(raw.columns, pd.MultiIndex) else raw[["Close"]]
+                df_vix = pd.DataFrame({
+                    "VIX":  close.get("^VIX",  pd.Series(dtype=float)),
+                    "VIX3M": close.get("^VIX3M", pd.Series(dtype=float)),
+                }).dropna(how="all")
+                df_vix.to_parquet(vix_cache)
+                console.print(f"VIX history fetched: {len(df_vix)} trading days.")
+        except Exception as exc:
+            logger.warning("VIX fetch failed (%s) — VIX features will be NaN.", exc)
+    elif need_vix and from_cache:
+        logger.warning("VIX cache missing and --from-cache set — VIX features will be NaN. Run without --from-cache once to populate.")
+    if vix_cache.exists():
+        try:
+            result["vix"] = pd.read_parquet(vix_cache)
+        except Exception:
+            pass
+
+    # --- Ken French daily momentum factor (WML) ---
+    wml_cache = FACTOR_CACHE_DIR / "umd_daily.parquet"
+    need_wml = not wml_cache.exists() or (
+        not from_cache
+        and (datetime.now() - datetime.fromtimestamp(wml_cache.stat().st_mtime)).days > 7
+    )
+    if need_wml and from_cache:
+        logger.warning("WML cache missing and --from-cache set — WML features will be NaN. Run without --from-cache once to populate.")
+    if need_wml and not from_cache:
+        try:
+            url = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Momentum_Factor_daily_CSV.zip"
+            with urllib.request.urlopen(url, timeout=30) as resp:
+                data = resp.read()
+            with zipfile.ZipFile(io.BytesIO(data)) as z:
+                fname = next(f for f in z.namelist() if f.lower().endswith(".csv"))
+                raw_text = z.read(fname).decode("utf-8", errors="replace")
+            lines = [l for l in raw_text.splitlines() if l.strip()[:8].strip().isdigit()]
+            df_wml = pd.read_csv(io.StringIO("\n".join(lines)), header=None, names=["Date", "Mom"])
+            df_wml["Date"] = pd.to_datetime(df_wml["Date"].astype(str).str.strip(),
+                                            format="%Y%m%d", errors="coerce")
+            df_wml = df_wml.dropna(subset=["Date"]).set_index("Date")
+            df_wml["Mom"] = pd.to_numeric(df_wml["Mom"], errors="coerce") / 100.0
+            df_wml.to_parquet(wml_cache)
+            console.print(f"WML factor fetched: {len(df_wml)} trading days.")
+        except Exception as exc:
+            logger.warning("WML fetch failed (%s) — WML features will be NaN.", exc)
+    if wml_cache.exists():
+        try:
+            result["wml"] = pd.read_parquet(wml_cache)["Mom"].dropna()
+        except Exception:
+            pass
+
+    return result
+
+
+def _compute_factor_features_lookup(
+    factor_data: dict,
+    snapshot_dates: List[pd.Timestamp],
+) -> Dict[pd.Timestamp, dict]:
+    """Pre-compute VIX + WML regime features for every snapshot date.
+
+    Mirrors _compute_market_features_lookup — returns {date: feature_dict}.
+    All values are point-in-time (use only data available on or before that date).
+    """
+    vix_df = factor_data.get("vix")
+    wml_s = factor_data.get("wml")
+
+    lookup: Dict[pd.Timestamp, dict] = {}
+
+    for t in snapshot_dates:
+        feats = _NULL_FACTOR_FEATURES.copy()
+
+        # --- VIX features ---
+        if vix_df is not None and not vix_df.empty:
+            try:
+                vix_hist = vix_df.loc[:t]["VIX"].dropna()
+                v3m_hist = vix_df.loc[:t]["VIX3M"].dropna()
+                if len(vix_hist) >= 22:
+                    vix_val = float(vix_hist.iloc[-1])
+                    feats["vix_level"] = vix_val
+                    feats["vix_1m_change"] = vix_val - float(vix_hist.iloc[-22])
+                    # Percentile rank of today's VIX vs trailing 252 trading days
+                    trailing = vix_hist.iloc[-252:] if len(vix_hist) >= 252 else vix_hist
+                    feats["vix_percentile"] = float((trailing < vix_val).mean())
+                    if len(v3m_hist) > 0 and vix_val > 0:
+                        feats["vix_term_structure"] = float(v3m_hist.iloc[-1]) / vix_val
+            except Exception:
+                pass
+
+        # --- WML features ---
+        if wml_s is not None and len(wml_s) > 0:
+            try:
+                wml_hist = wml_s.loc[:t].dropna()
+                if len(wml_hist) >= 126:
+                    feats["wml_realized_vol_126d"] = float(wml_hist.iloc[-126:].std() * np.sqrt(252))
+                if len(wml_hist) >= 21:
+                    feats["wml_trailing_1m"] = float((1 + wml_hist.iloc[-21:]).prod() - 1)
+                if len(wml_hist) >= 63:
+                    feats["wml_trailing_3m"] = float((1 + wml_hist.iloc[-63:]).prod() - 1)
+            except Exception:
+                pass
+
+        lookup[t] = feats
+
+    return lookup
+
+
 def _compute_spy_forward_return_lookup(
     spy_ohlcv: Optional[pd.DataFrame],
     dates: List[pd.Timestamp],
@@ -689,6 +834,7 @@ def _compute_extended_technicals(subset: pd.DataFrame) -> dict:
             price_147 = float(prices.iloc[-147])  # ~7 months ago
             if price_252 > 0 and price_21 > 0:
                 result["momentum_12_1"] = (price_21 / price_252) - 1
+                result["log_momentum_12_1"] = float(np.log1p(max(result["momentum_12_1"], -0.99)))
             if price_252 > 0 and price_147 > 0:
                 result["momentum_intermediate"] = (price_147 / price_252) - 1
             if n >= 63 and price_252 > 0 and price_21 > 0:
@@ -1080,6 +1226,9 @@ def dataset(lookback, output, tickers_from, horizons, no_overlap, refresh_only, 
     else:
         console.print("[yellow]SPY data unavailable — market context features will be NaN.[/yellow]")
 
+    # --- Fetch VIX/WML for regime features ---
+    factor_data = _load_factor_data(lookback_days, from_cache)
+
     if refresh_only:
         console.print("[bold green]Cache refreshed.[/bold green]")
         return
@@ -1141,6 +1290,18 @@ def dataset(lookback, output, tickers_from, horizons, no_overlap, refresh_only, 
     console.print(
         f"Market context features added. "
         f"SPY coverage: [bold]{sum(1 for v in market_lookup.values() if not np.isnan(v['spy_return_10d']))}[/bold]/{len(all_dates)} dates."
+    )
+
+    # --- Add VIX/WML regime features (historical, per snapshot date) ---
+    factor_lookup = _compute_factor_features_lookup(factor_data, all_dates)
+    for col in _NULL_FACTOR_FEATURES:
+        df[col] = df["date"].map(lambda d, _c=col: factor_lookup.get(d, _NULL_FACTOR_FEATURES)[_c])
+    vix_coverage = sum(1 for v in factor_lookup.values() if not np.isnan(v["vix_level"]))
+    wml_coverage = sum(1 for v in factor_lookup.values() if not np.isnan(v["wml_trailing_3m"]))
+    console.print(
+        f"Regime features added. "
+        f"VIX coverage: [bold]{vix_coverage}[/bold]/{len(all_dates)} dates, "
+        f"WML coverage: [bold]{wml_coverage}[/bold]/{len(all_dates)} dates."
     )
 
     # --- Compute sector-relative features (cross-sectional, pre-rank-normalization) ---

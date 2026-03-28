@@ -1,5 +1,5 @@
 {
-  "model_name": "lgbm_composite_63d",
+  "model_name": "lgbm_composite_v4",
   "model_type": "lgbm",
   "feature_columns": [
     "return_pct",
@@ -41,6 +41,7 @@
     "momentum_12_1",
     "momentum_intermediate",
     "momentum_accel_long",
+    "log_momentum_12_1",
     "rs_rating",
     "volume_trend_confirmation",
     "sector_return_rank",
@@ -54,6 +55,13 @@
     "spy_rsi_14",
     "spy_above_sma200",
     "spy_momentum_regime",
+    "vix_level",
+    "vix_percentile",
+    "vix_1m_change",
+    "vix_term_structure",
+    "wml_realized_vol_126d",
+    "wml_trailing_1m",
+    "wml_trailing_3m",
     "earnings_yield",
     "book_to_market",
     "sales_to_price",
@@ -62,7 +70,6 @@
     "revenue_growth",
     "profit_margin",
     "current_ratio",
-    "short_pct_float",
     "earnings_yield_vs_sector",
     "book_to_market_vs_sector",
     "earnings_yield_quality",
@@ -71,22 +78,22 @@
   ],
   "target": "forward_63d_composite_rank",
   "best_params": {
-    "num_leaves": 28,
+    "num_leaves": 9,
     "max_depth": 5,
-    "learning_rate": 0.011087155074888305,
-    "feature_fraction": 0.5127560580092333,
-    "bagging_fraction": 0.6889996912564883,
-    "min_child_samples": 133,
-    "lambda_l1": 6.949610163203486,
-    "lambda_l2": 2.5587407811266987
+    "learning_rate": 0.03938596488586589,
+    "feature_fraction": 0.4086015204161731,
+    "bagging_fraction": 0.8212041687679079,
+    "min_child_samples": 397,
+    "lambda_l1": 0.27044377463101904,
+    "lambda_l2": 99.93512783277185
   },
   "results": {
-    "train_ic": 0.3629088818486118,
-    "val_ic": 0.19467004868978705,
-    "test_ic": 0.1874482500758624,
-    "train_hit": 0.6206467508469357,
-    "val_hit": 0.5659068682765365,
-    "test_hit": 0.5647087994632517
+    "train_ic": 0.2741011688115836,
+    "val_ic": 0.19253000213737992,
+    "test_ic": 0.19544260519179077,
+    "train_hit": 0.590547765846619,
+    "val_hit": 0.5629163527865172,
+    "test_hit": 0.5640953174272625
   },
-  "persistence_ic": -0.019569908575630842
+  "persistence_ic": -0.023916004011858675
 }
