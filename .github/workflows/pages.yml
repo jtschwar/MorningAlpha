@@ -40,6 +40,7 @@ jobs:
           mkdir -p morningalpha/web/dist/data/latest
           if [ -d data/latest ]; then
             cp data/latest/*.csv morningalpha/web/dist/data/latest/ 2>/dev/null || true
+            cp data/latest/_generated.json morningalpha/web/dist/data/latest/ 2>/dev/null || true
           fi
 
       - name: Upload Pages artifact

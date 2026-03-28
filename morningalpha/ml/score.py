@@ -117,21 +117,22 @@ def score(data_dir, models_dir):
     else:
         df_score = df3m.copy()
 
-    # Momentum gate — only score stocks in an uptrend with accelerating momentum.
+    # Momentum gate — only score stocks in an uptrend with non-collapsing momentum.
     # price > SMA200: filters downtrends and value traps.
-    # MomentumAccel > 0: filters peaking/fading trends (e.g. stocks that ran but are stalling).
-    #   Stocks with decelerating momentum have already made their move — not the entry point we want.
+    # MomentumAccel > -0.5: allows mildly decelerating stocks (common in down weeks)
+    #   while still filtering stocks with sharply reversing momentum.
+    MOMENTUM_ACCEL_THRESHOLD = -0.75
     gate_mask = pd.Series(True, index=df_score.index)
     if "PriceToSMA200Pct" in df_score.columns:
         sma200_pct = pd.to_numeric(df_score["PriceToSMA200Pct"], errors="coerce")
         gate_mask &= (sma200_pct > 0) | sma200_pct.isna()
     if "MomentumAccel" in df_score.columns:
         mom_accel = pd.to_numeric(df_score["MomentumAccel"], errors="coerce")
-        gate_mask &= (mom_accel > 0) | mom_accel.isna()
+        gate_mask &= (mom_accel > MOMENTUM_ACCEL_THRESHOLD) | mom_accel.isna()
     n_gated = (~gate_mask).sum()
     df_score = df_score[gate_mask].copy()
     if n_gated:
-        console.print(f"[dim]Momentum gate (price > SMA200 + MomentumAccel > 0): removed {n_gated} downtrending/fading stocks[/dim]")
+        console.print(f"[dim]Momentum gate (price > SMA200 + MomentumAccel > {MOMENTUM_ACCEL_THRESHOLD}): removed {n_gated} downtrending/fading stocks[/dim]")
 
     raw_scores: dict[str, np.ndarray] = {}
 
