@@ -7,9 +7,10 @@ interface Props {
   ticker: string
   stock: Stock | null
   metric: string
+  currentPrice?: number | null
 }
 
-export default function StockHeader({ ticker, stock, metric }: Props) {
+export default function StockHeader({ ticker, stock, metric, currentPrice }: Props) {
   const navigate = useNavigate()
 
   function goBack() {
@@ -41,6 +42,13 @@ export default function StockHeader({ ticker, stock, metric }: Props) {
           </div>
         )}
       </div>
+
+      {currentPrice != null && (
+        <div className={styles.price}>
+          <span className={styles.priceLabel}>Last Price</span>
+          <span className={styles.priceValue}>${currentPrice.toFixed(2)}</span>
+        </div>
+      )}
     </div>
   )
 }

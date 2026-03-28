@@ -244,4 +244,11 @@ def score(data_dir, models_dir):
         ", ".join(f for f in PERIOD_FILES if (data_path / f).exists()),
     )
     console.print(table)
+
+    # Write generation timestamp for the dashboard
+    import datetime
+    generated_path = data_path / "_generated.json"
+    with open(generated_path, "w") as f:
+        json.dump({"generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()}, f)
+
     console.print("\n[bold green]✓ ML scoring complete[/bold green]")

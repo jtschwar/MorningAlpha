@@ -15,7 +15,6 @@ export default function Sidebar() {
   return (
     <div className={styles.sidebar}>
       <section className={styles.section}>
-        <div className={styles.sectionTitle}>Data</div>
         <CsvUpload />
       </section>
 

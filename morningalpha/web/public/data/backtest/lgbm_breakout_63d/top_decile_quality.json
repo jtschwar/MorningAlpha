@@ -1,0 +1,17 @@
+{
+  "top_decile": {
+    "ann_return": 0.9103,
+    "sharpe": 1.434,
+    "consistency": 0.753
+  },
+  "bottom_decile": {
+    "ann_return": 0.4067,
+    "sharpe": 0.806,
+    "consistency": 0.635
+  },
+  "universe": {
+    "ann_return": 0.3425,
+    "sharpe": 1.31,
+    "consistency": 0.723
+  }
+}

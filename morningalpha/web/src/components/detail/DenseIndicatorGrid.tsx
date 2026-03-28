@@ -19,6 +19,7 @@ interface Props {
   fundamentals: FundamentalData | null | undefined
   ohlcv: StockDetailData | null
   period: Period
+  section?: 'overview' | 'technicals'
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -88,7 +89,7 @@ function rsiColor(v: number | null): ColorClass {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function DenseIndicatorGrid({ stock, fundamentals: f, ohlcv, period }: Props) {
+export default function DenseIndicatorGrid({ stock, fundamentals: f, ohlcv, period, section = 'overview' }: Props) {
   const hideSMA200 = period === '1M' || period === '2W'
   const hideRSI21 = period === '1M' || period === '2W'
   const hideROC21 = period === '1M' || period === '2W'
@@ -304,36 +305,41 @@ export default function DenseIndicatorGrid({ stock, fundamentals: f, ohlcv, peri
 
   return (
     <div className={styles.container}>
-      {/* Section 1: Fundamentals */}
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>Fundamentals</div>
-        <div className={styles.grid}>
-          <Row cells={fundRow1} />
-          <Row cells={fundRow2} />
-          <Row cells={fundRow3} />
-        </div>
-      </div>
+      {section === 'overview' && (
+        <>
+          {/* Section 1: Fundamentals */}
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>Fundamentals</div>
+            <div className={styles.grid}>
+              <Row cells={fundRow1} />
+              <Row cells={fundRow2} />
+              <Row cells={fundRow3} />
+            </div>
+          </div>
 
-      {/* Section 2: Performance */}
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>Performance</div>
-        <div className={styles.grid}>
-          <Row cells={perfRow1} />
-          <Row cells={perfRow2} />
-        </div>
-      </div>
+          {/* Section 2: Performance */}
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>Performance</div>
+            <div className={styles.grid}>
+              <Row cells={perfRow1} />
+              <Row cells={perfRow2} />
+            </div>
+          </div>
+        </>
+      )}
 
-      {/* Section 3: Technical Indicators */}
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>Technical Indicators (Live)</div>
-        <div className={styles.grid}>
-          <Row cells={techRow1} />
-          <Row cells={techRow2} />
-          <Row cells={techRow3} />
-          <Row cells={techRow4} />
-          <Row cells={techRow5} />
+      {section === 'technicals' && (
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>Technical Indicators (Live)</div>
+          <div className={styles.grid}>
+            <Row cells={techRow1} />
+            <Row cells={techRow2} />
+            <Row cells={techRow3} />
+            <Row cells={techRow4} />
+            <Row cells={techRow5} />
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

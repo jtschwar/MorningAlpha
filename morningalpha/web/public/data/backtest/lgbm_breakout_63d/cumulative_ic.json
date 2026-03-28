@@ -1,0 +1,58 @@
+[
+  {
+    "month": "2024-11",
+    "cumulative_ic": 0.0424
+  },
+  {
+    "month": "2024-12",
+    "cumulative_ic": 0.0373
+  },
+  {
+    "month": "2025-01",
+    "cumulative_ic": 0.1131
+  },
+  {
+    "month": "2025-02",
+    "cumulative_ic": 0.2134
+  },
+  {
+    "month": "2025-03",
+    "cumulative_ic": 0.2293
+  },
+  {
+    "month": "2025-04",
+    "cumulative_ic": 0.3183
+  },
+  {
+    "month": "2025-05",
+    "cumulative_ic": 0.3873
+  },
+  {
+    "month": "2025-06",
+    "cumulative_ic": 0.5441
+  },
+  {
+    "month": "2025-07",
+    "cumulative_ic": 0.4754
+  },
+  {
+    "month": "2025-08",
+    "cumulative_ic": 0.5116
+  },
+  {
+    "month": "2025-09",
+    "cumulative_ic": 0.5761
+  },
+  {
+    "month": "2025-10",
+    "cumulative_ic": 0.7722
+  },
+  {
+    "month": "2025-11",
+    "cumulative_ic": 0.8893
+  },
+  {
+    "month": "2025-12",
+    "cumulative_ic": 0.9448
+  }
+]

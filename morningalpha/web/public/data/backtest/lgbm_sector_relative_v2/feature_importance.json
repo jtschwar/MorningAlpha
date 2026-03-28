@@ -1,0 +1,102 @@
+[
+  {
+    "feature": "earnings_yield_vs_sector",
+    "importance": 0.178203,
+    "category": "fundamental"
+  },
+  {
+    "feature": "earnings_yield",
+    "importance": 0.130958,
+    "category": "fundamental"
+  },
+  {
+    "feature": "wml_realized_vol_126d",
+    "importance": 0.1291,
+    "category": "market_context"
+  },
+  {
+    "feature": "roe",
+    "importance": 0.043407,
+    "category": "fundamental"
+  },
+  {
+    "feature": "book_to_market",
+    "importance": 0.042225,
+    "category": "fundamental"
+  },
+  {
+    "feature": "spy_volatility_20d",
+    "importance": 0.041384,
+    "category": "market_context"
+  },
+  {
+    "feature": "avg_drawdown",
+    "importance": 0.034096,
+    "category": "technical"
+  },
+  {
+    "feature": "atr_14",
+    "importance": 0.033419,
+    "category": "technical"
+  },
+  {
+    "feature": "sales_to_price",
+    "importance": 0.032091,
+    "category": "fundamental"
+  },
+  {
+    "feature": "wml_trailing_3m",
+    "importance": 0.025526,
+    "category": "market_context"
+  },
+  {
+    "feature": "market_cap_cat",
+    "importance": 0.024499,
+    "category": "technical"
+  },
+  {
+    "feature": "sector_return_rank",
+    "importance": 0.02386,
+    "category": "technical"
+  },
+  {
+    "feature": "volatility_20d",
+    "importance": 0.022086,
+    "category": "technical"
+  },
+  {
+    "feature": "profit_margin",
+    "importance": 0.021837,
+    "category": "fundamental"
+  },
+  {
+    "feature": "price_vs_52wk_high",
+    "importance": 0.020766,
+    "category": "technical"
+  },
+  {
+    "feature": "max_drawdown",
+    "importance": 0.020636,
+    "category": "technical"
+  },
+  {
+    "feature": "book_to_market_vs_sector",
+    "importance": 0.018219,
+    "category": "fundamental"
+  },
+  {
+    "feature": "value_x_momentum",
+    "importance": 0.015969,
+    "category": "technical"
+  },
+  {
+    "feature": "price_to_sma200",
+    "importance": 0.013713,
+    "category": "technical"
+  },
+  {
+    "feature": "revenue_growth",
+    "importance": 0.011756,
+    "category": "fundamental"
+  }
+]

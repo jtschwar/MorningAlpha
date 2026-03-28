@@ -60,6 +60,7 @@ export default function StockDetail() {
           ticker={ticker ?? ''}
           stock={stock}
           metric={meta?.metric ?? '3M'}
+          currentPrice={data ? data.close.at(-1) ?? null : null}
         />
 
         <SignalBanner signal={signal} />
@@ -69,6 +70,7 @@ export default function StockDetail() {
           fundamentals={csvFundamentals}
           ohlcv={data ?? null}
           period={toGridPeriod(period)}
+          section="overview"
         />
 
         <PeriodSelector value={period} onChange={setPeriod} />
@@ -102,6 +104,14 @@ export default function StockDetail() {
             )}
           </>
         )}
+
+        <DenseIndicatorGrid
+          stock={stock}
+          fundamentals={csvFundamentals}
+          ohlcv={data ?? null}
+          period={toGridPeriod(period)}
+          section="technicals"
+        />
 
         {!data && !loading && !error && (
           <div className={styles.status}>

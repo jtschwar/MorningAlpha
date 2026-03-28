@@ -15,6 +15,7 @@ const PERIOD_PATHS: { period: WindowPeriod; path: string }[] = [
 export default function CsvUpload() {
   const { dispatch } = useStock()
   const [autoStatus, setAutoStatus] = useState<'idle' | 'loading' | 'loaded' | 'failed'>('idle')
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -22,7 +23,6 @@ export default function CsvUpload() {
   useEffect(() => {
     setAutoStatus('loading')
 
-    // Load default (3m) first, then others in background
     const loadPeriod = async ({ period, path }: { period: WindowPeriod; path: string }) => {
       const res = await fetch(path)
       if (!res.ok) throw new Error(`${res.status}`)
@@ -33,8 +33,19 @@ export default function CsvUpload() {
     }
 
     loadPeriod(PERIOD_PATHS[0])
-      .then(() => {
+      .then(async () => {
         setAutoStatus('loaded')
+        try {
+          const res = await fetch('./data/latest/_generated.json')
+          if (res.ok) {
+            const { generated_at } = await res.json()
+            const d = new Date(generated_at)
+            setGeneratedAt(
+              d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
+              d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+            )
+          }
+        } catch { /* no timestamp available */ }
         // Load remaining periods in the background
         for (const p of PERIOD_PATHS.slice(1)) {
           loadPeriod(p).catch(() => {}) // silent — other windows may not exist
@@ -70,14 +81,7 @@ export default function CsvUpload() {
     return (
       <div className={styles.loaded}>
         <span className={styles.dot} />
-        Auto-loaded
-        <button
-          className={styles.overrideBtn}
-          onClick={() => fileRef.current?.click()}
-          title="Override with manual upload"
-        >
-          upload CSV
-        </button>
+        {generatedAt ?? 'Auto-loaded'}
         <input
           ref={fileRef}
           type="file"
