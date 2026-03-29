@@ -1,5 +1,5 @@
 {
-  "model_name": "lgbm_composite_v4",
+  "model_name": "lgbm_breakout_v3",
   "model_type": "lgbm",
   "feature_columns": [
     "return_pct",
@@ -62,38 +62,31 @@
     "wml_realized_vol_126d",
     "wml_trailing_1m",
     "wml_trailing_3m",
-    "earnings_yield",
-    "book_to_market",
-    "sales_to_price",
     "roe",
-    "debt_to_equity",
     "revenue_growth",
     "profit_margin",
-    "current_ratio",
-    "earnings_yield_vs_sector",
-    "book_to_market_vs_sector",
-    "earnings_yield_quality",
+    "short_pct_float",
     "sector",
     "has_fundamentals"
   ],
-  "target": "forward_63d_composite_rank",
+  "target": "forward_63d_rank",
   "best_params": {
-    "num_leaves": 9,
-    "max_depth": 5,
-    "learning_rate": 0.03938596488586589,
-    "feature_fraction": 0.4086015204161731,
-    "bagging_fraction": 0.8212041687679079,
-    "min_child_samples": 397,
-    "lambda_l1": 0.27044377463101904,
-    "lambda_l2": 99.93512783277185
+    "num_leaves": 31,
+    "max_depth": 3,
+    "learning_rate": 0.013835796703241459,
+    "feature_fraction": 0.7746083805678736,
+    "bagging_fraction": 0.8294633984943656,
+    "min_child_samples": 351,
+    "lambda_l1": 2.677371538628475,
+    "lambda_l2": 4.068963612827764
   },
   "results": {
-    "train_ic": 0.2741011688115836,
-    "val_ic": 0.19253000213737992,
-    "test_ic": 0.19544260519179077,
-    "train_hit": 0.590547765846619,
-    "val_hit": 0.5629163527865172,
-    "test_hit": 0.5640953174272625
+    "train_ic": 0.256365488000728,
+    "val_ic": 0.08598326506891132,
+    "test_ic": 0.14215797803013563,
+    "train_hit": 0.585944637310433,
+    "val_hit": 0.5138564760793466,
+    "test_hit": 0.5441279205154079
   },
-  "persistence_ic": -0.023916004011858675
+  "persistence_ic": 0.015911022856241498
 }

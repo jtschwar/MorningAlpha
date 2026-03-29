@@ -117,6 +117,22 @@ def score(data_dir, models_dir):
     else:
         df_score = df3m.copy()
 
+    # Minimum return + quality filters — exclude low-momentum and very low quality stocks.
+    # Thresholds are intentionally loose to allow stocks in corrections to remain eligible.
+    MIN_RETURN_PCT = 15.0   # 3M return > 15% — keeps correcting stocks, cuts flat/negative
+    MIN_QUALITY    = 20.0   # QualityScore > 20 — removes only the truly poor-quality names
+    ret_col = next((c for c in df_score.columns if c.startswith("Return_")), None)
+    if ret_col:
+        ret = pd.to_numeric(df_score[ret_col], errors="coerce")
+        before = len(df_score)
+        df_score = df_score[(ret >= MIN_RETURN_PCT) | ret.isna()].copy()
+        console.print(f"[dim]Return filter (>= {MIN_RETURN_PCT}%): removed {before - len(df_score)} low-return stocks[/dim]")
+    if "QualityScore" in df_score.columns:
+        qual = pd.to_numeric(df_score["QualityScore"], errors="coerce")
+        before = len(df_score)
+        df_score = df_score[(qual >= MIN_QUALITY) | qual.isna()].copy()
+        console.print(f"[dim]Quality filter (>= {MIN_QUALITY}): removed {before - len(df_score)} low-quality stocks[/dim]")
+
     # Momentum gate — only score stocks in an uptrend with non-collapsing momentum.
     # price > SMA200: filters downtrends and value traps.
     # MomentumAccel > -0.5: allows mildly decelerating stocks (common in down weeks)

@@ -416,5 +416,39 @@
     "persistence_ic": -0.0239,
     "n_test_rows": 67228,
     "n_test_dates": 274
+  },
+  {
+    "model_id": "lgbm_breakout_v3",
+    "model_type": "LGBM",
+    "target": "forward_63d_rank",
+    "horizon": 63,
+    "n_features": 66,
+    "test_period": {
+      "start": "2024-11-18",
+      "end": "2025-12-22"
+    },
+    "top_decile": {
+      "ann_return": 1.0224,
+      "sharpe": 1.538,
+      "consistency": 0.756
+    },
+    "universe": {
+      "ann_return": 0.3425,
+      "sharpe": 1.31,
+      "consistency": 0.723
+    },
+    "ic_mean": 0.0915,
+    "ic_std": 0.08,
+    "icir": 1.144,
+    "ic_hit_rate": 0.929,
+    "ic_tstat": 4.281,
+    "n_months": 14,
+    "ls_sharpe": 0.468,
+    "ls_ann_return": 0.3721,
+    "ls_max_drawdown": -0.4039,
+    "n_periods": 7,
+    "persistence_ic": 0.0159,
+    "n_test_rows": 67228,
+    "n_test_dates": 274
   }
 ]

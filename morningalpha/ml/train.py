@@ -444,7 +444,7 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
         X_te, y_te, d_te, df_te = X_te[te_mask], y_te[te_mask], d_te[te_mask], df_te[te_mask]
         console.print(
             f"[cyan]Momentum universe filter: {before:,} → {len(X_tr):,} train rows "
-            f"(kept stocks with 10% < momentum_12_1 < 400% and price above SMA200)[/cyan]"
+            f"(kept stocks with 10% < momentum_12_1 < 5000% and price above SMA200)[/cyan]"
         )
         # Drop value features — they penalise growth stocks
         feat_cols = [f for f in feat_cols if f not in _VALUE_FEATURES]
