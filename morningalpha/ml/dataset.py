@@ -886,6 +886,51 @@ def _get_snapshot_dates(
     return valid_idx.tolist()
 
 
+def _build_universal_date_grid(lookback_days: int, freq: str) -> List[pd.Timestamp]:
+    """Return a fixed calendar of snapshot dates shared across all tickers.
+
+    All tickers are evaluated on the same dates, so (sector, date) sets contain
+    every stock in that sector active on that date — full cross-sectional cohorts.
+
+    freq choices:
+      'weekly'   — every Friday  (~52 dates/year)
+      'biweekly' — every other Friday (~26 dates/year)
+      'monthly'  — last business day of each month (~12 dates/year)
+    """
+    freq_map = {"weekly": "W-FRI", "biweekly": "2W-FRI", "monthly": "BME"}
+    pandas_freq = freq_map.get(freq, "W-FRI")
+    end = pd.Timestamp.now().normalize()
+    start = end - pd.Timedelta(days=lookback_days)
+    return pd.date_range(start=start, end=end, freq=pandas_freq).tolist()
+
+
+def _snap_universal_dates_to_ohlcv(
+    universal_dates: List[pd.Timestamp],
+    ohlcv: pd.DataFrame,
+    max_horizon: int,
+) -> List[pd.Timestamp]:
+    """For each universal calendar date, snap to the nearest prior trading day
+    in this ticker's OHLCV.  Filters out dates with insufficient history or
+    insufficient future prices for label computation.
+    """
+    idx = ohlcv.index
+    result: List[pd.Timestamp] = []
+    for d in universal_dates:
+        prior = idx[idx <= d]
+        if len(prior) == 0:
+            continue
+        t = prior[-1]
+        pos = idx.get_loc(t)
+        if pos < MIN_HISTORY_DAYS - 1:
+            continue
+        # Labels need max_horizon future bars — _compute_labels will return None
+        # if unavailable, but skip early here to avoid the call overhead.
+        if pos + max_horizon >= len(idx):
+            continue
+        result.append(t)
+    return result
+
+
 def _compute_features_at_date(
     ohlcv: pd.DataFrame,
     t: pd.Timestamp,
@@ -1120,7 +1165,7 @@ def _apply_preprocessing(df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
 # ---------------------------------------------------------------------------
 
 @click.command("dataset")
-@click.option("--lookback", default="7y", show_default=True, help="Lookback period (e.g. 1y, 3y, 5y).")
+@click.option("--lookback", default="10y", show_default=True, help="Lookback period (e.g. 1y, 3y, 10y).")
 @click.option(
     "--output",
     default="data/training/dataset.parquet",
@@ -1128,8 +1173,20 @@ def _apply_preprocessing(df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
     help="Output parquet path.",
 )
 @click.option("--tickers-from", "tickers_from", default=None, help="CSV with tickers. Omit to use full NASDAQ+NYSE universe (reduces survivorship bias).")
-@click.option("--horizons", default="5,10,21", show_default=True, help="Comma-separated forward return horizons (trading days).")
-@click.option("--no-overlap/--overlap", "no_overlap", default=True, show_default=True, help="Non-overlapping snapshot windows.")
+@click.option("--horizons", default="5,10,21,63", show_default=True, help="Comma-separated forward return horizons (trading days).")
+@click.option("--no-overlap/--overlap", "no_overlap", default=True, show_default=True, help="Non-overlapping snapshot windows (staggered mode only).")
+@click.option(
+    "--snapshot-freq",
+    "snapshot_freq",
+    default="weekly",
+    show_default=True,
+    type=click.Choice(["weekly", "biweekly", "monthly", "staggered"]),
+    help=(
+        "Snapshot date strategy. 'weekly/biweekly/monthly' use a universal calendar so all "
+        "tickers share the same dates — required for set transformer cross-sectional learning. "
+        "'staggered' uses per-ticker non-overlapping windows (legacy behaviour)."
+    ),
+)
 @click.option("--refresh-only", "refresh_only", is_flag=True, default=False, help="Update raw OHLCV cache only; skip dataset build.")
 @click.option("--from-cache", "from_cache", is_flag=True, default=False, help="Build dataset from existing cache (no network).")
 @click.option(
@@ -1146,13 +1203,14 @@ def _apply_preprocessing(df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
     show_default=True,
     help="Minimum market cap to include (e.g. 1b, 500m, 1000000000). 0 = no filter.",
 )
-def dataset(lookback, output, tickers_from, horizons, no_overlap, refresh_only, from_cache, fundamentals_csv, min_market_cap):
+def dataset(lookback, output, tickers_from, horizons, snapshot_freq, no_overlap, refresh_only, from_cache, fundamentals_csv, min_market_cap):
     """Build a point-in-time labeled dataset for ML training.
 
     \b
     Examples:
-      alpha ml dataset --tickers-from data/latest/stocks_3m.csv --output data/training/dataset.parquet
-      alpha ml dataset --min-market-cap 1b --output data/training/dataset.parquet
+      alpha ml dataset --output data/training/dataset.parquet
+      alpha ml dataset --snapshot-freq weekly --lookback 10y --horizons 5,10,21,63
+      alpha ml dataset --tickers-from data/latest/stocks_3m.csv --snapshot-freq staggered
       alpha ml dataset --refresh-only
       alpha ml dataset --from-cache --output data/training/dataset.parquet
     """
@@ -1260,12 +1318,26 @@ def dataset(lookback, output, tickers_from, horizons, no_overlap, refresh_only, 
     ) as progress:
         task = progress.add_task("Computing features", total=len(valid_tickers))
 
+        # Pre-build universal date grid once (shared across all tickers)
+        if snapshot_freq != "staggered":
+            universal_dates = _build_universal_date_grid(lookback_days, snapshot_freq)
+            console.print(
+                f"Universal snapshot grid: [bold]{len(universal_dates)}[/bold] dates "
+                f"({snapshot_freq}, {lookback_days // 365}y lookback)"
+            )
+        else:
+            universal_dates = None
+
         for ticker in valid_tickers:
             progress.advance(task)
             ohlcv = ohlcv_cache[ticker]
             ticker_meta = {**meta_from_csv.get(ticker, {"market_cap": np.nan, "market_cap_cat": 0, "exchange": 2}), "ticker": ticker}
 
-            dates = _get_snapshot_dates(ohlcv, no_overlap, PRIMARY_HORIZON, max_horizon)
+            if universal_dates is not None:
+                dates = _snap_universal_dates_to_ohlcv(universal_dates, ohlcv, max_horizon)
+            else:
+                dates = _get_snapshot_dates(ohlcv, no_overlap, PRIMARY_HORIZON, max_horizon)
+
             for t in dates:
                 features = _compute_features_at_date(ohlcv, t, ticker_meta, fundamentals_lookup)
                 if features is None:
