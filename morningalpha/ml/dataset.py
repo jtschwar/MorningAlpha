@@ -3,6 +3,7 @@ import json
 import logging
 import time
 import warnings
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
@@ -46,6 +47,52 @@ EXCHANGE_INT: Dict[str, int] = {"NASDAQ": 0, "NYSE": 1, "S&P500": 0}
 
 # Market-cap category string → int (3-tier from search.py → 5-tier scale)
 MKTCAP_STR_INT: Dict[str, int] = {"Small": 1, "Mid": 2, "Large": 3, "Mega": 4}
+
+
+# ---------------------------------------------------------------------------
+# Parallel worker — module-level so it can be pickled by ProcessPoolExecutor
+# ---------------------------------------------------------------------------
+
+# Worker process globals — set once via initializer, reused for every ticker
+_W_OHLCV: Dict = {}
+_W_META: Dict = {}
+_W_DATES: Optional[List] = None
+_W_MAX_HORIZON: int = 63
+_W_NO_OVERLAP: int = 10
+_W_HORIZONS: List[int] = [5, 10, 21, 63]
+_W_FUNDAMENTALS: Dict = {}
+
+
+def _worker_init(ohlcv_cache, meta_from_csv, universal_dates, max_horizon, no_overlap, horizons_list, fundamentals_lookup):
+    """Initialize worker process globals once — avoids re-pickling large data per ticker."""
+    global _W_OHLCV, _W_META, _W_DATES, _W_MAX_HORIZON, _W_NO_OVERLAP, _W_HORIZONS, _W_FUNDAMENTALS
+    _W_OHLCV = ohlcv_cache
+    _W_META = meta_from_csv
+    _W_DATES = universal_dates
+    _W_MAX_HORIZON = max_horizon
+    _W_NO_OVERLAP = no_overlap
+    _W_HORIZONS = horizons_list
+    _W_FUNDAMENTALS = fundamentals_lookup
+
+
+def _process_ticker_worker(ticker: str) -> List[dict]:
+    """Compute all feature rows for a single ticker. Runs in a worker process."""
+    ohlcv = _W_OHLCV[ticker]
+    ticker_meta = {**_W_META.get(ticker, {"market_cap": np.nan, "market_cap_cat": 0, "exchange": 2}), "ticker": ticker}
+    if _W_DATES is not None:
+        dates = _snap_universal_dates_to_ohlcv(_W_DATES, ohlcv, _W_MAX_HORIZON)
+    else:
+        dates = _get_snapshot_dates(ohlcv, _W_NO_OVERLAP, PRIMARY_HORIZON, _W_MAX_HORIZON)
+    ticker_rows = []
+    for t in dates:
+        features = _compute_features_at_date(ohlcv, t, ticker_meta, _W_FUNDAMENTALS)
+        if features is None:
+            continue
+        labels = _compute_labels(ohlcv, t, _W_HORIZONS)
+        if labels is None:
+            continue
+        ticker_rows.append({**features, **labels, "ticker": ticker, "date": t})
+    return ticker_rows
 
 
 # ---------------------------------------------------------------------------
@@ -1199,6 +1246,9 @@ def _apply_preprocessing(df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
         "'staggered' uses per-ticker non-overlapping windows (legacy behaviour)."
     ),
 )
+@click.option("--n-workers", "n_workers", default=1, show_default=True,
+              help="Number of parallel worker processes for feature computation. "
+                   "Set to --cpus-per-task on HPC. Each worker is independent (no API calls).")
 @click.option("--refresh-only", "refresh_only", is_flag=True, default=False, help="Update raw OHLCV cache only; skip dataset build.")
 @click.option("--from-cache", "from_cache", is_flag=True, default=False, help="Build dataset from existing cache (no network).")
 @click.option(
@@ -1215,7 +1265,7 @@ def _apply_preprocessing(df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
     show_default=True,
     help="Minimum market cap to include (e.g. 1b, 500m, 1000000000). 0 = no filter.",
 )
-def dataset(lookback, output, tickers_from, horizons, snapshot_freq, no_overlap, refresh_only, from_cache, fundamentals_csv, min_market_cap):
+def dataset(lookback, output, tickers_from, horizons, snapshot_freq, no_overlap, n_workers, refresh_only, from_cache, fundamentals_csv, min_market_cap):
     """Build a point-in-time labeled dataset for ML training.
 
     \b
@@ -1320,6 +1370,16 @@ def dataset(lookback, output, tickers_from, horizons, snapshot_freq, no_overlap,
             f"{before} → {len(valid_tickers)} tickers[/dim]"
         )
 
+    # Pre-build universal date grid once (shared across all tickers)
+    if snapshot_freq != "staggered":
+        universal_dates = _build_universal_date_grid(lookback_days, snapshot_freq)
+        console.print(
+            f"Universal snapshot grid: [bold]{len(universal_dates)}[/bold] dates "
+            f"({snapshot_freq}, {lookback_days // 365}y lookback)"
+        )
+    else:
+        universal_dates = None
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -1330,34 +1390,26 @@ def dataset(lookback, output, tickers_from, horizons, snapshot_freq, no_overlap,
     ) as progress:
         task = progress.add_task("Computing features", total=len(valid_tickers))
 
-        # Pre-build universal date grid once (shared across all tickers)
-        if snapshot_freq != "staggered":
-            universal_dates = _build_universal_date_grid(lookback_days, snapshot_freq)
-            console.print(
-                f"Universal snapshot grid: [bold]{len(universal_dates)}[/bold] dates "
-                f"({snapshot_freq}, {lookback_days // 365}y lookback)"
-            )
+        if n_workers > 1:
+            console.print(f"[dim]Parallel feature computation: {n_workers} workers[/dim]")
+            init_args = (ohlcv_cache, meta_from_csv, universal_dates, max_horizon,
+                         no_overlap, horizons_list, fundamentals_lookup)
+            with ProcessPoolExecutor(max_workers=n_workers,
+                                     initializer=_worker_init,
+                                     initargs=init_args) as executor:
+                futures = {executor.submit(_process_ticker_worker, t): t for t in valid_tickers}
+                for future in as_completed(futures):
+                    progress.advance(task)
+                    try:
+                        rows.extend(future.result())
+                    except Exception as exc:
+                        logger.warning("Ticker %s failed: %s", futures[future], exc)
         else:
-            universal_dates = None
-
-        for ticker in valid_tickers:
-            progress.advance(task)
-            ohlcv = ohlcv_cache[ticker]
-            ticker_meta = {**meta_from_csv.get(ticker, {"market_cap": np.nan, "market_cap_cat": 0, "exchange": 2}), "ticker": ticker}
-
-            if universal_dates is not None:
-                dates = _snap_universal_dates_to_ohlcv(universal_dates, ohlcv, max_horizon)
-            else:
-                dates = _get_snapshot_dates(ohlcv, no_overlap, PRIMARY_HORIZON, max_horizon)
-
-            for t in dates:
-                features = _compute_features_at_date(ohlcv, t, ticker_meta, fundamentals_lookup)
-                if features is None:
-                    continue
-                labels = _compute_labels(ohlcv, t, horizons_list)
-                if labels is None:
-                    continue
-                rows.append({**features, **labels, "ticker": ticker, "date": t})
+            _worker_init(ohlcv_cache, meta_from_csv, universal_dates, max_horizon,
+                         no_overlap, horizons_list, fundamentals_lookup)
+            for ticker in valid_tickers:
+                progress.advance(task)
+                rows.extend(_process_ticker_worker(ticker))
 
     if not rows:
         console.print("[bold red]No rows generated. Check ticker history length.[/bold red]")
