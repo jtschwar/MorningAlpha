@@ -358,8 +358,11 @@ def _compute_fundamental_from_lookup(
 MARKET_TICKER = "SPY"
 
 _NULL_MARKET_FEATURES: dict = {
+    "spy_return_5d": np.nan,
     "spy_return_10d": np.nan,
     "spy_return_21d": np.nan,
+    "spy_return_63d": np.nan,
+    "spy_drawdown_from_peak": np.nan,
     "spy_volatility_20d": np.nan,
     "spy_rsi_14": np.nan,
     "spy_above_sma200": np.nan,
@@ -422,8 +425,14 @@ def _compute_market_features_lookup(
 
         p_t = float(subset.iloc[-1])
 
-        spy_ret_10d = ((p_t / float(subset.iloc[-11])) - 1) if n >= 11 else np.nan
-        spy_ret_21d = ((p_t / float(subset.iloc[-22])) - 1) if n >= 22 else np.nan
+        spy_ret_5d  = ((p_t / float(subset.iloc[-6]))   - 1) if n >=  6 else np.nan
+        spy_ret_10d = ((p_t / float(subset.iloc[-11]))  - 1) if n >= 11 else np.nan
+        spy_ret_21d = ((p_t / float(subset.iloc[-22]))  - 1) if n >= 22 else np.nan
+        spy_ret_63d = ((p_t / float(subset.iloc[-64]))  - 1) if n >= 64 else np.nan
+
+        # Drawdown from 52-week peak — key recovery signal: deeply oversold = high snap-back potential
+        peak_252 = float(subset.iloc[-252:].max()) if n >= 252 else float(subset.max())
+        spy_drawdown_from_peak = (p_t / peak_252) - 1  # 0 = at peak, -0.15 = 15% below peak
 
         daily_rets = subset.pct_change().dropna()
         vol = float(daily_rets.iloc[-20:].std() * np.sqrt(252)) if len(daily_rets) >= 20 else np.nan
@@ -444,8 +453,11 @@ def _compute_market_features_lookup(
             spy_momentum_regime = np.nan
 
         lookup[t] = {
+            "spy_return_5d": spy_ret_5d,
             "spy_return_10d": spy_ret_10d,
             "spy_return_21d": spy_ret_21d,
+            "spy_return_63d": spy_ret_63d,
+            "spy_drawdown_from_peak": spy_drawdown_from_peak,
             "spy_volatility_20d": vol,
             "spy_rsi_14": rsi,
             "spy_above_sma200": above_sma200,

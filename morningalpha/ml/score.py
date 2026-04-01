@@ -106,7 +106,7 @@ def score(data_dir, models_dir):
 
     # Filter to large-enough stocks before scoring — micro/small caps produce
     # noisy signals (illiquid, mean-reversion artifacts) and are untradeable at scale.
-    MIN_MARKET_CAP = 1_000_000_000  # $1B
+    MIN_MARKET_CAP = 100_000_000  # $100M — matches training dataset floor
     mc_numeric = df3m["MarketCap"].apply(pd.to_numeric, errors="coerce") if "MarketCap" in df3m.columns else pd.Series(dtype=float)
     if mc_numeric.notna().any():
         eligible = mc_numeric >= MIN_MARKET_CAP
@@ -117,38 +117,21 @@ def score(data_dir, models_dir):
     else:
         df_score = df3m.copy()
 
-    # Minimum return + quality filters — exclude low-momentum and very low quality stocks.
-    # Thresholds are intentionally loose to allow stocks in corrections to remain eligible.
-    MIN_RETURN_PCT = 15.0   # 3M return > 15% — keeps correcting stocks, cuts flat/negative
-    MIN_QUALITY    = 20.0   # QualityScore > 20 — removes only the truly poor-quality names
-    ret_col = next((c for c in df_score.columns if c.startswith("Return_")), None)
-    if ret_col:
-        ret = pd.to_numeric(df_score[ret_col], errors="coerce")
-        before = len(df_score)
-        df_score = df_score[(ret >= MIN_RETURN_PCT) | ret.isna()].copy()
-        console.print(f"[dim]Return filter (>= {MIN_RETURN_PCT}%): removed {before - len(df_score)} low-return stocks[/dim]")
-    if "QualityScore" in df_score.columns:
-        qual = pd.to_numeric(df_score["QualityScore"], errors="coerce")
-        before = len(df_score)
-        df_score = df_score[(qual >= MIN_QUALITY) | qual.isna()].copy()
-        console.print(f"[dim]Quality filter (>= {MIN_QUALITY}): removed {before - len(df_score)} low-quality stocks[/dim]")
+    # No pre-scoring return or quality filters — the model was trained on the full universe
+    # and learned to rank good from bad. Pre-filtering by return defeats the purpose.
 
-    # Momentum gate — only score stocks in an uptrend with non-collapsing momentum.
-    # price > SMA200: filters downtrends and value traps.
-    # MomentumAccel > -0.5: allows mildly decelerating stocks (common in down weeks)
-    #   while still filtering stocks with sharply reversing momentum.
-    MOMENTUM_ACCEL_THRESHOLD = -1.5
+    # Trend gate — only score stocks above their 200-day MA.
+    # Filters confirmed downtrends and value traps for a long-only portfolio.
+    # MomentumAccel is intentionally NOT gated here — the model learned from it during
+    # training and already prices it in; a hard gate would cut early-stage breakouts.
     gate_mask = pd.Series(True, index=df_score.index)
     if "PriceToSMA200Pct" in df_score.columns:
         sma200_pct = pd.to_numeric(df_score["PriceToSMA200Pct"], errors="coerce")
         gate_mask &= (sma200_pct > 0) | sma200_pct.isna()
-    if "MomentumAccel" in df_score.columns:
-        mom_accel = pd.to_numeric(df_score["MomentumAccel"], errors="coerce")
-        gate_mask &= (mom_accel > MOMENTUM_ACCEL_THRESHOLD) | mom_accel.isna()
     n_gated = (~gate_mask).sum()
     df_score = df_score[gate_mask].copy()
     if n_gated:
-        console.print(f"[dim]Momentum gate (price > SMA200 + MomentumAccel > {MOMENTUM_ACCEL_THRESHOLD}): removed {n_gated} downtrending/fading stocks[/dim]")
+        console.print(f"[dim]Trend gate (price > SMA200): removed {n_gated} downtrending stocks[/dim]")
 
     raw_scores: dict[str, np.ndarray] = {}
 
@@ -166,10 +149,19 @@ def score(data_dir, models_dir):
         console.print("[yellow]All models failed to score — nothing written.[/yellow]")
         return
 
-    # Consensus: mean raw → re-ranked percentile (single model → just that model's score)
+    # Consensus: weighted average raw scores → re-ranked percentile.
+    # composite models weight higher than breakout — composite is better calibrated for
+    # extended breakout stocks (AXTI, SNDK) where breakout underscores due to extension.
+    MODEL_WEIGHTS = {
+        "lgbm_breakout_v4": 0.3,
+        "lgbm_composite_v5": 0.7,
+    }
     if len(raw_scores) > 1:
+        weights = np.array([MODEL_WEIGHTS.get(mid, 0.5) for mid in raw_scores])
+        weights = weights / weights.sum()  # normalize in case of missing models
         stacked = np.column_stack(list(raw_scores.values()))
-        df_score["MLScore"] = pd.Series(stacked.mean(axis=1), index=df_score.index).rank(pct=True).mul(100).round(1).values
+        consensus = (stacked * weights).sum(axis=1)
+        df_score["MLScore"] = pd.Series(consensus, index=df_score.index).rank(pct=True).mul(100).round(1).values
     else:
         df_score["MLScore"] = df_score[f"MLScore_{list(raw_scores.keys())[0]}"]
 

@@ -1,0 +1,52 @@
+[
+  {
+    "date": "2024-05-24",
+    "cumulative_return": 1.092481,
+    "underwater": 0.0
+  },
+  {
+    "date": "2024-07-26",
+    "cumulative_return": 1.242806,
+    "underwater": 0.0
+  },
+  {
+    "date": "2024-09-27",
+    "cumulative_return": 1.328024,
+    "underwater": 0.0
+  },
+  {
+    "date": "2024-11-29",
+    "cumulative_return": 1.360944,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-01-31",
+    "cumulative_return": 1.384562,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-04-04",
+    "cumulative_return": 1.940741,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-06-06",
+    "cumulative_return": 2.099594,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-08-08",
+    "cumulative_return": 2.300905,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-10-10",
+    "cumulative_return": 2.682444,
+    "underwater": 0.0
+  },
+  {
+    "date": "2025-12-12",
+    "cumulative_return": 2.934174,
+    "underwater": 0.0
+  }
+]

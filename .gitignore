@@ -229,3 +229,7 @@ morningalpha/web/public/data/latest/
 # Vite env files (contain local config, not secrets — but keep out of repo)
 morningalpha/web/.env.local
 morningalpha/web/.env.*.local
+# Generated/cache files — change every run, not meaningful to track
+data/factors/mlscore_cache.parquet
+data/factors/vix_inference.parquet
+data/latest/_generated.json

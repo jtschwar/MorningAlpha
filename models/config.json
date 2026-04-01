@@ -1,59 +1,83 @@
 {
-  "champion": "lgbm_composite_v4",
+  "champion": "lgbm_breakout_v4",
   "models": [
+    {
+      "id": "lgbm_breakout_v4",
+      "type": "lgbm",
+      "description": "LGBM — raw return rank target, 10y universal weekly dataset, IC 0.180. Champion. Top-decile Sharpe 2.506, consistency 92.8%, L/S Ann 59.5%.",
+      "status": "champion"
+    },
+    {
+      "id": "lgbm_composite_v5",
+      "type": "lgbm",
+      "description": "LGBM — composite target, 10y universal weekly dataset, IC 0.173. Candidate. Top-decile Sharpe 2.277, L/S MaxDD 0.00%, ICIR 2.814.",
+      "status": "candidate"
+    },
     {
       "id": "lgbm_composite_v4",
       "type": "lgbm",
-      "description": "LGBM \u2014 composite target, no short_pct_float, IC 0.195. Champion. Best momentum stock scores (SNDK #14, AXTI #42, ERAS #46).",
-      "status": "champion"
+      "description": "LGBM — composite target, old staggered dataset, IC 0.195. Retired: trained on smaller dataset with staggered dates.",
+      "status": "retired"
     },
     {
       "id": "lgbm_composite_v2",
       "type": "lgbm",
-      "description": "LGBM \u2014 composite target, VIX/WML, IC 0.200. L/S anchor: Sharpe 1.54, MaxDD -0.4%.",
-      "status": "candidate"
+      "description": "LGBM — composite target, VIX/WML, IC 0.200. Retired: old dataset.",
+      "status": "retired"
     },
     {
       "id": "lgbm_composite_v3",
       "type": "lgbm",
-      "description": "LGBM \u2014 composite target with short_pct_float, IC 0.181. Retired: superseded by v4.",
+      "description": "LGBM — composite target with short_pct_float, IC 0.181. Retired: superseded by v4.",
       "status": "retired"
     },
     {
       "id": "lgbm_breakout_v2",
       "type": "lgbm",
-      "description": "LGBM \u2014 raw return rank target, IC 0.187. Retired: composite_v4 scores momentum stocks better.",
-      "status": "retired"
-    },
-    {
-      "id": "lgbm_breakout_63d",
-      "type": "lgbm",
-      "description": "LGBM \u2014 market excess rank target, IC 0.136. Retired: scores AXTI/SNDK near dead last.",
-      "status": "retired"
-    },
-    {
-      "id": "lgbm_composite_63d",
-      "type": "lgbm",
-      "description": "LGBM \u2014 composite target, no VIX/WML, IC 0.187. Retired: superseded by v2/v4.",
-      "status": "retired"
-    },
-    {
-      "id": "lgbm_sector_relative_v2",
-      "type": "lgbm",
-      "description": "LGBM \u2014 sector-relative rank target, IC 0.164. Retired: L/S Sharpe -0.02, broken short book.",
-      "status": "retired"
-    },
-    {
-      "id": "lgbm_sector_relative_63d",
-      "type": "lgbm",
-      "description": "LGBM \u2014 sector-relative rank, no VIX/WML, IC 0.167. Retired: superseded.",
+      "description": "LGBM — raw return rank target, IC 0.187. Retired: old dataset.",
       "status": "retired"
     },
     {
       "id": "lgbm_breakout_v3",
       "type": "lgbm",
-      "description": "LGBM \u2014 test IC 0.142",
-      "status": "candidate"
+      "description": "LGBM — test IC 0.142. Retired: superseded by v4.",
+      "status": "retired"
+    },
+    {
+      "id": "lgbm_breakout_v5",
+      "type": "lgbm",
+      "description": "LGBM — momentum-filtered universe, severe overfitting. Retired.",
+      "status": "retired"
+    },
+    {
+      "id": "lgbm_composite_v6",
+      "type": "lgbm",
+      "description": "LGBM — composite target, momentum-filtered universe, severe overfitting. Retired.",
+      "status": "retired"
+    },
+    {
+      "id": "lgbm_breakout_63d",
+      "type": "lgbm",
+      "description": "LGBM — market excess rank target, IC 0.136. Retired.",
+      "status": "retired"
+    },
+    {
+      "id": "lgbm_composite_63d",
+      "type": "lgbm",
+      "description": "LGBM — composite target, no VIX/WML, IC 0.187. Retired.",
+      "status": "retired"
+    },
+    {
+      "id": "lgbm_sector_relative_v2",
+      "type": "lgbm",
+      "description": "LGBM — sector-relative rank target, IC 0.164. Retired: L/S Sharpe -0.02.",
+      "status": "retired"
+    },
+    {
+      "id": "lgbm_sector_relative_63d",
+      "type": "lgbm",
+      "description": "LGBM — sector-relative rank, no VIX/WML, IC 0.167. Retired.",
+      "status": "retired"
     }
   ]
 }

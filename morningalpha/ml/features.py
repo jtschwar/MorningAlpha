@@ -72,8 +72,11 @@ TECHNICAL_FEATURE_COLUMNS: List[str] = [
 # ---------------------------------------------------------------------------
 
 MARKET_CONTEXT_COLUMNS: List[str] = [
+    "spy_return_5d",       # SPY return over last 5 trading days (1-week crash/bounce signal)
     "spy_return_10d",      # SPY return over last 10 trading days
     "spy_return_21d",      # SPY return over last 21 trading days
+    "spy_return_63d",      # SPY return over last 63 trading days (~3 months; bull/bear context)
+    "spy_drawdown_from_peak",  # SPY price / 52-week high - 1 (0 = at peak, -0.15 = 15% correction)
     "spy_volatility_20d",  # SPY annualized 20-day realized volatility
     "spy_rsi_14",          # SPY RSI(14) — momentum vs. oversold regime signal
     "spy_above_sma200",    # 1.0 if SPY > 200-day SMA (bull market), 0.0 otherwise

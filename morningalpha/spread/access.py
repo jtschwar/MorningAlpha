@@ -68,7 +68,7 @@ click.rich_click.STYLE_ERRORS_SUGGESTION = "magenta italic"
               help='Max NYSE stocks when using --output-dir')
 @click.option('--top-sp500', type=int, default=500, show_default=True,
               help='Max S&P500 stocks when using --output-dir (set high to include all ~503)')
-@click.option('--min-market-cap', 'min_market_cap', type=float, default=0.3, show_default=True,
+@click.option('--min-market-cap', 'min_market_cap', type=float, default=0.1, show_default=True,
               help='Minimum market cap in billions (e.g. 1.0 = $1B). 0 = no filter.')
 def spread(universe, metric, top, out, batch_size, pause, output_dir,
            top_nasdaq, top_nyse, top_sp500, min_market_cap):
