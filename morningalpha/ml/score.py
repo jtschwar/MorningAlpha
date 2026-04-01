@@ -153,8 +153,8 @@ def score(data_dir, models_dir):
     # composite models weight higher than breakout — composite is better calibrated for
     # extended breakout stocks (AXTI, SNDK) where breakout underscores due to extension.
     MODEL_WEIGHTS = {
-        "lgbm_breakout_v4": 0.3,
-        "lgbm_composite_v5": 0.7,
+        "lgbm_breakout_v5": 0.3,
+        "lgbm_composite_v6": 0.7,
     }
     if len(raw_scores) > 1:
         weights = np.array([MODEL_WEIGHTS.get(mid, 0.5) for mid in raw_scores])

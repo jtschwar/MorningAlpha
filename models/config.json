@@ -1,22 +1,34 @@
 {
-  "champion": "lgbm_breakout_v4",
+  "champion": "lgbm_breakout_v5",
   "models": [
+    {
+      "id": "lgbm_breakout_v5",
+      "type": "lgbm",
+      "description": "LGBM — raw return rank target, 10y dataset + SPY recovery features, IC 0.180. Champion. Top-decile Sharpe 2.579, consistency 92.8%, L/S Ann 66.4%.",
+      "status": "champion"
+    },
+    {
+      "id": "lgbm_composite_v6",
+      "type": "lgbm",
+      "description": "LGBM — composite target, 10y dataset + SPY recovery features, IC 0.171. Candidate. Top-decile Sharpe 2.304, L/S MaxDD -0.06%, ICIR 2.813.",
+      "status": "candidate"
+    },
     {
       "id": "lgbm_breakout_v4",
       "type": "lgbm",
-      "description": "LGBM — raw return rank target, 10y universal weekly dataset, IC 0.180. Champion. Top-decile Sharpe 2.506, consistency 92.8%, L/S Ann 59.5%.",
-      "status": "champion"
+      "description": "LGBM — raw return rank target, 10y universal weekly dataset, IC 0.180. Retired: superseded by v5.",
+      "status": "retired"
     },
     {
       "id": "lgbm_composite_v5",
       "type": "lgbm",
-      "description": "LGBM — composite target, 10y universal weekly dataset, IC 0.173. Candidate. Top-decile Sharpe 2.277, L/S MaxDD 0.00%, ICIR 2.814.",
-      "status": "candidate"
+      "description": "LGBM — composite target, 10y universal weekly dataset, IC 0.173. Retired: superseded by v6.",
+      "status": "retired"
     },
     {
       "id": "lgbm_composite_v4",
       "type": "lgbm",
-      "description": "LGBM — composite target, old staggered dataset, IC 0.195. Retired: trained on smaller dataset with staggered dates.",
+      "description": "LGBM — composite target, old staggered dataset, IC 0.195. Retired: old dataset.",
       "status": "retired"
     },
     {
@@ -41,18 +53,6 @@
       "id": "lgbm_breakout_v3",
       "type": "lgbm",
       "description": "LGBM — test IC 0.142. Retired: superseded by v4.",
-      "status": "retired"
-    },
-    {
-      "id": "lgbm_breakout_v5",
-      "type": "lgbm",
-      "description": "LGBM — momentum-filtered universe, severe overfitting. Retired.",
-      "status": "retired"
-    },
-    {
-      "id": "lgbm_composite_v6",
-      "type": "lgbm",
-      "description": "LGBM — composite target, momentum-filtered universe, severe overfitting. Retired.",
       "status": "retired"
     },
     {

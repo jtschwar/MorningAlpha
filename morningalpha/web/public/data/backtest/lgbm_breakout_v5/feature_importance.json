@@ -1,0 +1,102 @@
+[
+  {
+    "feature": "earnings_yield",
+    "importance": 0.040012,
+    "category": "fundamental"
+  },
+  {
+    "feature": "earnings_yield_vs_sector",
+    "importance": 0.018354,
+    "category": "fundamental"
+  },
+  {
+    "feature": "roe",
+    "importance": 0.016667,
+    "category": "fundamental"
+  },
+  {
+    "feature": "book_to_market",
+    "importance": 0.014701,
+    "category": "fundamental"
+  },
+  {
+    "feature": "price_vs_52wk_high",
+    "importance": 0.014145,
+    "category": "technical"
+  },
+  {
+    "feature": "volatility_20d",
+    "importance": 0.009555,
+    "category": "technical"
+  },
+  {
+    "feature": "atr_14",
+    "importance": 0.008621,
+    "category": "technical"
+  },
+  {
+    "feature": "market_cap_cat",
+    "importance": 0.008388,
+    "category": "technical"
+  },
+  {
+    "feature": "sales_to_price",
+    "importance": 0.007626,
+    "category": "fundamental"
+  },
+  {
+    "feature": "wml_realized_vol_126d",
+    "importance": 0.00583,
+    "category": "market_context"
+  },
+  {
+    "feature": "profit_margin",
+    "importance": 0.005772,
+    "category": "fundamental"
+  },
+  {
+    "feature": "vix_level",
+    "importance": 0.005714,
+    "category": "market_context"
+  },
+  {
+    "feature": "short_pct_float",
+    "importance": 0.004917,
+    "category": "fundamental"
+  },
+  {
+    "feature": "book_to_market_vs_sector",
+    "importance": 0.004264,
+    "category": "fundamental"
+  },
+  {
+    "feature": "macd_hist",
+    "importance": 0.003448,
+    "category": "technical"
+  },
+  {
+    "feature": "roc_5",
+    "importance": 0.003288,
+    "category": "technical"
+  },
+  {
+    "feature": "sector",
+    "importance": 0.002753,
+    "category": "fundamental"
+  },
+  {
+    "feature": "vix_term_structure",
+    "importance": 0.002691,
+    "category": "market_context"
+  },
+  {
+    "feature": "price_to_sma200",
+    "importance": 0.002623,
+    "category": "technical"
+  },
+  {
+    "feature": "max_drawdown",
+    "importance": 0.002442,
+    "category": "technical"
+  }
+]
