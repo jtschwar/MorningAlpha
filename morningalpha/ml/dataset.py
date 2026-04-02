@@ -1181,7 +1181,7 @@ def _assign_walk_forward_folds(
     df: pd.DataFrame,
     fold_step_months: int = 1,
     min_train_months: int = 18,
-    test_window_td: int = 63,
+    test_months: int = 3,
 ) -> Tuple[pd.DataFrame, List]:
     """Assign expanding-window walk-forward fold labels.
 
@@ -1189,13 +1189,13 @@ def _assign_walk_forward_folds(
       - 0  → always train-eligible (never a test row)
       - N  → this row is in the test set for fold N
 
-    Test windows are non-overlapping blocks of ``test_window_td`` trading
-    days, rolling forward by ``fold_step_months`` months. The earliest
-    possible test window begins ``min_train_months`` after the first date
-    in the dataset, ensuring each fold has a meaningful training window.
+    Test windows are non-overlapping blocks of ``test_months`` calendar
+    months (~63 trading days), rolling forward by ``fold_step_months``
+    months. The earliest possible test window begins ``min_train_months``
+    after the first date in the dataset.
 
-    With a 5-year lookback, monthly steps, and 18-month min-train this
-    produces ~42 folds spanning ~2022-Q3 through 2026-Q1.
+    Uses calendar-month offsets rather than snapshot counts so the window
+    size is independent of snapshot frequency (weekly, monthly, etc.).
     """
     df = df.copy()
     df["test_fold"] = 0
@@ -1212,10 +1212,16 @@ def _assign_walk_forward_folds(
 
     while True:
         remaining = [d for d in all_dates if pd.Timestamp(d) >= current_start]
-        if len(remaining) < test_window_td:
+        if not remaining:
             break
         fold_test_start = pd.Timestamp(remaining[0])
-        fold_test_end = pd.Timestamp(remaining[test_window_td - 1])
+        fold_test_end_cutoff = fold_test_start + pd.DateOffset(months=test_months)
+
+        # All snapshot dates within [fold_test_start, fold_test_end_cutoff)
+        test_snapshots = [d for d in remaining if pd.Timestamp(d) < fold_test_end_cutoff]
+        if not test_snapshots:
+            break
+        fold_test_end = pd.Timestamp(test_snapshots[-1])
         fold_boundaries.append((fold_test_start, fold_test_end))
         current_start = fold_test_start + pd.DateOffset(months=fold_step_months)
 
