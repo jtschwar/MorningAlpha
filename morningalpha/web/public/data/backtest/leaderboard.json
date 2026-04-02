@@ -520,74 +520,6 @@
     "n_test_dates": 83
   },
   {
-    "model_id": "lgbm_breakout_v5",
-    "model_type": "LGBM",
-    "target": "forward_63d_rank",
-    "horizon": 63,
-    "n_features": 66,
-    "test_period": {
-      "start": "2024-05-24",
-      "end": "2025-12-19"
-    },
-    "top_decile": {
-      "ann_return": 0.5822,
-      "sharpe": 2.579,
-      "consistency": 0.928
-    },
-    "universe": {
-      "ann_return": 0.232,
-      "sharpe": 1.37,
-      "consistency": 0.807
-    },
-    "ic_mean": 0.1857,
-    "ic_std": 0.0831,
-    "icir": 2.234,
-    "ic_hit_rate": 1.0,
-    "ic_tstat": 9.99,
-    "n_months": 20,
-    "ls_sharpe": 2.117,
-    "ls_ann_return": 0.6638,
-    "ls_max_drawdown": -0.0179,
-    "n_periods": 10,
-    "persistence_ic": 0.0159,
-    "n_test_rows": 336437,
-    "n_test_dates": 83
-  },
-  {
-    "model_id": "lgbm_composite_v6",
-    "model_type": "LGBM",
-    "target": "forward_63d_rank",
-    "horizon": 63,
-    "n_features": 66,
-    "test_period": {
-      "start": "2024-05-24",
-      "end": "2025-12-19"
-    },
-    "top_decile": {
-      "ann_return": 0.5951,
-      "sharpe": 2.304,
-      "consistency": 0.867
-    },
-    "universe": {
-      "ann_return": 0.232,
-      "sharpe": 1.37,
-      "consistency": 0.807
-    },
-    "ic_mean": 0.1316,
-    "ic_std": 0.0468,
-    "icir": 2.813,
-    "ic_hit_rate": 1.0,
-    "ic_tstat": 12.579,
-    "n_months": 20,
-    "ls_sharpe": 2.108,
-    "ls_ann_return": 0.5551,
-    "ls_max_drawdown": -0.0006,
-    "n_periods": 10,
-    "persistence_ic": 0.0159,
-    "n_test_rows": 336437,
-    "n_test_dates": 83
-  },
-  {
     "model_id": "st_sector_relative_v1",
     "model_type": "SET_TRANSFORMER",
     "target": "forward_63d_sector_relative_rank",
@@ -620,5 +552,141 @@
     "persistence_ic": NaN,
     "n_test_rows": 336437,
     "n_test_dates": 83
+  },
+  {
+    "model_id": "lgbm_breakout_v7",
+    "model_type": "LGBM",
+    "target": "forward_63d_rank",
+    "horizon": 63,
+    "n_features": 77,
+    "test_period": {
+      "start": "2024-11-08",
+      "end": "2025-12-19"
+    },
+    "top_decile": {
+      "ann_return": 1.2672,
+      "sharpe": 2.935,
+      "consistency": 0.966
+    },
+    "universe": {
+      "ann_return": 0.2012,
+      "sharpe": 1.047,
+      "consistency": 0.729
+    },
+    "ic_mean": 0.3472,
+    "ic_std": 0.0576,
+    "icir": 6.028,
+    "ic_hit_rate": 1.0,
+    "ic_tstat": 22.555,
+    "n_months": 14,
+    "ls_sharpe": 7.955,
+    "ls_ann_return": 1.8482,
+    "ls_max_drawdown": 0.0,
+    "n_periods": 7,
+    "persistence_ic": 0.0657,
+    "n_test_rows": 241611,
+    "n_test_dates": 59
+  },
+  {
+    "model_id": "lgbm_composite_v7",
+    "model_type": "LGBM",
+    "target": "forward_63d_composite_rank",
+    "horizon": 63,
+    "n_features": 77,
+    "test_period": {
+      "start": "2024-11-08",
+      "end": "2025-12-19"
+    },
+    "top_decile": {
+      "ann_return": 1.5593,
+      "sharpe": 2.964,
+      "consistency": 0.949
+    },
+    "universe": {
+      "ann_return": 0.2012,
+      "sharpe": 1.047,
+      "consistency": 0.729
+    },
+    "ic_mean": 0.3919,
+    "ic_std": 0.0802,
+    "icir": 4.886,
+    "ic_hit_rate": 1.0,
+    "ic_tstat": 18.282,
+    "n_months": 14,
+    "ls_sharpe": 5.276,
+    "ls_ann_return": 2.1153,
+    "ls_max_drawdown": 0.0,
+    "n_periods": 7,
+    "persistence_ic": 0.0634,
+    "n_test_rows": 241611,
+    "n_test_dates": 59
+  },
+  {
+    "model_id": "lgbm_breakout_v5",
+    "model_type": "LGBM",
+    "target": "forward_63d_composite_rank",
+    "horizon": 63,
+    "n_features": 77,
+    "test_period": {
+      "start": "2024-11-08",
+      "end": "2025-12-19"
+    },
+    "top_decile": {
+      "ann_return": 0.566,
+      "sharpe": 2.165,
+      "consistency": 0.898
+    },
+    "universe": {
+      "ann_return": 0.2012,
+      "sharpe": 1.047,
+      "consistency": 0.729
+    },
+    "ic_mean": 0.1491,
+    "ic_std": 0.0801,
+    "icir": 1.861,
+    "ic_hit_rate": 0.929,
+    "ic_tstat": 6.962,
+    "n_months": 14,
+    "ls_sharpe": 0.971,
+    "ls_ann_return": 0.2039,
+    "ls_max_drawdown": -0.1184,
+    "n_periods": 7,
+    "persistence_ic": 0.0634,
+    "n_test_rows": 241611,
+    "n_test_dates": 59
+  },
+  {
+    "model_id": "lgbm_composite_v6",
+    "model_type": "LGBM",
+    "target": "forward_63d_composite_rank",
+    "horizon": 63,
+    "n_features": 77,
+    "test_period": {
+      "start": "2024-11-08",
+      "end": "2025-12-19"
+    },
+    "top_decile": {
+      "ann_return": 0.5821,
+      "sharpe": 1.958,
+      "consistency": 0.814
+    },
+    "universe": {
+      "ann_return": 0.2012,
+      "sharpe": 1.047,
+      "consistency": 0.729
+    },
+    "ic_mean": 0.1677,
+    "ic_std": 0.0546,
+    "icir": 3.071,
+    "ic_hit_rate": 1.0,
+    "ic_tstat": 11.489,
+    "n_months": 14,
+    "ls_sharpe": 3.135,
+    "ls_ann_return": 0.3303,
+    "ls_max_drawdown": 0.0,
+    "n_periods": 7,
+    "persistence_ic": 0.0634,
+    "n_test_rows": 241611,
+    "n_test_dates": 59
   }
 ]

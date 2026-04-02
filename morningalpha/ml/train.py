@@ -701,8 +701,12 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
             "results": lgbm_results,
             "persistence_ic": persist_ic,
         }
-        feat_config_path = MODEL_DIR / "feature_config.json"
+        # Save per-model config (primary) and shared fallback
+        feat_config_path = MODEL_DIR / f"{name}_feature_config.json"
         with open(feat_config_path, "w") as f:
+            json.dump(feat_config, f, indent=2, default=str)
+        shared_config_path = MODEL_DIR / "feature_config.json"
+        with open(shared_config_path, "w") as f:
             json.dump(feat_config, f, indent=2, default=str)
         console.print(f"Feature config saved → {feat_config_path}")
 

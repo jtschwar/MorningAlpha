@@ -1,0 +1,49 @@
+name: Weekly ML Score
+
+on:
+  schedule:
+    # Fridays 5pm ET (21:00 UTC during EDT, 22:00 UTC during EST)
+    # Runs after the daily-data spread workflow finishes for the week
+    - cron: '0 22 * * 5'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -e ".[ml]" --quiet
+
+      - name: Pull latest spread data
+        run: git pull --rebase origin main
+
+      - name: Run ML scoring
+        run: alpha ml score
+        env:
+          PYTHONPATH: .
+
+      - name: Commit and push scores
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/latest/ticker_index.json \
+                  morningalpha/web/public/data/latest/ticker_index.json
+          git diff --cached --quiet && echo "No changes" && exit 0
+          git commit -m "chore(ml): weekly score update $(date -u +%Y-%m-%d)"
+          git pull --rebase origin main
+          git push origin main

@@ -1,52 +1,37 @@
 [
   {
-    "date": "2024-05-24",
-    "cumulative_return": 1.098689,
+    "date": "2024-11-08",
+    "cumulative_return": 1.030418,
     "underwater": 0.0
   },
   {
-    "date": "2024-07-26",
-    "cumulative_return": 1.24174,
+    "date": "2025-01-10",
+    "cumulative_return": 1.058189,
     "underwater": 0.0
   },
   {
-    "date": "2024-09-27",
-    "cumulative_return": 1.32177,
+    "date": "2025-03-14",
+    "cumulative_return": 1.169788,
     "underwater": 0.0
   },
   {
-    "date": "2024-11-29",
-    "cumulative_return": 1.320982,
-    "underwater": -0.000596
-  },
-  {
-    "date": "2025-01-31",
-    "cumulative_return": 1.340898,
+    "date": "2025-05-16",
+    "cumulative_return": 1.23916,
     "underwater": 0.0
   },
   {
-    "date": "2025-04-04",
-    "cumulative_return": 1.873661,
+    "date": "2025-07-18",
+    "cumulative_return": 1.288902,
     "underwater": 0.0
   },
   {
-    "date": "2025-06-06",
-    "cumulative_return": 2.027716,
+    "date": "2025-09-19",
+    "cumulative_return": 1.423144,
     "underwater": 0.0
   },
   {
-    "date": "2025-08-08",
-    "cumulative_return": 2.253719,
-    "underwater": 0.0
-  },
-  {
-    "date": "2025-10-10",
-    "cumulative_return": 2.634519,
-    "underwater": 0.0
-  },
-  {
-    "date": "2025-12-12",
-    "cumulative_return": 2.896271,
+    "date": "2025-11-21",
+    "cumulative_return": 1.638523,
     "underwater": 0.0
   }
 ]

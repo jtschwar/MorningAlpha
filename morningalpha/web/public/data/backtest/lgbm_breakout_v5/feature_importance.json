@@ -1,102 +1,102 @@
 [
   {
     "feature": "earnings_yield",
-    "importance": 0.040012,
+    "importance": 0.038903,
     "category": "fundamental"
   },
   {
     "feature": "earnings_yield_vs_sector",
-    "importance": 0.018354,
+    "importance": 0.018811,
     "category": "fundamental"
   },
   {
     "feature": "roe",
-    "importance": 0.016667,
+    "importance": 0.016377,
     "category": "fundamental"
   },
   {
     "feature": "book_to_market",
-    "importance": 0.014701,
+    "importance": 0.015471,
     "category": "fundamental"
   },
   {
     "feature": "price_vs_52wk_high",
-    "importance": 0.014145,
+    "importance": 0.013972,
     "category": "technical"
   },
   {
     "feature": "volatility_20d",
-    "importance": 0.009555,
-    "category": "technical"
-  },
-  {
-    "feature": "atr_14",
-    "importance": 0.008621,
+    "importance": 0.009459,
     "category": "technical"
   },
   {
     "feature": "market_cap_cat",
-    "importance": 0.008388,
+    "importance": 0.008566,
+    "category": "technical"
+  },
+  {
+    "feature": "atr_14",
+    "importance": 0.008497,
     "category": "technical"
   },
   {
     "feature": "sales_to_price",
-    "importance": 0.007626,
+    "importance": 0.008185,
     "category": "fundamental"
   },
   {
-    "feature": "wml_realized_vol_126d",
-    "importance": 0.00583,
-    "category": "market_context"
-  },
-  {
     "feature": "profit_margin",
-    "importance": 0.005772,
+    "importance": 0.005688,
     "category": "fundamental"
   },
   {
     "feature": "vix_level",
-    "importance": 0.005714,
+    "importance": 0.005507,
+    "category": "market_context"
+  },
+  {
+    "feature": "wml_realized_vol_126d",
+    "importance": 0.005075,
     "category": "market_context"
   },
   {
     "feature": "short_pct_float",
-    "importance": 0.004917,
+    "importance": 0.005053,
     "category": "fundamental"
   },
   {
     "feature": "book_to_market_vs_sector",
-    "importance": 0.004264,
+    "importance": 0.004624,
     "category": "fundamental"
   },
   {
     "feature": "macd_hist",
-    "importance": 0.003448,
+    "importance": 0.003392,
     "category": "technical"
   },
   {
     "feature": "roc_5",
-    "importance": 0.003288,
+    "importance": 0.003216,
     "category": "technical"
   },
   {
+    "feature": "vix_term_structure",
+    "importance": 0.002932,
+    "category": "market_context"
+  },
+  {
     "feature": "sector",
-    "importance": 0.002753,
+    "importance": 0.002824,
     "category": "fundamental"
   },
   {
-    "feature": "vix_term_structure",
-    "importance": 0.002691,
+    "feature": "spy_volatility_20d",
+    "importance": 0.002642,
     "category": "market_context"
   },
   {
     "feature": "price_to_sma200",
-    "importance": 0.002623,
-    "category": "technical"
-  },
-  {
-    "feature": "max_drawdown",
-    "importance": 0.002442,
+    "importance": 0.002502,
     "category": "technical"
   }
 ]

@@ -1,5 +1,5 @@
 {
-  "model_name": "lgbm_breakout_v3",
+  "model_name": "lgbm_composite_v7",
   "model_type": "lgbm",
   "feature_columns": [
     "return_pct",
@@ -49,8 +49,11 @@
     "sector_momentum_rank",
     "value_x_momentum",
     "quality_x_momentum",
+    "spy_return_5d",
     "spy_return_10d",
     "spy_return_21d",
+    "spy_return_63d",
+    "spy_drawdown_from_peak",
     "spy_volatility_20d",
     "spy_rsi_14",
     "spy_above_sma200",
@@ -62,31 +65,39 @@
     "wml_realized_vol_126d",
     "wml_trailing_1m",
     "wml_trailing_3m",
+    "earnings_yield",
+    "book_to_market",
+    "sales_to_price",
     "roe",
+    "debt_to_equity",
     "revenue_growth",
     "profit_margin",
+    "current_ratio",
     "short_pct_float",
+    "earnings_yield_vs_sector",
+    "book_to_market_vs_sector",
+    "earnings_yield_quality",
     "sector",
     "has_fundamentals"
   ],
-  "target": "forward_63d_rank",
+  "target": "forward_63d_composite_rank",
   "best_params": {
-    "num_leaves": 31,
-    "max_depth": 3,
-    "learning_rate": 0.013835796703241459,
-    "feature_fraction": 0.7746083805678736,
-    "bagging_fraction": 0.8294633984943656,
-    "min_child_samples": 351,
-    "lambda_l1": 2.677371538628475,
-    "lambda_l2": 4.068963612827764
+    "num_leaves": 27,
+    "max_depth": 6,
+    "learning_rate": 0.01810697523059683,
+    "feature_fraction": 0.44567745576224926,
+    "bagging_fraction": 0.8431458068474126,
+    "min_child_samples": 188,
+    "lambda_l1": 0.4074090719206423,
+    "lambda_l2": 6.820750487188024
   },
   "results": {
-    "train_ic": 0.256365488000728,
-    "val_ic": 0.08598326506891132,
-    "test_ic": 0.14215797803013563,
-    "train_hit": 0.585944637310433,
-    "val_hit": 0.5138564760793466,
-    "test_hit": 0.5441279205154079
+    "train_ic": 0.3969510340022281,
+    "val_ic": 0.29554591988630646,
+    "test_ic": 0.23988495415809294,
+    "train_hit": 0.6382882175618987,
+    "val_hit": 0.5979366303190513,
+    "test_hit": 0.5817024286724829
   },
-  "persistence_ic": 0.015911022856241498
+  "persistence_ic": 0.06341277475023399
 }

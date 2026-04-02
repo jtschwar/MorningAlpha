@@ -64,9 +64,15 @@ def _feature_category(name: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _load_model_and_config(model_id: str) -> Tuple[object, dict]:
-    """Load LightGBMModel wrapper (pickled) and feature config for the given model_id."""
+    """Load LightGBMModel wrapper (pickled) and feature config for the given model_id.
+
+    Looks for {model_id}_feature_config.json first (per-model), then falls back
+    to the shared feature_config.json written by the most recent training run.
+    """
     model_path = MODEL_DIR / f"{model_id}.pkl"
-    config_path = MODEL_DIR / "feature_config.json"
+    config_path = MODEL_DIR / f"{model_id}_feature_config.json"
+    if not config_path.exists():
+        config_path = MODEL_DIR / "feature_config.json"
 
     if not model_path.exists():
         raise FileNotFoundError(f"Model not found: {model_path}")

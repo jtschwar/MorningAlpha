@@ -1,52 +1,37 @@
 [
   {
-    "date": "2024-05-24",
-    "cumulative_return": 1.17828,
+    "date": "2024-11-08",
+    "cumulative_return": 1.093946,
     "underwater": 0.0
   },
   {
-    "date": "2024-07-26",
-    "cumulative_return": 1.363043,
+    "date": "2025-01-10",
+    "cumulative_return": 1.319332,
     "underwater": 0.0
   },
   {
-    "date": "2024-09-27",
-    "cumulative_return": 1.338578,
-    "underwater": -0.017949
-  },
-  {
-    "date": "2024-11-29",
-    "cumulative_return": 1.542301,
+    "date": "2025-03-14",
+    "cumulative_return": 1.333559,
     "underwater": 0.0
   },
   {
-    "date": "2025-01-31",
-    "cumulative_return": 1.802875,
-    "underwater": 0.0
+    "date": "2025-05-16",
+    "cumulative_return": 1.281916,
+    "underwater": -0.038725
   },
   {
-    "date": "2025-04-04",
-    "cumulative_return": 2.58617,
-    "underwater": 0.0
+    "date": "2025-07-18",
+    "cumulative_return": 1.175672,
+    "underwater": -0.118395
   },
   {
-    "date": "2025-06-06",
-    "cumulative_return": 2.642483,
-    "underwater": 0.0
+    "date": "2025-09-19",
+    "cumulative_return": 1.213227,
+    "underwater": -0.090234
   },
   {
-    "date": "2025-08-08",
-    "cumulative_return": 2.645772,
-    "underwater": 0.0
-  },
-  {
-    "date": "2025-10-10",
-    "cumulative_return": 2.958455,
-    "underwater": 0.0
-  },
-  {
-    "date": "2025-12-12",
-    "cumulative_return": 3.38265,
+    "date": "2025-11-21",
+    "cumulative_return": 1.348325,
     "underwater": 0.0
   }
 ]

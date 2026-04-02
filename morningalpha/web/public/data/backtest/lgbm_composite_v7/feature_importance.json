@@ -1,0 +1,102 @@
+[
+  {
+    "feature": "earnings_yield",
+    "importance": 0.056278,
+    "category": "fundamental"
+  },
+  {
+    "feature": "book_to_market",
+    "importance": 0.042741,
+    "category": "fundamental"
+  },
+  {
+    "feature": "roe",
+    "importance": 0.027977,
+    "category": "fundamental"
+  },
+  {
+    "feature": "sales_to_price",
+    "importance": 0.024558,
+    "category": "fundamental"
+  },
+  {
+    "feature": "earnings_yield_vs_sector",
+    "importance": 0.023278,
+    "category": "fundamental"
+  },
+  {
+    "feature": "profit_margin",
+    "importance": 0.020899,
+    "category": "fundamental"
+  },
+  {
+    "feature": "consistency_score",
+    "importance": 0.020215,
+    "category": "technical"
+  },
+  {
+    "feature": "book_to_market_vs_sector",
+    "importance": 0.016699,
+    "category": "fundamental"
+  },
+  {
+    "feature": "max_drawdown",
+    "importance": 0.015331,
+    "category": "technical"
+  },
+  {
+    "feature": "wml_realized_vol_126d",
+    "importance": 0.013116,
+    "category": "market_context"
+  },
+  {
+    "feature": "revenue_growth",
+    "importance": 0.009269,
+    "category": "fundamental"
+  },
+  {
+    "feature": "sector",
+    "importance": 0.009021,
+    "category": "fundamental"
+  },
+  {
+    "feature": "short_pct_float",
+    "importance": 0.008725,
+    "category": "fundamental"
+  },
+  {
+    "feature": "value_x_momentum",
+    "importance": 0.008283,
+    "category": "technical"
+  },
+  {
+    "feature": "atr_14",
+    "importance": 0.007622,
+    "category": "technical"
+  },
+  {
+    "feature": "volume_consistency",
+    "importance": 0.007337,
+    "category": "technical"
+  },
+  {
+    "feature": "market_cap_cat",
+    "importance": 0.005848,
+    "category": "technical"
+  },
+  {
+    "feature": "momentum_accel_long",
+    "importance": 0.005818,
+    "category": "technical"
+  },
+  {
+    "feature": "vix_level",
+    "importance": 0.005446,
+    "category": "market_context"
+  },
+  {
+    "feature": "volume_trend",
+    "importance": 0.005421,
+    "category": "technical"
+  }
+]

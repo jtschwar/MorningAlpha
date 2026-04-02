@@ -1,0 +1,42 @@
+[
+  {
+    "decile": 1,
+    "ann_return": -0.2685
+  },
+  {
+    "decile": 2,
+    "ann_return": -0.161
+  },
+  {
+    "decile": 3,
+    "ann_return": -0.093
+  },
+  {
+    "decile": 4,
+    "ann_return": -0.0073
+  },
+  {
+    "decile": 5,
+    "ann_return": 0.0904
+  },
+  {
+    "decile": 6,
+    "ann_return": 0.1824
+  },
+  {
+    "decile": 7,
+    "ann_return": 0.2865
+  },
+  {
+    "decile": 8,
+    "ann_return": 0.4251
+  },
+  {
+    "decile": 9,
+    "ann_return": 0.6346
+  },
+  {
+    "decile": 10,
+    "ann_return": 1.5645
+  }
+]
