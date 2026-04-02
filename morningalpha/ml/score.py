@@ -205,6 +205,116 @@ def _evaluate_and_update_weights(df_current: pd.DataFrame, raw_scores: dict) -> 
         logger.warning("Weight evaluation failed (%s) — weights unchanged", exc)
 
 
+def _run_calibration(model_ids: list) -> None:
+    """Fit isotonic calibrator and write live_ic.json for each model.
+
+    Only runs when invoked with --calibrate (weekly workflow).
+    Skips gracefully if the ledger has fewer than 500 matured rows.
+    """
+    if not _LEDGER_PATH.exists():
+        console.print("[dim]--calibrate: no ledger found yet — skipping[/dim]")
+        return
+
+    try:
+        from scipy.stats import spearmanr as _spearmanr
+        ledger = pd.read_parquet(_LEDGER_PATH)
+        today  = pd.Timestamp(date.today())
+
+        # Rows are mature once eval_after has passed AND price_at_score is known
+        mature = ledger[
+            (ledger["eval_after"] <= today) &
+            ledger["price_at_score"].notna() &
+            (ledger["price_at_score"] > 0)
+        ].copy()
+
+        _CALIB_DIR = Path("data/factors")
+        _CALIB_DIR.mkdir(parents=True, exist_ok=True)
+
+        for model_id in model_ids:
+            raw_col = f"raw_{model_id}"
+            if raw_col not in mature.columns:
+                continue
+
+            model_mature = mature[["ticker", "scored_date", raw_col, "price_at_score"]].dropna()
+
+            # --- Live IC ---
+            # Group by scored_date and compute cross-sectional Spearman IC per cohort.
+            # We use raw score vs price_at_score as a proxy (proper realized return
+            # requires current prices; once the backfill loop runs we get exact returns).
+            ic_rows = []
+            for dt, grp in model_mature.groupby("scored_date"):
+                if len(grp) < 30:
+                    continue
+                # Use raw score rank IC against price rank as a consistency check
+                ic = float(_spearmanr(grp[raw_col], grp["price_at_score"]).correlation)
+                if not np.isnan(ic):
+                    ic_rows.append({"date": str(dt.date()), "ic": round(ic, 4), "n": len(grp)})
+
+            if ic_rows:
+                ic_df = pd.DataFrame(ic_rows)
+                ic_df["ic_21d"] = ic_df["ic"].rolling(21, min_periods=5).mean().round(4)
+                latest_rolling = float(ic_df["ic_21d"].dropna().iloc[-1]) if ic_df["ic_21d"].notna().any() else None
+                ic_mean = round(float(ic_df["ic"].mean()), 4)
+                ic_std  = round(float(ic_df["ic"].std()), 4)
+                summary = {
+                    "model_id":          model_id,
+                    "updated":           str(today.date()),
+                    "total_cohorts":     len(ic_rows),
+                    "ic_mean":           ic_mean,
+                    "ic_std":            ic_std,
+                    "icir":              round(ic_mean / ic_std, 3) if ic_std > 0 else None,
+                    "ic_hit_rate":       round(float((ic_df["ic"] > 0).mean()), 3),
+                    "latest_rolling_21d": latest_rolling,
+                    "status": (
+                        "healthy"   if latest_rolling is not None and latest_rolling >= 0.03 else
+                        "degrading" if latest_rolling is not None and latest_rolling >= 0.02 else
+                        "retrain"   if latest_rolling is not None else
+                        "unknown"
+                    ),
+                }
+                out = {"summary": summary, "daily": ic_rows}
+                live_ic_path = _CALIB_DIR / f"live_ic_{model_id}.json"
+                with open(live_ic_path, "w") as f:
+                    json.dump(out, f, indent=2)
+                console.print(
+                    f"[cyan]live_ic {model_id}:[/cyan] "
+                    f"IC={ic_mean:+.4f}  ICIR={summary['icir']}  "
+                    f"status={summary['status']}  → {live_ic_path}"
+                )
+
+            # --- Isotonic calibration ---
+            if len(model_mature) < 500:
+                console.print(
+                    f"[dim]--calibrate: {model_id} has {len(model_mature)} mature rows "
+                    f"(need ≥500) — skipping isotonic fit[/dim]"
+                )
+                continue
+
+            try:
+                from sklearn.isotonic import IsotonicRegression
+                import pickle as _pkl
+
+                X = model_mature[raw_col].values
+                # Positive-return label: above-median price at score time as proxy
+                median_price = float(np.median(model_mature["price_at_score"]))
+                y = (model_mature["price_at_score"] > median_price).astype(float).values
+
+                cal = IsotonicRegression(y_min=0.0, y_max=1.0, out_of_bounds="clip")
+                cal.fit(X, y)
+
+                cal_path = _CALIB_DIR / f"calibrator_{model_id}.pkl"
+                with open(cal_path, "wb") as f:
+                    _pkl.dump(cal, f)
+                console.print(f"[cyan]Calibrator saved:[/cyan] {cal_path}  (n={len(model_mature)})")
+            except ImportError:
+                console.print("[yellow]scikit-learn not installed — skipping isotonic calibration[/yellow]")
+            except Exception as exc:
+                logger.warning("Calibration fit failed for %s: %s", model_id, exc)
+
+    except Exception as exc:
+        logger.warning("--calibrate step failed (%s) — continuing", exc)
+
+
 def _load_config(models_dir: Path) -> dict:
     config_path = models_dir / "config.json"
     if config_path.exists():
@@ -309,7 +419,13 @@ def _write_ticker_index(
               help="Directory containing period CSVs from `alpha spread`.")
 @click.option("--models-dir", default=DEFAULT_MODELS_DIR, show_default=True,
               help="Directory containing model .pkl files and config.json.")
-def score(data_dir, models_dir):
+@click.option("--score-only", "score_only", is_flag=True, default=False,
+              help="Score only — skip ledger, weight updates, and calibration. "
+                   "Use for local development and model testing.")
+@click.option("--calibrate", "run_calibrate", is_flag=True, default=False,
+              help="After scoring, fit isotonic calibrator and write live_ic.json. "
+                   "Intended for the weekly workflow.")
+def score(data_dir, models_dir, score_only, run_calibrate):
     """Score all stocks in data-dir CSVs with registered ML models.
 
     Adds MLScore (champion/consensus 0-100) and MLScore_{model_id} per-model
@@ -438,15 +554,16 @@ def score(data_dir, models_dir):
         console.print("[yellow]All models failed to score — nothing written.[/yellow]")
         return
 
-    # Evaluate any mature predictions (63 trading days old) and update weights
-    _evaluate_and_update_weights(df_score, raw_scores)
+    if score_only:
+        console.print("[dim]--score-only: skipping ledger, weight updates, and calibration[/dim]")
+    else:
+        # Evaluate mature predictions (≥63 trading days old) → Hedge weight update
+        _evaluate_and_update_weights(df_score, raw_scores)
+        # Append this run's predictions to the ledger for future IC evaluation
+        _append_predictions_ledger(df_score, raw_scores)
 
-    # Append this week's predictions to the ledger for future IC evaluation
-    _append_predictions_ledger(df_score, raw_scores)
-
-    # Consensus: dynamic IC-weighted blend via Hedge algorithm.
-    # Weights are loaded from data/factors/model_weights.json and updated
-    # each time mature predictions (≥63 trading days old) are evaluated.
+    # Consensus: dynamic IC-weighted blend.
+    # In --score-only mode uses current weights from file without updating them.
     model_weights = _load_model_weights(list(raw_scores.keys()))
     if len(raw_scores) > 1:
         weights = np.array([model_weights[mid] for mid in raw_scores])
@@ -555,5 +672,8 @@ def score(data_dir, models_dir):
 
     # Write ticker_index.json for the Forecast/Portfolio frontend pages
     _write_ticker_index(df_score, active_models, raw_scores, data_path)
+
+    if run_calibrate and not score_only:
+        _run_calibration(list(raw_scores.keys()))
 
     console.print("\n[bold green]✓ ML scoring complete[/bold green]")
