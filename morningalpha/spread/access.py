@@ -91,14 +91,29 @@ def spread(universe, metric, top, out, batch_size, pause, output_dir,
       $ morningalpha spread --output-dir data/latest  # Run all 4 periods
     """
     if output_dir:
+        import json
+        import datetime
         from pathlib import Path
-        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        out_path = Path(output_dir)
+        out_path.mkdir(parents=True, exist_ok=True)
         per_exchange = {'NASDAQ': top_nasdaq, 'NYSE': top_nyse, 'S&P500': top_sp500}
         period_map = [('2wk', '2w'), ('1m', '1m'), ('3m', '3m'), ('6m', '6m')]
         for metric_code, file_suffix in period_map:
-            dest = str(Path(output_dir) / f'stocks_{file_suffix}.csv')
+            dest = str(out_path / f'stocks_{file_suffix}.csv')
             get_spread(universe, metric_code, top, dest, batch_size, pause,
                        top_per_exchange=per_exchange, min_market_cap=min_market_cap)
+
+        # Write generation timestamp after all periods complete
+        generated_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        generated_path = out_path / '_generated.json'
+        with open(generated_path, 'w') as f:
+            json.dump({'generated_at': generated_at}, f)
+
+        # Mirror to web public dir for local dev server
+        web_public = Path(__file__).parents[2] / 'morningalpha' / 'web' / 'public' / 'data' / 'latest'
+        if web_public.exists():
+            import shutil
+            shutil.copy2(generated_path, web_public / '_generated.json')
     else:
         get_spread(universe, metric, top, out, batch_size, pause,
                    min_market_cap=min_market_cap)

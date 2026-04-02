@@ -369,13 +369,6 @@ def score(data_dir, models_dir):
     with open(generated_path, "w") as f:
         json.dump({"generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()}, f)
 
-    # Mirror _generated.json to web public dir so dev server picks up the fresh timestamp
-    web_public = Path(__file__).parents[2] / "morningalpha" / "web" / "public" / "data" / "latest"
-    if web_public.exists():
-        import shutil
-        shutil.copy2(generated_path, web_public / "_generated.json")
-        console.print(f"[dim]✓ Mirrored _generated.json → {web_public}[/dim]")
-
     # Write ticker_index.json for the Forecast/Portfolio frontend pages
     _write_ticker_index(df_score, active_models, raw_scores, data_path)
 
