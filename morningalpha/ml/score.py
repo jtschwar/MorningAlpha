@@ -6,6 +6,7 @@ Usage:
 """
 import json
 import logging
+from datetime import date, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -13,16 +14,195 @@ import pandas as pd
 import rich_click as click
 from rich.console import Console
 from rich.table import Table
+from scipy.stats import spearmanr
 
 logger = logging.getLogger(__name__)
 console = Console()
 
 DEFAULT_DATA_DIR = "data/latest"
+_WEIGHTS_PATH   = Path("data/factors/model_weights.json")
+_LEDGER_PATH    = Path("data/factors/predictions_ledger.parquet")
+# How many trading days before we evaluate a prediction against realized returns
+_EVAL_HORIZON   = 63
 DEFAULT_MODELS_DIR = "models"
 # 3M is the canonical scoring file — matches the ~3-month lookback used in training.
 # Scores are computed once here, then merged into all period CSVs by ticker.
 SCORE_SOURCE = "stocks_3m.csv"
 PERIOD_FILES = ["stocks_2w.csv", "stocks_1m.csv", "stocks_3m.csv", "stocks_6m.csv"]
+
+
+# ---------------------------------------------------------------------------
+# Dynamic model weighting (Hedge algorithm on rolling IC)
+# ---------------------------------------------------------------------------
+
+def _load_model_weights(active_model_ids: list) -> dict:
+    """Return normalized weights for each active model.
+
+    Reads data/factors/model_weights.json. Falls back to equal weights if the
+    file is missing or a model isn't listed yet.
+    """
+    equal = {m: 1.0 / len(active_model_ids) for m in active_model_ids}
+    if not _WEIGHTS_PATH.exists():
+        return equal
+    try:
+        with open(_WEIGHTS_PATH) as f:
+            data = json.load(f)
+        stored = data.get("weights", {})
+        weights = {m: float(stored.get(m, 1.0)) for m in active_model_ids}
+        total = sum(weights.values())
+        return {m: w / total for m, w in weights.items()} if total > 0 else equal
+    except Exception as exc:
+        logger.warning("Could not load model weights (%s) — using equal weights", exc)
+        return equal
+
+
+def _save_model_weights(weights: dict, ic_entry: dict | None = None) -> None:
+    """Persist updated weights and append an IC history entry."""
+    try:
+        _WEIGHTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        existing: dict = {}
+        if _WEIGHTS_PATH.exists():
+            with open(_WEIGHTS_PATH) as f:
+                existing = json.load(f)
+
+        history: list = existing.get("ic_history", [])
+        if ic_entry:
+            history.append(ic_entry)
+            window = existing.get("window_weeks", 12)
+            history = history[-window:]  # keep rolling window only
+
+        payload = {
+            "updated":      str(date.today()),
+            "method":       existing.get("method", "rolling_ic_hedge"),
+            "window_weeks": existing.get("window_weeks", 12),
+            "eta":          existing.get("eta", 0.5),
+            "weights":      weights,
+            "ic_history":   history,
+        }
+        with open(_WEIGHTS_PATH, "w") as f:
+            json.dump(payload, f, indent=2)
+    except Exception as exc:
+        logger.warning("Could not save model weights (%s)", exc)
+
+
+def _hedge_update(current_weights: dict, ic_by_model: dict, eta: float = 0.5) -> dict:
+    """Apply one step of the Hedge update rule.
+
+    w_i(t+1) ∝ w_i(t) * exp(η * IC_i)
+
+    IC acts as the reward signal: higher IC = model gets more weight next period.
+    Negative IC models are penalized but never zeroed out entirely.
+    """
+    new_weights = {
+        m: current_weights.get(m, 1.0) * np.exp(eta * ic_by_model.get(m, 0.0))
+        for m in current_weights
+    }
+    total = sum(new_weights.values())
+    return {m: w / total for m, w in new_weights.items()}
+
+
+# ---------------------------------------------------------------------------
+# Prediction ledger — append-only record for future IC evaluation
+# ---------------------------------------------------------------------------
+
+def _append_predictions_ledger(df_score: pd.DataFrame, raw_scores: dict) -> None:
+    """Append this week's raw model scores to the predictions ledger.
+
+    Each row = one ticker scored today. 63 trading days later (~13 weeks),
+    _evaluate_and_update_weights() joins these rows against realized returns
+    to compute live IC and update the ensemble weights.
+    """
+    try:
+        _LEDGER_PATH.parent.mkdir(parents=True, exist_ok=True)
+        today = pd.Timestamp(date.today())
+        eval_date = today + timedelta(days=_EVAL_HORIZON * 7 // 5 + 14)  # ≈ 63 trading days
+
+        rows = pd.DataFrame({"ticker": df_score["Ticker"].values if "Ticker" in df_score.columns else df_score.index})
+        rows["scored_date"] = today
+        rows["eval_after"]  = eval_date   # approximate calendar date when outcome is knowable
+
+        price_col = next((c for c in df_score.columns if c.lower().startswith("price") or c == "Close"), None)
+        rows["price_at_score"] = df_score[price_col].values if price_col else np.nan
+
+        for model_id, raw in raw_scores.items():
+            rows[f"raw_{model_id}"] = raw
+
+        existing = pd.read_parquet(_LEDGER_PATH) if _LEDGER_PATH.exists() else pd.DataFrame()
+        updated = pd.concat([existing, rows], ignore_index=True)
+        updated.to_parquet(_LEDGER_PATH, index=False)
+        console.print(f"[dim]Ledger updated: {len(rows)} predictions appended → {_LEDGER_PATH}[/dim]")
+    except Exception as exc:
+        logger.warning("Ledger append failed (%s) — skipping", exc)
+
+
+def _evaluate_and_update_weights(df_current: pd.DataFrame, raw_scores: dict) -> None:
+    """Evaluate predictions from ~63 trading days ago against realized returns.
+
+    For each cohort of predictions whose eval_after date has passed, compute
+    the realized return using the current spread data, then apply a Hedge
+    update to the ensemble weights.
+    """
+    if not _LEDGER_PATH.exists():
+        return
+
+    try:
+        ledger = pd.read_parquet(_LEDGER_PATH)
+        today  = pd.Timestamp(date.today())
+        mature = ledger[ledger["eval_after"] <= today].copy()
+        if mature.empty:
+            console.print("[dim]No mature predictions to evaluate yet (need ~13 weeks of history)[/dim]")
+            return
+
+        # Join with current prices to compute realized return
+        price_col = next((c for c in df_current.columns if c.lower().startswith("price") or c == "Close"), None)
+        if price_col is None or "Ticker" not in df_current.columns:
+            return
+
+        current_prices = df_current.set_index("Ticker")[price_col].rename("current_price")
+        mature = mature.join(current_prices, on="ticker", how="inner")
+        mature = mature.dropna(subset=["price_at_score", "current_price"])
+        mature = mature[mature["price_at_score"] > 0]
+        mature["realized_return"] = mature["current_price"] / mature["price_at_score"] - 1
+
+        if len(mature) < 50:
+            console.print(f"[dim]Only {len(mature)} mature predictions — skipping weight update[/dim]")
+            return
+
+        # Compute IC per model across all mature cohorts
+        model_cols = [c for c in mature.columns if c.startswith("raw_")]
+        ic_by_model: dict = {}
+        for col in model_cols:
+            model_id = col[len("raw_"):]
+            valid = mature[["realized_return", col]].dropna()
+            if len(valid) < 20:
+                continue
+            ic = float(spearmanr(valid[col], valid["realized_return"]).correlation)
+            ic_by_model[model_id] = ic
+
+        if not ic_by_model:
+            return
+
+        # Load and update weights
+        with open(_WEIGHTS_PATH) as f:
+            data = json.load(f)
+        current_weights = data.get("weights", {m: 1.0 for m in ic_by_model})
+        eta = data.get("eta", 0.5)
+
+        new_weights = _hedge_update(current_weights, ic_by_model, eta=eta)
+        ic_entry = {"week_end": str(today.date()), **ic_by_model}
+        _save_model_weights(new_weights, ic_entry=ic_entry)
+
+        # Remove evaluated rows from ledger
+        remaining = ledger[ledger["eval_after"] > today]
+        remaining.to_parquet(_LEDGER_PATH, index=False)
+
+        ic_str = "  ".join(f"{m}: {ic:+.4f}" for m, ic in sorted(ic_by_model.items()))
+        w_str  = "  ".join(f"{m}: {w:.3f}" for m, w in sorted(new_weights.items()))
+        console.print(f"[bold cyan]Weight update:[/bold cyan]  IC → {ic_str}")
+        console.print(f"[bold cyan]New weights  :[/bold cyan]  {w_str}  (n={len(mature)} stocks)")
+
+    except Exception as exc:
+        logger.warning("Weight evaluation failed (%s) — weights unchanged", exc)
 
 
 def _load_config(models_dir: Path) -> dict:
@@ -258,19 +438,23 @@ def score(data_dir, models_dir):
         console.print("[yellow]All models failed to score — nothing written.[/yellow]")
         return
 
-    # Consensus: weighted average raw scores → re-ranked percentile.
-    # composite models weight higher than breakout — composite is better calibrated for
-    # extended breakout stocks (AXTI, SNDK) where breakout underscores due to extension.
-    MODEL_WEIGHTS = {
-        "lgbm_breakout_v5": 0.3,
-        "lgbm_composite_v6": 0.7,
-    }
+    # Evaluate any mature predictions (63 trading days old) and update weights
+    _evaluate_and_update_weights(df_score, raw_scores)
+
+    # Append this week's predictions to the ledger for future IC evaluation
+    _append_predictions_ledger(df_score, raw_scores)
+
+    # Consensus: dynamic IC-weighted blend via Hedge algorithm.
+    # Weights are loaded from data/factors/model_weights.json and updated
+    # each time mature predictions (≥63 trading days old) are evaluated.
+    model_weights = _load_model_weights(list(raw_scores.keys()))
     if len(raw_scores) > 1:
-        weights = np.array([MODEL_WEIGHTS.get(mid, 0.5) for mid in raw_scores])
-        weights = weights / weights.sum()  # normalize in case of missing models
+        weights = np.array([model_weights[mid] for mid in raw_scores])
         stacked = np.column_stack(list(raw_scores.values()))
         consensus = (stacked * weights).sum(axis=1)
         df_score["MLScore"] = pd.Series(consensus, index=df_score.index).rank(pct=True).mul(100).round(1).values
+        w_str = "  ".join(f"{m}: {model_weights[m]:.3f}" for m in raw_scores)
+        console.print(f"[dim]Ensemble weights: {w_str}[/dim]")
     else:
         df_score["MLScore"] = df_score[f"MLScore_{list(raw_scores.keys())[0]}"]
 
