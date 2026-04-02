@@ -1,0 +1,176 @@
+.wrap {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.tabRow {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8rem;
+  padding: 9px 16px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tab:hover {
+  color: var(--text-secondary);
+}
+
+.tabActive {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent-blue);
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8rem;
+}
+
+.table th {
+  padding: 8px 12px;
+  text-align: right;
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.table th:first-child {
+  text-align: left;
+}
+
+.table th:hover {
+  color: var(--text-secondary);
+}
+
+.table td {
+  padding: 8px 12px;
+  text-align: right;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+
+.table td:first-child {
+  text-align: left;
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.table tr {
+  transition: background 0.1s;
+}
+
+.table tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.table tbody tr:hover .deleteBtn {
+  opacity: 1;
+}
+
+.ticker {
+  color: var(--accent-blue);
+  font-weight: 600;
+}
+
+.name {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  display: block;
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pos {
+  color: var(--color-pos);
+}
+
+.amber {
+  color: var(--accent-amber);
+}
+
+.neg {
+  color: var(--color-neg);
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.signal {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.signalBullish {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--color-pos);
+}
+
+.signalNeutral {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--accent-amber);
+}
+
+.signalBearish {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--color-neg);
+}
+
+.signalNA {
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+
+.deleteBtn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.deleteBtn:hover {
+  color: var(--color-neg);
+}
+
+.emptyState {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.82rem;
+}

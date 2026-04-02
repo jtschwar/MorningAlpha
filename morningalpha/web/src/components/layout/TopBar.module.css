@@ -52,6 +52,22 @@
   letter-spacing: 0.02em;
 }
 
+.logoDivider {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--text-secondary);
+  opacity: 0.5;
+  user-select: none;
+}
+
+.pageLabel {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+}
+
 .status {
   font-size: 11px;
   color: var(--text-secondary);

@@ -99,18 +99,58 @@ _SCORE_CACHE = _FACTOR_CACHE_DIR / "mlscore_cache.parquet"
 # SPY market context
 # ---------------------------------------------------------------------------
 
-def _compute_spy_features() -> dict:
-    """Fetch recent SPY data and compute today's market context features."""
-    try:
-        import yfinance as yf
-        spy = yf.download("SPY", period="1y", interval="1d", progress=False, auto_adjust=True)
-        if spy.empty or len(spy) < 22:
-            return {}
-        # Flatten multi-level columns if present
-        if hasattr(spy.columns, "levels"):
-            spy.columns = spy.columns.get_level_values(0)
+_SPY_CACHE = _FACTOR_CACHE_DIR / "spy_inference.parquet"
+_NETWORK_TIMEOUT = 20  # seconds before giving up on any download
 
-        closes = spy["Close"].values.astype(float)
+
+def _download_with_timeout(fn, *args, **kwargs):
+    """Run a download function in a thread; return None if it exceeds _NETWORK_TIMEOUT."""
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as _Timeout
+    with ThreadPoolExecutor(max_workers=1) as ex:
+        fut = ex.submit(fn, *args, **kwargs)
+        try:
+            return fut.result(timeout=_NETWORK_TIMEOUT)
+        except _Timeout:
+            logger.warning("Download timed out after %ds — skipping", _NETWORK_TIMEOUT)
+            return None
+        except Exception as exc:
+            logger.warning("Download failed (%s) — skipping", exc)
+            return None
+
+
+def _compute_spy_features() -> dict:
+    """Fetch recent SPY data and compute today's market context features.
+
+    Result is cached for 4 hours so repeated calls within the same scoring run
+    (one per model) hit disk instead of re-downloading.
+    """
+    try:
+        import datetime as _dt
+        _FACTOR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        refresh = True
+        if _SPY_CACHE.exists():
+            age = _dt.datetime.now() - _dt.datetime.fromtimestamp(_SPY_CACHE.stat().st_mtime)
+            if age.total_seconds() < 4 * 3600:
+                refresh = False
+
+        if refresh:
+            import yfinance as yf
+            spy = _download_with_timeout(
+                yf.download, "SPY", period="1y", interval="1d", progress=False, auto_adjust=True
+            )
+            if spy is not None and not spy.empty:
+                if hasattr(spy.columns, "levels"):
+                    spy.columns = spy.columns.get_level_values(0)
+                spy[["Close"]].to_parquet(_SPY_CACHE)
+
+        if not _SPY_CACHE.exists():
+            return {}
+
+        spy_df = pd.read_parquet(_SPY_CACHE)
+        closes = spy_df["Close"].dropna().values.astype(float)
+        if len(closes) < 22:
+            return {}
+        import yfinance as yf  # noqa: F811 — needed for fallback path above
 
         spy_return_10d = float((closes[-1] / closes[-11]) - 1) if len(closes) >= 11 else 0.0
         spy_return_21d = float((closes[-1] / closes[-22]) - 1) if len(closes) >= 22 else 0.0
@@ -445,3 +485,129 @@ def get_raw_scores(df: pd.DataFrame, model_path: Path) -> np.ndarray:
         model = pickle.load(f)
     X = _build_feature_matrix(df)
     return _predict_raw(model, X)
+
+
+def get_st_raw_scores(df: pd.DataFrame, model_path: Path) -> np.ndarray:
+    """Return raw Set Transformer scores for each row in df.
+
+    Unlike LightGBM (flat feature matrix), the ST needs stocks grouped by
+    sector to compute cross-stock attention. Scores are returned in the same
+    row order as df. Falls back to 0.5 for stocks in sectors with < 2 members.
+    """
+    try:
+        import torch
+        from morningalpha.ml.set_transformer import SectorSetRanker
+    except ImportError as exc:
+        raise ImportError(f"PyTorch required for Set Transformer inference: {exc}") from exc
+
+    # Build feature matrix (same preprocessing as LightGBM)
+    X = _build_feature_matrix(df)
+
+    # Load checkpoint — contains model state, config, and feature_cols
+    checkpoint = torch.load(str(model_path), map_location="cpu", weights_only=False)
+    config = checkpoint.get("config", {})
+    ckpt_feature_cols = checkpoint.get("feature_cols", list(X.columns))
+
+    # Align feature order to match training
+    missing = set(ckpt_feature_cols) - set(X.columns)
+    if missing:
+        logger.warning("ST inference: %d features missing from feature matrix: %s", len(missing), missing)
+    X = X.reindex(columns=ckpt_feature_cols, fill_value=0.0).fillna(0.0)
+
+    # Select device: Apple Metal (MPS) > CPU
+    if torch.backends.mps.is_available():
+        device = torch.device("mps")
+        logger.info("ST inference: using Apple Metal (MPS)")
+    else:
+        device = torch.device("cpu")
+
+    # Build model with training-time architecture
+    model = SectorSetRanker(
+        dim_input=len(ckpt_feature_cols),
+        d_model=config.get("d_model", 128),
+        num_heads=config.get("num_heads", 4),
+        num_blocks=config.get("num_blocks", 3),
+        dropout=0.0,  # disable dropout at inference
+    )
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.eval()
+    model.to(device)
+
+    max_set_size = config.get("max_set_size", 80)
+    raw_scores = np.full(len(df), 0.5, dtype=np.float32)
+    D = X.shape[1]
+
+    sector_values = X["sector"].values if "sector" in X.columns else np.zeros(len(df), dtype=np.int8)
+
+    # Phase 1: collect all chunks across all sectors into flat lists.
+    # For sectors larger than max_set_size we use overlapping windows (50% overlap)
+    # and accumulate scores per stock. All chunks are padded to max_set_size so we
+    # can stack them into one batched tensor and do a single forward pass.
+    chunk_feats_list: list[np.ndarray] = []
+    chunk_sizes: list[int] = []
+    # Each entry is either a global index array (direct write) or a tuple
+    # (sector_id, local_start, local_end) for overlapping-window accumulation.
+    chunk_dest: list = []
+
+    # Per-sector accumulation buffers for oversized sectors
+    sector_acc: dict = {}  # sector_id -> (sum [N], cnt [N], global_indices [N])
+
+    step = max_set_size // 2  # 50% overlap
+
+    for sector_id in np.unique(sector_values):
+        indices = np.where(sector_values == sector_id)[0]
+        if len(indices) < 2:
+            continue
+
+        feats = X.iloc[indices].values.astype(np.float32)
+        n = len(feats)
+
+        if n <= max_set_size:
+            chunk_feats_list.append(feats)
+            chunk_sizes.append(n)
+            chunk_dest.append(indices)
+        else:
+            sector_acc[sector_id] = (
+                np.zeros(n, dtype=np.float32),
+                np.zeros(n, dtype=np.int32),
+                indices,
+            )
+            for start in range(0, n, step):
+                end = min(start + max_set_size, n)
+                chunk_feats_list.append(feats[start:end])
+                chunk_sizes.append(end - start)
+                chunk_dest.append((sector_id, start, end))
+                if end == n:
+                    break
+
+    if not chunk_feats_list:
+        return raw_scores
+
+    # Phase 2: pad all chunks to max_set_size and run ONE batched forward pass.
+    C = len(chunk_feats_list)
+    padded = np.zeros((C, max_set_size, D), dtype=np.float32)
+    masks = np.zeros((C, max_set_size), dtype=bool)
+    for i, (feats, n) in enumerate(zip(chunk_feats_list, chunk_sizes)):
+        padded[i, :n] = feats
+        masks[i, :n] = True
+
+    feat_t = torch.tensor(padded).to(device)           # [C, max_set_size, D]
+    mask_t = torch.tensor(masks).to(device)            # [C, max_set_size]
+    with torch.no_grad():
+        all_scores = model(feat_t, mask_t).cpu().numpy()  # [C, max_set_size]
+
+    # Phase 3: scatter scores back to raw_scores.
+    for i, (dest, n) in enumerate(zip(chunk_dest, chunk_sizes)):
+        scores = all_scores[i, :n]
+        if isinstance(dest, np.ndarray):
+            raw_scores[dest] = scores
+        else:
+            sector_id, start, end = dest
+            sum_arr, cnt_arr, _ = sector_acc[sector_id]
+            sum_arr[start:end] += scores
+            cnt_arr[start:end] += 1
+
+    for sum_arr, cnt_arr, global_indices in sector_acc.values():
+        raw_scores[global_indices] = sum_arr / np.maximum(cnt_arr, 1)
+
+    return raw_scores

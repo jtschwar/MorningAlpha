@@ -39,6 +39,91 @@ def _load_config(models_dir: Path) -> dict:
     }
 
 
+def _write_ticker_index(
+    scored_df: pd.DataFrame,
+    active_models: list,
+    raw_scores: dict,
+    output_dir: Path,
+) -> None:
+    """Write a lightweight JSON for frontend stock search / Forecast page autocomplete.
+
+    Includes MLScore (consensus) and per-model scores for each scored ticker.
+    Stored at: {output_dir}/ticker_index.json
+    """
+    # Determine which model IDs map to which friendly field names in the JSON
+    MODEL_FIELD_MAP = {
+        "lgbm_breakout_v5":      "mlScore_breakout",
+        "lgbm_composite_v6":     "mlScore_composite",
+        "st_sector_relative_v1": "mlScore_st",
+    }
+
+    def _f(val, default=None):
+        """Convert a value to a rounded float, returning default for NaN/None/inf."""
+        if val is None:
+            return default
+        try:
+            f = float(val)
+            return default if (f != f or f == float("inf") or f == float("-inf")) else round(f, 1)
+        except (TypeError, ValueError):
+            return default
+
+    def _investment_score(row) -> float | None:
+        """Mirror of scoring.ts calculateInvestmentScore — Return/Quality/Sharpe/Consistency/Drawdown."""
+        return_pct = _f(row.get("Return_3M_%"))
+        quality    = _f(row.get("QualityScore"))
+        sharpe     = _f(row.get("SharpeRatio"))
+        consistency = _f(row.get("ConsistencyScore"))
+        drawdown   = _f(row.get("MaxDrawdown"))
+
+        score = 0.0
+        factors = 0.0
+        if return_pct is not None:
+            score += min(30.0, (return_pct / 200.0) * 30.0); factors += 30.0
+        if quality is not None:
+            score += (quality / 100.0) * 25.0; factors += 25.0
+        if sharpe is not None:
+            score += max(0.0, min(20.0, ((sharpe + 1.0) / 4.0) * 20.0)); factors += 20.0
+        if consistency is not None:
+            score += (consistency / 100.0) * 15.0; factors += 15.0
+        if drawdown is not None:
+            score += max(0.0, min(10.0, ((drawdown + 50.0) / 50.0) * 10.0)); factors += 10.0
+        if factors == 0.0:
+            return None
+        return round((score / factors) * 1000.0) / 10.0
+
+    records = []
+    for _, row in scored_df.iterrows():
+        sector = row.get("Sector", row.get("sector", None))
+        entry: dict = {
+            "ticker":  row.get("Ticker", ""),
+            "name":    str(row.get("Name", row.get("name", ""))),
+            "sector":  None if (sector is None or (isinstance(sector, float) and sector != sector)) else sector,
+            "mlScore": _f(row.get("MLScore"), default=0.0),
+            "investmentScore": _investment_score(row),
+        }
+        for m in active_models:
+            if m["id"] not in raw_scores:
+                continue
+            col = f"MLScore_{m['id']}"
+            field = MODEL_FIELD_MAP.get(m["id"], f"mlScore_{m['id']}")
+            entry[field] = _f(row.get(col))
+
+        records.append(entry)
+
+    out_path = output_dir / "ticker_index.json"
+    with open(out_path, "w") as f:
+        json.dump(records, f)
+    console.print(f"[dim]✓ Wrote ticker_index.json ({len(records)} tickers)[/dim]")
+
+    # Mirror to the web public directory so the dev server and GitHub Pages build
+    # pick up the latest scores without a manual copy step.
+    web_public = Path(__file__).parents[2] / "morningalpha" / "web" / "public" / "data" / "latest"
+    if web_public.exists():
+        import shutil
+        shutil.copy2(out_path, web_public / "ticker_index.json")
+        console.print(f"[dim]✓ Mirrored ticker_index.json → {web_public}[/dim]")
+
+
 @click.command("score")
 @click.option("--data-dir", default=DEFAULT_DATA_DIR, show_default=True,
               help="Directory containing period CSVs from `alpha spread`.")
@@ -67,15 +152,23 @@ def score(data_dir, models_dir):
     champion_id = config.get("champion")
     model_entries = config.get("models", [])
 
-    # Only score models that are active (champion/candidate) and have a .pkl file
+    # Only score models that are active (champion/candidate) and have a checkpoint file.
+    # LightGBM models use .pkl; Set Transformer models use .pt (path from config or default).
+    def _checkpoint_exists(m: dict) -> bool:
+        if "checkpoint" in m:
+            return Path(m["checkpoint"]).exists()
+        if m.get("type") == "set_transformer":
+            return (models_path / f"{m['id']}.pt").exists()
+        return (models_path / f"{m['id']}.pkl").exists()
+
     active_models = [
         m for m in model_entries
         if m.get("status", "candidate") not in ("retired",)
-        and (models_path / f"{m['id']}.pkl").exists()
+        and _checkpoint_exists(m)
     ]
 
     if not active_models:
-        console.print("[yellow]No model .pkl files found — nothing to score.[/yellow]")
+        console.print("[yellow]No model checkpoint files found — nothing to score.[/yellow]")
         return
 
     console.print(f"\n[bold]ML Scoring[/bold] — {len(active_models)} model(s): "
@@ -136,9 +229,25 @@ def score(data_dir, models_dir):
     raw_scores: dict[str, np.ndarray] = {}
 
     for m in active_models:
-        model_path = models_path / f"{m['id']}.pkl"
+        model_type = m.get("type", "lgbm")
+        # Resolve checkpoint path: explicit in config, or default by type
+        if "checkpoint" in m:
+            model_path = Path(m["checkpoint"])
+        elif model_type == "set_transformer":
+            model_path = models_path / f"{m['id']}.pt"
+        else:
+            model_path = models_path / f"{m['id']}.pkl"
+
+        if not model_path.exists():
+            console.print(f"[yellow]Checkpoint not found for {m['id']}: {model_path} — skipping[/yellow]")
+            continue
+
         try:
-            raw = get_raw_scores(df_score, model_path)
+            if model_type == "set_transformer":
+                from morningalpha.ml.inference import get_st_raw_scores
+                raw = get_st_raw_scores(df_score, model_path)
+            else:
+                raw = get_raw_scores(df_score, model_path)
             raw_scores[m["id"]] = raw
             pct = pd.Series(raw, index=df_score.index).rank(pct=True).mul(100).round(1)
             df_score[f"MLScore_{m['id']}"] = pct.values
@@ -259,5 +368,15 @@ def score(data_dir, models_dir):
     generated_path = data_path / "_generated.json"
     with open(generated_path, "w") as f:
         json.dump({"generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()}, f)
+
+    # Mirror _generated.json to web public dir so dev server picks up the fresh timestamp
+    web_public = Path(__file__).parents[2] / "morningalpha" / "web" / "public" / "data" / "latest"
+    if web_public.exists():
+        import shutil
+        shutil.copy2(generated_path, web_public / "_generated.json")
+        console.print(f"[dim]✓ Mirrored _generated.json → {web_public}[/dim]")
+
+    # Write ticker_index.json for the Forecast/Portfolio frontend pages
+    _write_ticker_index(df_score, active_models, raw_scores, data_path)
 
     console.print("\n[bold green]✓ ML scoring complete[/bold green]")

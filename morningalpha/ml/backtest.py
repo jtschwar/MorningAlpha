@@ -363,6 +363,190 @@ def _feature_importance(booster, df: pd.DataFrame, feat_cols: List[str]) -> List
 # JSON writers
 # ---------------------------------------------------------------------------
 
+def _load_st_model_and_config(model_id: str, model_path: Path):
+    """Load a Set Transformer checkpoint (SectorSetRanker + training config)."""
+    import torch
+    from morningalpha.ml.set_transformer import SectorSetRanker
+
+    if not model_path.exists():
+        raise FileNotFoundError(f"ST checkpoint not found: {model_path}")
+
+    # Select device: Apple Metal (MPS) > CPU
+    if torch.backends.mps.is_available():
+        device = torch.device("mps")
+        console.print("[dim]ST: using Apple Metal (MPS)[/dim]")
+    else:
+        device = torch.device("cpu")
+
+    checkpoint = torch.load(str(model_path), map_location="cpu", weights_only=False)
+    config = checkpoint.get("config", {})
+    feature_cols = checkpoint.get("feature_cols", [])
+
+    model = SectorSetRanker(
+        dim_input=len(feature_cols),
+        d_model=config.get("d_model", 128),
+        num_heads=config.get("num_heads", 4),
+        num_blocks=config.get("num_blocks", 3),
+        dropout=0.0,
+    )
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.eval()
+    model.to(device)
+
+    return model, config, feature_cols, device
+
+
+def _run_st_inference(st_model, df: pd.DataFrame, feature_cols: list, config: dict, device=None) -> pd.DataFrame:
+    """Run Set Transformer inference on a dataset split. Returns df with pred_score column.
+
+    The ST needs stocks grouped by (sector, date) just as during training.
+    feature_cols must already be present in df (pre-rank-normalized from parquet).
+    """
+    import torch
+
+    if device is None:
+        device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
+
+    max_set_size = config.get("max_set_size", 80)
+    pred_scores = np.full(len(df), 0.0, dtype=np.float32)
+    df = df.copy()
+
+    df_reset = df.reset_index(drop=True)
+    available_cols = [c for c in feature_cols if c in df_reset.columns]
+    if len(available_cols) < len(feature_cols):
+        missing = set(feature_cols) - set(available_cols)
+        logger.warning("ST backtest: %d feature columns missing from dataset: %s", len(missing), missing)
+    D = len(feature_cols)
+    step = max_set_size // 2
+
+    # Phase 1: collect all (sector, date) group chunks into flat lists.
+    chunk_feats_list: list[np.ndarray] = []
+    chunk_sizes: list[int] = []
+    chunk_dest: list = []
+    sector_acc: dict = {}  # key -> (sum, cnt, global_indices)
+
+    for (sector, date), group in df_reset.groupby(["sector", "date"], sort=False):
+        indices = group.index.values
+        n = len(indices)
+        if n < 2:
+            continue
+
+        feats = df_reset.loc[indices, available_cols].fillna(0).values.astype(np.float32)
+        if len(available_cols) < D:
+            pad = np.zeros((n, D - len(available_cols)), dtype=np.float32)
+            feats = np.concatenate([feats, pad], axis=1)
+
+        if n <= max_set_size:
+            chunk_feats_list.append(feats)
+            chunk_sizes.append(n)
+            chunk_dest.append(indices)
+        else:
+            key = (sector, date)
+            sector_acc[key] = (np.zeros(n, dtype=np.float32), np.zeros(n, dtype=np.int32), indices)
+            for start in range(0, n, step):
+                end = min(start + max_set_size, n)
+                chunk_feats_list.append(feats[start:end])
+                chunk_sizes.append(end - start)
+                chunk_dest.append((key, start, end))
+                if end == n:
+                    break
+
+    if not chunk_feats_list:
+        df["pred_score"] = pred_scores
+        return df
+
+    # Phase 2: pad and run ONE batched forward pass.
+    C = len(chunk_feats_list)
+    padded = np.zeros((C, max_set_size, D), dtype=np.float32)
+    masks = np.zeros((C, max_set_size), dtype=bool)
+    for i, (feats, n) in enumerate(zip(chunk_feats_list, chunk_sizes)):
+        padded[i, :n] = feats
+        masks[i, :n] = True
+
+    feat_t = torch.tensor(padded).to(device)
+    mask_t = torch.tensor(masks).to(device)
+    with torch.no_grad():
+        all_scores = st_model(feat_t, mask_t).cpu().numpy()  # [C, max_set_size]
+
+    # Phase 3: scatter scores back.
+    for i, (dest, n) in enumerate(zip(chunk_dest, chunk_sizes)):
+        scores = all_scores[i, :n]
+        if isinstance(dest, np.ndarray):
+            pred_scores[dest] = scores
+        else:
+            key, start, end = dest
+            sum_arr, cnt_arr, _ = sector_acc[key]
+            sum_arr[start:end] += scores
+            cnt_arr[start:end] += 1
+
+    for sum_arr, cnt_arr, global_indices in sector_acc.values():
+        pred_scores[global_indices] = sum_arr / np.maximum(cnt_arr, 1)
+
+    df["pred_score"] = pred_scores
+    return df
+
+
+def _forecast_calibration(
+    predictions_df: pd.DataFrame,
+    model_id: str,
+    output_dir: Path,
+    horizons: list = None,
+) -> None:
+    """Compute per-decile return statistics for multiple horizons and write forecast_calibration.json.
+
+    For each horizon h, buckets predictions by pred_score decile and computes
+    realized return statistics. Used by the frontend Forecast page.
+    """
+    if horizons is None:
+        horizons = [5, 10, 21, 63]
+
+    result = {
+        "model_id": model_id,
+        "test_period": {
+            "start": str(predictions_df["date"].min().date()),
+            "end": str(predictions_df["date"].max().date()),
+        },
+        "horizons": {},
+    }
+
+    for h in horizons:
+        col = f"forward_{h}d"
+        if col not in predictions_df.columns:
+            continue
+
+        df = predictions_df.dropna(subset=[col, "pred_score"]).copy()
+        if len(df) < 100:
+            continue
+
+        df["decile"] = pd.qcut(df["pred_score"], 10, labels=False) + 1
+
+        decile_stats = []
+        for d in range(1, 11):
+            subset = df[df["decile"] == d][col]
+            if len(subset) < 5:
+                continue
+            period_mean = float(subset.mean())
+            period_std = float(subset.std())
+            ann_factor = 252 / h
+            decile_stats.append({
+                "decile": int(d),
+                "ann_return": round(period_mean * ann_factor, 4),
+                "ann_std": round(period_std * np.sqrt(ann_factor), 4),
+                "period_return_mean": round(period_mean, 4),
+                "period_return_std": round(period_std, 4),
+                "n": int(len(subset)),
+            })
+
+        if decile_stats:
+            result["horizons"][str(h)] = decile_stats
+
+    out_path = output_dir / model_id / "forecast_calibration.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w") as f:
+        json.dump(result, f, indent=2)
+    console.print(f"  Wrote [dim]{out_path}[/dim]")
+
+
 def _write_json(path: Path, data) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
@@ -449,25 +633,53 @@ def backtest(model_id: str, out_dir: str, dataset_path: str, target_col: Optiona
     DATASET_PATH = Path(dataset_path)
     out = Path(out_dir)
 
+    # --- Detect model type from models/config.json ---
+    models_config_path = MODEL_DIR / "config.json"
+    model_type = "lgbm"
+    model_checkpoint = None
+    if models_config_path.exists():
+        with open(models_config_path) as _f:
+            _mc = json.load(_f)
+        for _entry in _mc.get("models", []):
+            if _entry.get("id") == model_id:
+                model_type = _entry.get("type", "lgbm")
+                model_checkpoint = _entry.get("checkpoint")
+                break
+
     # --- Load model + data ---
-    console.print(f"\n[bold cyan]Loading model: {model_id}[/bold cyan]")
-    booster, config = _load_model_and_config(model_id)
-    feat_cols = config["feature_columns"]
-    persistence_ic = config.get("persistence_ic", float("nan"))
+    console.print(f"\n[bold cyan]Loading model: {model_id} (type={model_type})[/bold cyan]")
 
-    # Resolve target and horizon
-    if target_col is None:
-        target_col = config.get("target", "forward_10d_rank")
-    if horizon is None:
-        # Auto-detect from target name: forward_63d_* → 63
-        m = re.search(r"forward_(\d+)d", target_col)
-        horizon = int(m.group(1)) if m else 10
+    if model_type == "set_transformer":
+        # Resolve checkpoint path
+        if model_checkpoint:
+            ckpt_path = Path(model_checkpoint)
+        else:
+            ckpt_path = MODEL_DIR / f"{model_id}.pt"
+        st_model, st_config, feat_cols, st_device = _load_st_model_and_config(model_id, ckpt_path)
+        persistence_ic = float("nan")
+
+        if target_col is None:
+            target_col = st_config.get("target", "forward_63d_sector_relative_rank")
+        if horizon is None:
+            m_h = re.search(r"forward_(\d+)d", target_col)
+            horizon = int(m_h.group(1)) if m_h else 63
+
+    else:
+        booster, config = _load_model_and_config(model_id)
+        feat_cols = config["feature_columns"]
+        persistence_ic = config.get("persistence_ic", float("nan"))
+
+        if target_col is None:
+            target_col = config.get("target", "forward_10d_rank")
+        if horizon is None:
+            m_h = re.search(r"forward_(\d+)d", target_col)
+            horizon = int(m_h.group(1)) if m_h else 10
+
     fwd_col = f"forward_{horizon}d"
-
     console.print(f"  Target: [cyan]{target_col}[/cyan]  Horizon: [cyan]{horizon}d[/cyan]  Realized: [cyan]{fwd_col}[/cyan]")
 
     console.print(f"[bold cyan]Loading dataset: {DATASET_PATH}[/bold cyan]")
-    df = _load_test_data(config)
+    df = _load_test_data(config if model_type != "set_transformer" else {})
 
     if fwd_col not in df.columns:
         console.print(f"[red]Realized return column '{fwd_col}' not found in dataset. "
@@ -476,7 +688,10 @@ def backtest(model_id: str, out_dir: str, dataset_path: str, target_col: Optiona
 
     # --- Inference ---
     console.print("\n[bold cyan]Running inference...[/bold cyan]")
-    df = _run_inference(booster, df, feat_cols)
+    if model_type == "set_transformer":
+        df = _run_st_inference(st_model, df, feat_cols, st_config, device=st_device)
+    else:
+        df = _run_inference(booster, df, feat_cols)
 
     # --- IC vs training target (secondary signal — noisy for momentum plays) ---
     console.print("\n[bold cyan]Computing IC vs training target...[/bold cyan]")
@@ -497,9 +712,12 @@ def backtest(model_id: str, out_dir: str, dataset_path: str, target_col: Optiona
     console.print("[bold cyan]Computing decile returns...[/bold cyan]")
     decile_rets = _decile_returns(df, fwd_col, horizon)
 
-    # --- Feature importance ---
-    console.print("[bold cyan]Computing SHAP feature importance...[/bold cyan]")
-    feat_imp = _feature_importance(booster, df, feat_cols)
+    # --- Feature importance (LGBM only — ST has no SHAP equivalent) ---
+    console.print("[bold cyan]Computing feature importance...[/bold cyan]")
+    if model_type == "set_transformer":
+        feat_imp = []  # ST attention weights don't map cleanly to per-feature importance
+    else:
+        feat_imp = _feature_importance(booster, df, feat_cols)
 
     # --- Summary table ---
     table = Table(title=f"Backtest Results — {model_id}", show_header=True, show_lines=True)
@@ -541,9 +759,10 @@ def backtest(model_id: str, out_dir: str, dataset_path: str, target_col: Optiona
             pass
 
     # Upsert this model's entry
+    _model_type_str = model_type.upper() if model_type == "set_transformer" else config.get("model_type", "lgbm").upper()
     entry = {
         "model_id": model_id,
-        "model_type": config.get("model_type", "lgbm").upper(),
+        "model_type": _model_type_str,
         "target": target_col,
         "horizon": horizon,
         "n_features": len(feat_cols),
@@ -562,5 +781,9 @@ def backtest(model_id: str, out_dir: str, dataset_path: str, target_col: Optiona
     existing = [e for e in existing if e.get("model_id") != model_id]
     existing.append(entry)
     _write_json(leaderboard_path, existing)
+
+    # --- Forecast calibration (for the Forecast frontend page) ---
+    console.print("[bold cyan]Writing forecast calibration data...[/bold cyan]")
+    _forecast_calibration(df, model_id, out)
 
     console.print(f"\n[bold green]Backtest complete → {out}/[/bold green]")

@@ -58,6 +58,47 @@ import torch
 EXPERIMENTS = [
 
     # -----------------------------------------------------------------------
+    # v2 focused experiment — best config from scaling sweep + longer patience
+    # d_model=256, blocks=3, dropout=0.1, max_set_size=128
+    # max_set_size=128 outperformed 256 on test IC (0.155 vs 0.137) in Tier 1.
+    # patience=40 allows fuller convergence; prior runs stopped at 25-55 epochs.
+    # -----------------------------------------------------------------------
+    {
+        "group": "focused",
+        "name": "st_best_v2",
+        "description": "Best config from scaling sweep: d_model=256, blocks=3, dropout=0.1, max_set_size=128, patience=40. LightGBM baseline: breakout_v5 IC 0.180.",
+        "target": "forward_63d_composite_rank",
+        "loss": "mse",
+        "d_model": 256,
+        "num_heads": 8,
+        "num_blocks": 3,
+        "dropout": 0.1,
+        "max_set_size": 128,
+        "batch_size": 32,
+        "lr": 3e-4,
+        "weight_decay": 1e-4,
+        "epochs": 150,
+        "patience": 40,
+    },
+    {
+        "group": "focused",
+        "name": "st_best_v2_breakout",
+        "description": "Same as st_best_v2 but with raw return rank target — matches lgbm_breakout_v5 objective directly.",
+        "target": "forward_63d_rank",
+        "loss": "mse",
+        "d_model": 256,
+        "num_heads": 8,
+        "num_blocks": 3,
+        "dropout": 0.1,
+        "max_set_size": 128,
+        "batch_size": 32,
+        "lr": 3e-4,
+        "weight_decay": 1e-4,
+        "epochs": 150,
+        "patience": 40,
+    },
+
+    # -----------------------------------------------------------------------
     # v1 baseline experiments (original runs — kept for reference comparison)
     # -----------------------------------------------------------------------
     {
@@ -481,7 +522,10 @@ def main():
     parser.add_argument("--device", default="auto",
                         choices=["auto", "cuda", "mps", "cpu"],
                         help="Device to train on (default: auto-detect cuda > mps > cpu)")
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--seeds", type=int, nargs="+", default=[42],
+                        help="Random seeds to run each experiment with. Multiple seeds measure "
+                             "variance. Summary reports mean ± std across seeds. "
+                             "Example: --seeds 42 123 456")
     parser.add_argument("--dry-run", action="store_true",
                         help="Print config and exit without training")
     args = parser.parse_args()
@@ -491,10 +535,6 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     setup_logging(output_dir)
     logger = logging.getLogger(__name__)
-
-    # Reproducibility
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
 
     # Device — prefer cuda > mps > cpu
     if args.device == "auto":
@@ -524,12 +564,12 @@ def main():
     else:
         selected = EXPERIMENTS
 
-    logger.info(f"Experiments to run: {[e['name'] for e in selected]}")
+    seeds = args.seeds
+    logger.info(f"Experiments to run: {[e['name'] for e in selected]}  |  Seeds: {seeds}")
 
     if args.dry_run:
-        print(f"\n=== DRY RUN — {len(selected)} experiment(s) ===")
+        print(f"\n=== DRY RUN — {len(selected)} experiment(s) × {len(seeds)} seed(s) = {len(selected)*len(seeds)} total runs ===")
         for exp in selected:
-            params = (exp["d_model"] * exp["d_model"] * 4 * 3 * exp["num_blocks"]) // 1000  # rough estimate
             print(f"\n[{exp['group']}] {exp['name']}")
             print(f"  d_model={exp['d_model']}  heads={exp['num_heads']}  blocks={exp['num_blocks']}"
                   f"  dropout={exp['dropout']}  max_set_size={exp['max_set_size']}  batch={exp['batch_size']}")
@@ -560,71 +600,90 @@ def main():
         "n_features": len(feature_cols),
         "feature_cols": feature_cols,
         "device": str(device),
-        "seed": args.seed,
+        "seeds": seeds,
         "lgbm_baselines": {
-            "lgbm_breakout_v4": {"test_ic": 0.180, "top_decile_sharpe": 2.506},
-            "lgbm_composite_v5": {"test_ic": 0.173, "top_decile_sharpe": 2.277},
+            "lgbm_breakout_v5": {"test_ic": 0.180, "top_decile_sharpe": 2.579},
+            "lgbm_composite_v6": {"test_ic": 0.171, "top_decile_sharpe": 2.304},
         },
         "experiments": [],
     }
 
+    results_path = output_dir / f"results_{run_id}.json"
+
     for exp in selected:
         logger.info(f"\n{'='*60}")
-        logger.info(f"Experiment: {exp['name']}  [group={exp['group']}]")
+        logger.info(f"Experiment: {exp['name']}  [group={exp['group']}]  seeds={seeds}")
         logger.info(f"  {exp['description']}")
         logger.info(f"  target={exp['target']}  loss={exp['loss']}")
         logger.info(f"  d_model={exp['d_model']}  heads={exp['num_heads']}  blocks={exp['num_blocks']}"
                     f"  dropout={exp['dropout']}  max_set_size={exp['max_set_size']}  batch={exp['batch_size']}")
         logger.info(f"{'='*60}")
 
-        try:
-            fold_result = run_experiment(
-                df_train=df_train,
-                df_val=df_val,
-                df_test=df_test,
-                feature_cols=feature_cols,
-                config=exp,
-                output_dir=output_dir,
-                device=device,
-                fold=0,
-            )
+        seed_runs = []
+        for seed in seeds:
+            torch.manual_seed(seed)
+            np.random.seed(seed)
+            logger.info(f"  Seed {seed} ...")
+            try:
+                fold_result = run_experiment(
+                    df_train=df_train,
+                    df_val=df_val,
+                    df_test=df_test,
+                    feature_cols=feature_cols,
+                    config=exp,
+                    output_dir=output_dir,
+                    device=device,
+                    fold=seed,   # use seed as fold id so checkpoints don't overwrite each other
+                )
+                seed_runs.append({
+                    "seed": seed,
+                    "val_ic": fold_result.get("val_ic", {}).get("ic_mean"),
+                    "test_ic": fold_result.get("test_ic", {}).get("ic_mean"),
+                    "training_time_s": fold_result.get("training_time_s"),
+                    "n_params": fold_result.get("n_params"),
+                    "status": "completed",
+                })
+                logger.info(
+                    f"    seed={seed} → val IC: {seed_runs[-1]['val_ic']:.4f}"
+                    f" | test IC: {seed_runs[-1]['test_ic']:.4f}"
+                    f" | time: {seed_runs[-1]['training_time_s']:.0f}s"
+                )
+            except Exception as exc:
+                logger.exception(f"  Seed {seed} failed: {exc}")
+                seed_runs.append({"seed": seed, "status": "failed", "error": str(exc)})
 
+        # Aggregate across seeds
+        completed = [r for r in seed_runs if r.get("status") == "completed"]
+        if completed:
+            val_ics  = [r["val_ic"]  for r in completed]
+            test_ics = [r["test_ic"] for r in completed]
             exp_result = {
                 "name": exp["name"],
                 "group": exp["group"],
                 "description": exp["description"],
                 "config": exp,
-                "result": fold_result,
-                "val_ic_mean": fold_result.get("val_ic", {}).get("ic_mean"),
-                "val_ic_monthly_mean": fold_result.get("val_ic", {}).get("ic_monthly_mean"),
-                "test_ic_mean": fold_result.get("test_ic", {}).get("ic_mean"),
-                "test_ic_monthly_mean": fold_result.get("test_ic", {}).get("ic_monthly_mean"),
-                "training_time_s": fold_result.get("training_time_s"),
-                "n_params": fold_result.get("n_params"),
-                "status": fold_result.get("status", "completed"),
+                "seed_runs": seed_runs,
+                "n_seeds": len(completed),
+                "val_ic_mean":  float(np.mean(val_ics)),
+                "val_ic_std":   float(np.std(val_ics))  if len(val_ics) > 1 else None,
+                "test_ic_mean": float(np.mean(test_ics)),
+                "test_ic_std":  float(np.std(test_ics)) if len(test_ics) > 1 else None,
+                "training_time_s": sum(r["training_time_s"] for r in completed),
+                "n_params": completed[0].get("n_params"),
+                "status": "completed",
             }
-
+            std_str = f" ±{exp_result['test_ic_std']:.4f}" if exp_result["test_ic_std"] is not None else ""
             logger.info(
-                f"  → val IC: {exp_result['val_ic_mean']:.4f} (monthly: {exp_result['val_ic_monthly_mean']:.4f})"
-                f" | test IC: {exp_result['test_ic_mean']:.4f}"
-                f" | time: {exp_result['training_time_s']:.0f}s"
-                f" | params: {exp_result['n_params']:,}"
+                f"  → {len(completed)}-seed mean:  val IC {exp_result['val_ic_mean']:.4f}"
+                f" | test IC {exp_result['test_ic_mean']:.4f}{std_str}"
             )
-
-        except Exception as exc:
-            logger.exception(f"Experiment {exp['name']} failed: {exc}")
-            exp_result = {
-                "name": exp["name"],
-                "group": exp["group"],
-                "config": exp,
-                "status": "failed",
-                "error": str(exc),
-            }
+        else:
+            exp_result = {"name": exp["name"], "group": exp["group"],
+                          "config": exp, "seed_runs": seed_runs, "status": "failed"}
 
         results["experiments"].append(exp_result)
 
         # Save after each experiment so partial results are not lost on crash
-        results_path = output_dir / f"results_{run_id}.json"
         with open(results_path, "w") as f:
             json.dump(results, f, indent=2, default=str)
         logger.info(f"Results saved: {results_path}")
@@ -632,22 +691,32 @@ def main():
     # ---------------------------------------------------------------------------
     # Summary table
     # ---------------------------------------------------------------------------
+    multi_seed = len(seeds) > 1
     logger.info(f"\n{'='*60}")
     logger.info("SUMMARY")
     logger.info(f"{'='*60}")
-    logger.info(f"  {'Experiment':<38} {'Group':<10} {'Params':>9} {'Val IC':>8} {'Test IC':>9} {'Time(s)':>8}")
-    logger.info(f"  {'lgbm_breakout_v4 (champion)':<38} {'—':<10} {'—':>9}  0.1800   0.1800       —")
-    logger.info(f"  {'lgbm_composite_v5 (candidate)':<38} {'—':<10} {'—':>9}  0.1730   0.1730       —")
+    if multi_seed:
+        logger.info(f"  {'Experiment':<38} {'Group':<10} {'Seeds':>6} {'Val IC':>8} {'Test IC mean±std':>20} {'Time(s)':>8}")
+    else:
+        logger.info(f"  {'Experiment':<38} {'Group':<10} {'Params':>9} {'Val IC':>8} {'Test IC':>9} {'Time(s)':>8}")
+    logger.info(f"  {'lgbm_breakout_v5 (champion)':<38} {'—':<10} {'—':>9}  0.1800   0.1800       —")
+    logger.info(f"  {'lgbm_composite_v6 (candidate)':<38} {'—':<10} {'—':>9}  0.1710   0.1710       —")
     for r in results["experiments"]:
-        vic = r.get("val_ic_mean")
-        tic = r.get("test_ic_mean")
-        t   = r.get("training_time_s")
-        n   = r.get("n_params")
+        vic  = r.get("val_ic_mean")
+        tic  = r.get("test_ic_mean")
+        tstd = r.get("test_ic_std")
+        t    = r.get("training_time_s")
+        n    = r.get("n_params")
+        ns   = r.get("n_seeds", 1)
         vic_str = f"{vic:.4f}" if vic is not None else "  error"
-        tic_str = f"{tic:.4f}" if tic is not None else "  error"
         t_str   = f"{t:.0f}"   if t   is not None else "  —"
-        n_str   = f"{n:,}"     if n   is not None else "  —"
-        logger.info(f"  {r['name']:<38} {r.get('group', '—'):<10} {n_str:>9} {vic_str:>8} {tic_str:>9} {t_str:>8}")
+        if multi_seed:
+            tic_str = (f"{tic:.4f} ±{tstd:.4f}" if tstd is not None else f"{tic:.4f}") if tic is not None else "  error"
+            logger.info(f"  {r['name']:<38} {r.get('group','—'):<10} {ns:>6} {vic_str:>8} {tic_str:>20} {t_str:>8}")
+        else:
+            tic_str = f"{tic:.4f}" if tic is not None else "  error"
+            n_str   = f"{n:,}"     if n   is not None else "  —"
+            logger.info(f"  {r['name']:<38} {r.get('group','—'):<10} {n_str:>9} {vic_str:>8} {tic_str:>9} {t_str:>8}")
     logger.info(f"\nFull results: {results_path}")
 
 

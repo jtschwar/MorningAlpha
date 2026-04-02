@@ -27,6 +27,15 @@ export default function TopBar({ showHamburger, onToggleSidebar, sidebarOpen }: 
   const { activePeriod, dataSource, metadata } = state
   const meta = metadata[activePeriod]
 
+  const isScreener = location.pathname === '/'
+
+  const PAGE_LABELS: Record<string, string> = {
+    '/forecast':  'Forecast',
+    '/portfolio': 'Portfolio',
+    '/backtest':  'Backtest',
+  }
+  const pageLabel = PAGE_LABELS[location.pathname] ?? null
+
   const statusText = dataSource
     ? `${meta?.totalAnalyzed ?? 0} stocks · ${meta?.metric ?? activePeriod.toUpperCase()}`
     : 'Load a CSV to begin'
@@ -44,12 +53,20 @@ export default function TopBar({ showHamburger, onToggleSidebar, sidebarOpen }: 
           </button>
         )}
         <span className={styles.logo}>MorningAlpha</span>
-        <span className={styles.status}>{statusText}</span>
+        {pageLabel && (
+          <>
+            <span className={styles.logoDivider}>/</span>
+            <span className={styles.pageLabel}>{pageLabel}</span>
+          </>
+        )}
+        {isScreener && <span className={styles.status}>{statusText}</span>}
       </div>
 
-      <div className={styles.center}>
-        <SearchInput />
-      </div>
+      {isScreener && (
+        <div className={styles.center}>
+          <SearchInput />
+        </div>
+      )}
 
       <div className={styles.right}>
         <nav className={styles.navGroup}>
@@ -65,25 +82,39 @@ export default function TopBar({ showHamburger, onToggleSidebar, sidebarOpen }: 
           >
             Backtest
           </button>
+          <button
+            className={`${styles.navBtn} ${location.pathname === '/forecast' ? styles.navActive : ''}`}
+            onClick={() => navigate('/forecast')}
+          >
+            Forecast
+          </button>
+          <button
+            className={`${styles.navBtn} ${location.pathname === '/portfolio' ? styles.navActive : ''}`}
+            onClick={() => navigate('/portfolio')}
+          >
+            Portfolio
+          </button>
         </nav>
         <button className={styles.themeBtn} onClick={toggle} title="Toggle light/dark mode">
           {light ? '☀' : '☾'}
         </button>
-        <div className={styles.periodGroup}>
-          {PERIODS.map(({ key, label }) => (
-            <button
-              key={key}
-              className={`${styles.periodBtn} ${activePeriod === key ? styles.active : ''}`}
-              onClick={() => dispatch({ type: 'SET_PERIOD', period: key })}
-              title={
-                key === '2w' ? 'Sharpe/RSI unreliable at 2-week lookback' : undefined
-              }
-            >
-              {label}
-              {key === '2w' && <span className={styles.warn}>⚠</span>}
-            </button>
-          ))}
-        </div>
+        {isScreener && (
+          <div className={styles.periodGroup}>
+            {PERIODS.map(({ key, label }) => (
+              <button
+                key={key}
+                className={`${styles.periodBtn} ${activePeriod === key ? styles.active : ''}`}
+                onClick={() => dispatch({ type: 'SET_PERIOD', period: key })}
+                title={
+                  key === '2w' ? 'Sharpe/RSI unreliable at 2-week lookback' : undefined
+                }
+              >
+                {label}
+                {key === '2w' && <span className={styles.warn}>⚠</span>}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </header>
   )

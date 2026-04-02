@@ -1,0 +1,337 @@
+{
+  "model_id": "lgbm_breakout_v5",
+  "test_period": {
+    "start": "2024-05-24",
+    "end": "2025-12-19"
+  },
+  "horizons": {
+    "5": [
+      {
+        "decile": 1,
+        "ann_return": 0.1064,
+        "ann_std": 1.1879,
+        "period_return_mean": 0.0021,
+        "period_return_std": 0.1673,
+        "n": 33644
+      },
+      {
+        "decile": 2,
+        "ann_return": 0.193,
+        "ann_std": 0.9066,
+        "period_return_mean": 0.0038,
+        "period_return_std": 0.1277,
+        "n": 33644
+      },
+      {
+        "decile": 3,
+        "ann_return": 0.1413,
+        "ann_std": 0.6864,
+        "period_return_mean": 0.0028,
+        "period_return_std": 0.0967,
+        "n": 33643
+      },
+      {
+        "decile": 4,
+        "ann_return": 0.1004,
+        "ann_std": 0.5554,
+        "period_return_mean": 0.002,
+        "period_return_std": 0.0782,
+        "n": 33644
+      },
+      {
+        "decile": 5,
+        "ann_return": 0.1795,
+        "ann_std": 0.6749,
+        "period_return_mean": 0.0036,
+        "period_return_std": 0.0951,
+        "n": 33644
+      },
+      {
+        "decile": 6,
+        "ann_return": 0.242,
+        "ann_std": 0.6605,
+        "period_return_mean": 0.0048,
+        "period_return_std": 0.093,
+        "n": 33643
+      },
+      {
+        "decile": 7,
+        "ann_return": 0.2732,
+        "ann_std": 1.7196,
+        "period_return_mean": 0.0054,
+        "period_return_std": 0.2422,
+        "n": 33644
+      },
+      {
+        "decile": 8,
+        "ann_return": 0.2581,
+        "ann_std": 1.1982,
+        "period_return_mean": 0.0051,
+        "period_return_std": 0.1688,
+        "n": 33643
+      },
+      {
+        "decile": 9,
+        "ann_return": 0.3271,
+        "ann_std": 0.5858,
+        "period_return_mean": 0.0065,
+        "period_return_std": 0.0825,
+        "n": 33644
+      },
+      {
+        "decile": 10,
+        "ann_return": 0.4912,
+        "ann_std": 0.4889,
+        "period_return_mean": 0.0097,
+        "period_return_std": 0.0689,
+        "n": 33644
+      }
+    ],
+    "10": [
+      {
+        "decile": 1,
+        "ann_return": 0.1175,
+        "ann_std": 1.3303,
+        "period_return_mean": 0.0047,
+        "period_return_std": 0.265,
+        "n": 33644
+      },
+      {
+        "decile": 2,
+        "ann_return": 0.2287,
+        "ann_std": 0.8448,
+        "period_return_mean": 0.0091,
+        "period_return_std": 0.1683,
+        "n": 33644
+      },
+      {
+        "decile": 3,
+        "ann_return": 0.18,
+        "ann_std": 0.6993,
+        "period_return_mean": 0.0071,
+        "period_return_std": 0.1393,
+        "n": 33643
+      },
+      {
+        "decile": 4,
+        "ann_return": 0.1558,
+        "ann_std": 0.7686,
+        "period_return_mean": 0.0062,
+        "period_return_std": 0.1531,
+        "n": 33644
+      },
+      {
+        "decile": 5,
+        "ann_return": 0.1955,
+        "ann_std": 0.6049,
+        "period_return_mean": 0.0078,
+        "period_return_std": 0.1205,
+        "n": 33644
+      },
+      {
+        "decile": 6,
+        "ann_return": 0.2447,
+        "ann_std": 0.6229,
+        "period_return_mean": 0.0097,
+        "period_return_std": 0.1241,
+        "n": 33643
+      },
+      {
+        "decile": 7,
+        "ann_return": 0.2693,
+        "ann_std": 1.3465,
+        "period_return_mean": 0.0107,
+        "period_return_std": 0.2682,
+        "n": 33644
+      },
+      {
+        "decile": 8,
+        "ann_return": 0.28,
+        "ann_std": 1.1885,
+        "period_return_mean": 0.0111,
+        "period_return_std": 0.2368,
+        "n": 33643
+      },
+      {
+        "decile": 9,
+        "ann_return": 0.3646,
+        "ann_std": 0.95,
+        "period_return_mean": 0.0145,
+        "period_return_std": 0.1892,
+        "n": 33644
+      },
+      {
+        "decile": 10,
+        "ann_return": 0.464,
+        "ann_std": 0.4897,
+        "period_return_mean": 0.0184,
+        "period_return_std": 0.0976,
+        "n": 33644
+      }
+    ],
+    "21": [
+      {
+        "decile": 1,
+        "ann_return": 0.2603,
+        "ann_std": 2.1889,
+        "period_return_mean": 0.0217,
+        "period_return_std": 0.6319,
+        "n": 33644
+      },
+      {
+        "decile": 2,
+        "ann_return": 0.3151,
+        "ann_std": 1.0557,
+        "period_return_mean": 0.0263,
+        "period_return_std": 0.3048,
+        "n": 33644
+      },
+      {
+        "decile": 3,
+        "ann_return": 0.2337,
+        "ann_std": 0.8099,
+        "period_return_mean": 0.0195,
+        "period_return_std": 0.2338,
+        "n": 33643
+      },
+      {
+        "decile": 4,
+        "ann_return": 0.1794,
+        "ann_std": 0.6352,
+        "period_return_mean": 0.015,
+        "period_return_std": 0.1834,
+        "n": 33644
+      },
+      {
+        "decile": 5,
+        "ann_return": 0.2184,
+        "ann_std": 0.6301,
+        "period_return_mean": 0.0182,
+        "period_return_std": 0.1819,
+        "n": 33644
+      },
+      {
+        "decile": 6,
+        "ann_return": 0.2781,
+        "ann_std": 0.6308,
+        "period_return_mean": 0.0232,
+        "period_return_std": 0.1821,
+        "n": 33643
+      },
+      {
+        "decile": 7,
+        "ann_return": 0.294,
+        "ann_std": 1.1191,
+        "period_return_mean": 0.0245,
+        "period_return_std": 0.3231,
+        "n": 33644
+      },
+      {
+        "decile": 8,
+        "ann_return": 0.3162,
+        "ann_std": 1.207,
+        "period_return_mean": 0.0264,
+        "period_return_std": 0.3484,
+        "n": 33643
+      },
+      {
+        "decile": 9,
+        "ann_return": 0.3966,
+        "ann_std": 0.9959,
+        "period_return_mean": 0.033,
+        "period_return_std": 0.2875,
+        "n": 33644
+      },
+      {
+        "decile": 10,
+        "ann_return": 0.4881,
+        "ann_std": 0.5313,
+        "period_return_mean": 0.0407,
+        "period_return_std": 0.1534,
+        "n": 33644
+      }
+    ],
+    "63": [
+      {
+        "decile": 1,
+        "ann_return": 0.3667,
+        "ann_std": 4.2604,
+        "period_return_mean": 0.0917,
+        "period_return_std": 2.1302,
+        "n": 33644
+      },
+      {
+        "decile": 2,
+        "ann_return": 0.2822,
+        "ann_std": 1.5111,
+        "period_return_mean": 0.0706,
+        "period_return_std": 0.7555,
+        "n": 33644
+      },
+      {
+        "decile": 3,
+        "ann_return": 0.1968,
+        "ann_std": 0.9689,
+        "period_return_mean": 0.0492,
+        "period_return_std": 0.4845,
+        "n": 33643
+      },
+      {
+        "decile": 4,
+        "ann_return": 0.1632,
+        "ann_std": 0.7353,
+        "period_return_mean": 0.0408,
+        "period_return_std": 0.3676,
+        "n": 33644
+      },
+      {
+        "decile": 5,
+        "ann_return": 0.2044,
+        "ann_std": 1.0471,
+        "period_return_mean": 0.0511,
+        "period_return_std": 0.5235,
+        "n": 33644
+      },
+      {
+        "decile": 6,
+        "ann_return": 0.2549,
+        "ann_std": 0.9489,
+        "period_return_mean": 0.0637,
+        "period_return_std": 0.4745,
+        "n": 33643
+      },
+      {
+        "decile": 7,
+        "ann_return": 0.2828,
+        "ann_std": 1.1423,
+        "period_return_mean": 0.0707,
+        "period_return_std": 0.5712,
+        "n": 33644
+      },
+      {
+        "decile": 8,
+        "ann_return": 0.2934,
+        "ann_std": 0.8372,
+        "period_return_mean": 0.0734,
+        "period_return_std": 0.4186,
+        "n": 33643
+      },
+      {
+        "decile": 9,
+        "ann_return": 0.3682,
+        "ann_std": 0.8124,
+        "period_return_mean": 0.092,
+        "period_return_std": 0.4062,
+        "n": 33644
+      },
+      {
+        "decile": 10,
+        "ann_return": 0.5038,
+        "ann_std": 0.8487,
+        "period_return_mean": 0.1259,
+        "period_return_std": 0.4244,
+        "n": 33644
+      }
+    ]
+  }
+}

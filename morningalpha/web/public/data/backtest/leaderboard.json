@@ -520,6 +520,40 @@
     "n_test_dates": 83
   },
   {
+    "model_id": "lgbm_breakout_v5",
+    "model_type": "LGBM",
+    "target": "forward_63d_rank",
+    "horizon": 63,
+    "n_features": 66,
+    "test_period": {
+      "start": "2024-05-24",
+      "end": "2025-12-19"
+    },
+    "top_decile": {
+      "ann_return": 0.5822,
+      "sharpe": 2.579,
+      "consistency": 0.928
+    },
+    "universe": {
+      "ann_return": 0.232,
+      "sharpe": 1.37,
+      "consistency": 0.807
+    },
+    "ic_mean": 0.1857,
+    "ic_std": 0.0831,
+    "icir": 2.234,
+    "ic_hit_rate": 1.0,
+    "ic_tstat": 9.99,
+    "n_months": 20,
+    "ls_sharpe": 2.117,
+    "ls_ann_return": 0.6638,
+    "ls_max_drawdown": -0.0179,
+    "n_periods": 10,
+    "persistence_ic": 0.0159,
+    "n_test_rows": 336437,
+    "n_test_dates": 83
+  },
+  {
     "model_id": "lgbm_composite_v6",
     "model_type": "LGBM",
     "target": "forward_63d_rank",
@@ -554,36 +588,36 @@
     "n_test_dates": 83
   },
   {
-    "model_id": "lgbm_breakout_v5",
-    "model_type": "LGBM",
-    "target": "forward_63d_rank",
+    "model_id": "st_sector_relative_v1",
+    "model_type": "SET_TRANSFORMER",
+    "target": "forward_63d_sector_relative_rank",
     "horizon": 63,
-    "n_features": 66,
+    "n_features": 74,
     "test_period": {
       "start": "2024-05-24",
       "end": "2025-12-19"
     },
     "top_decile": {
-      "ann_return": 0.5822,
-      "sharpe": 2.579,
-      "consistency": 0.928
+      "ann_return": 0.4066,
+      "sharpe": 2.145,
+      "consistency": 0.843
     },
     "universe": {
       "ann_return": 0.232,
       "sharpe": 1.37,
       "consistency": 0.807
     },
-    "ic_mean": 0.1857,
-    "ic_std": 0.0831,
-    "icir": 2.234,
+    "ic_mean": 0.1368,
+    "ic_std": 0.0753,
+    "icir": 1.816,
     "ic_hit_rate": 1.0,
-    "ic_tstat": 9.99,
+    "ic_tstat": 8.123,
     "n_months": 20,
-    "ls_sharpe": 2.117,
-    "ls_ann_return": 0.6638,
-    "ls_max_drawdown": -0.0179,
+    "ls_sharpe": 1.118,
+    "ls_ann_return": 0.3168,
+    "ls_max_drawdown": -0.107,
     "n_periods": 10,
-    "persistence_ic": 0.0159,
+    "persistence_ic": NaN,
     "n_test_rows": 336437,
     "n_test_dates": 83
   }

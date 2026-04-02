@@ -14,6 +14,13 @@
       "status": "candidate"
     },
     {
+      "id": "st_sector_relative_v1",
+      "type": "set_transformer",
+      "checkpoint": "results/set_transformer/st_sector_relative_v1_fold0.pt",
+      "description": "Set Transformer — sector-relative rank target, cross-stock attention within sectors, d_model=128, blocks=3, test IC 0.141 (monthly mean 0.146). Disabled pending MPS warmup fix.",
+      "status": "retired"
+    },
+    {
       "id": "lgbm_breakout_v4",
       "type": "lgbm",
       "description": "LGBM — raw return rank target, 10y universal weekly dataset, IC 0.180. Retired: superseded by v5.",

@@ -12,6 +12,16 @@
   --accent-blue: #3b82f6;
   --accent-purple: #8b5cf6;
 
+  /* ── Forecast / Portfolio design system aliases ── */
+  --bg-primary:  #0B0E11;
+  --bg-surface:  #111318;
+  --bg-elevated: #181C24;
+  --bg-hover:    #1E2430;
+  --text-muted:  #5A6577;
+  --accent-amber: #F59E0B;
+  --color-pos:   #22C55E;
+  --color-neg:   #EF4444;
+
   --font-mono: 'JetBrains Mono', monospace;
   --font-ui: 'Inter', system-ui, sans-serif;
 
@@ -33,6 +43,16 @@
   --accent-red: #ef4444;
   --accent-blue: #2563eb;
   --accent-purple: #7c3aed;
+
+  /* ── Forecast / Portfolio design system aliases ── */
+  --bg-primary:  #f1f5f9;
+  --bg-surface:  #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-hover:    #f1f5f9;
+  --text-muted:  #94a3b8;
+  --accent-amber: #D97706;
+  --color-pos:   #16A34A;
+  --color-neg:   #DC2626;
 }
 
 /* ── Reset ───────────────────────────────────────────────────────────────── */
