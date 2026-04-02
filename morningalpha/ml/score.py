@@ -192,9 +192,14 @@ def _evaluate_and_update_weights(df_current: pd.DataFrame, raw_scores: dict) -> 
         ic_entry = {"week_end": str(today.date()), **ic_by_model}
         _save_model_weights(new_weights, ic_entry=ic_entry)
 
-        # Remove evaluated rows from ledger
-        remaining = ledger[ledger["eval_after"] > today]
-        remaining.to_parquet(_LEDGER_PATH, index=False)
+        # Write realized_return back to mature rows and mark them — keep in ledger
+        # so _run_calibration can use them for isotonic regression.
+        ledger.loc[ledger["eval_after"] <= today, "realized_return"] = \
+            mature.set_index(mature.index)["realized_return"]
+        ledger.loc[ledger["eval_after"] <= today, "matured"] = True
+        if "matured" not in ledger.columns:
+            ledger["matured"] = ledger["eval_after"] <= today
+        ledger.to_parquet(_LEDGER_PATH, index=False)
 
         ic_str = "  ".join(f"{m}: {ic:+.4f}" for m, ic in sorted(ic_by_model.items()))
         w_str  = "  ".join(f"{m}: {w:.3f}" for m, w in sorted(new_weights.items()))
@@ -220,12 +225,10 @@ def _run_calibration(model_ids: list) -> None:
         ledger = pd.read_parquet(_LEDGER_PATH)
         today  = pd.Timestamp(date.today())
 
-        # Rows are mature once eval_after has passed AND price_at_score is known
+        # Rows are mature once realized_return has been backfilled
         mature = ledger[
-            (ledger["eval_after"] <= today) &
-            ledger["price_at_score"].notna() &
-            (ledger["price_at_score"] > 0)
-        ].copy()
+            ledger.get("matured", pd.Series(False, index=ledger.index)) == True
+        ].copy() if "matured" in ledger.columns else pd.DataFrame()
 
         _CALIB_DIR = Path("data/factors")
         _CALIB_DIR.mkdir(parents=True, exist_ok=True)
@@ -235,18 +238,17 @@ def _run_calibration(model_ids: list) -> None:
             if raw_col not in mature.columns:
                 continue
 
-            model_mature = mature[["ticker", "scored_date", raw_col, "price_at_score"]].dropna()
+            model_mature = mature[
+                ["ticker", "scored_date", raw_col, "realized_return"]
+            ].dropna()
 
             # --- Live IC ---
-            # Group by scored_date and compute cross-sectional Spearman IC per cohort.
-            # We use raw score vs price_at_score as a proxy (proper realized return
-            # requires current prices; once the backfill loop runs we get exact returns).
+            # Cross-sectional Spearman IC per scoring cohort: raw score vs realized return.
             ic_rows = []
             for dt, grp in model_mature.groupby("scored_date"):
                 if len(grp) < 30:
                     continue
-                # Use raw score rank IC against price rank as a consistency check
-                ic = float(_spearmanr(grp[raw_col], grp["price_at_score"]).correlation)
+                ic = float(_spearmanr(grp[raw_col], grp["realized_return"]).correlation)
                 if not np.isnan(ic):
                     ic_rows.append({"date": str(dt.date()), "ic": round(ic, 4), "n": len(grp)})
 
@@ -295,9 +297,8 @@ def _run_calibration(model_ids: list) -> None:
                 import pickle as _pkl
 
                 X = model_mature[raw_col].values
-                # Positive-return label: above-median price at score time as proxy
-                median_price = float(np.median(model_mature["price_at_score"]))
-                y = (model_mature["price_at_score"] > median_price).astype(float).values
+                # P(positive 63-day return) — the correct calibration target
+                y = (model_mature["realized_return"] > 0).astype(float).values
 
                 cal = IsotonicRegression(y_min=0.0, y_max=1.0, out_of_bounds="clip")
                 cal.fit(X, y)
