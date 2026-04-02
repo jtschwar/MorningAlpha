@@ -1177,6 +1177,55 @@ def _assign_splits(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _assign_walk_forward_folds(
+    df: pd.DataFrame,
+    fold_step_months: int = 1,
+    min_train_months: int = 18,
+    test_window_td: int = 63,
+) -> Tuple[pd.DataFrame, List]:
+    """Assign expanding-window walk-forward fold labels.
+
+    Adds integer column ``test_fold``:
+      - 0  → always train-eligible (never a test row)
+      - N  → this row is in the test set for fold N
+
+    Test windows are non-overlapping blocks of ``test_window_td`` trading
+    days, rolling forward by ``fold_step_months`` months. The earliest
+    possible test window begins ``min_train_months`` after the first date
+    in the dataset, ensuring each fold has a meaningful training window.
+
+    With a 5-year lookback, monthly steps, and 18-month min-train this
+    produces ~42 folds spanning ~2022-Q3 through 2026-Q1.
+    """
+    df = df.copy()
+    df["test_fold"] = 0
+
+    all_dates = sorted(df["date"].unique())
+    if not all_dates:
+        return df, []
+
+    min_date = pd.Timestamp(all_dates[0])
+    first_test_start = min_date + pd.DateOffset(months=min_train_months)
+
+    fold_boundaries: List[Tuple] = []
+    current_start = first_test_start
+
+    while True:
+        remaining = [d for d in all_dates if pd.Timestamp(d) >= current_start]
+        if len(remaining) < test_window_td:
+            break
+        fold_test_start = pd.Timestamp(remaining[0])
+        fold_test_end = pd.Timestamp(remaining[test_window_td - 1])
+        fold_boundaries.append((fold_test_start, fold_test_end))
+        current_start = fold_test_start + pd.DateOffset(months=fold_step_months)
+
+    for fold_num, (start, end) in enumerate(fold_boundaries, start=1):
+        mask = (df["date"] >= start) & (df["date"] <= end)
+        df.loc[mask, "test_fold"] = fold_num
+
+    return df, fold_boundaries
+
+
 # ---------------------------------------------------------------------------
 # Preprocessing
 # ---------------------------------------------------------------------------
@@ -1265,7 +1314,21 @@ def _apply_preprocessing(df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
     show_default=True,
     help="Minimum market cap to include (e.g. 1b, 500m, 1000000000). 0 = no filter.",
 )
-def dataset(lookback, output, tickers_from, horizons, snapshot_freq, no_overlap, n_workers, refresh_only, from_cache, fundamentals_csv, min_market_cap):
+@click.option(
+    "--fold-step",
+    "fold_step",
+    default=1,
+    show_default=True,
+    help="Walk-forward fold step size in months.",
+)
+@click.option(
+    "--min-train",
+    "min_train",
+    default=18,
+    show_default=True,
+    help="Minimum months of training data before the first walk-forward test fold.",
+)
+def dataset(lookback, output, tickers_from, horizons, snapshot_freq, no_overlap, n_workers, refresh_only, from_cache, fundamentals_csv, min_market_cap, fold_step, min_train):
     """Build a point-in-time labeled dataset for ML training.
 
     \b
@@ -1594,8 +1657,24 @@ def dataset(lookback, output, tickers_from, horizons, snapshot_freq, no_overlap,
 
     console.print(f"Raw dataset: [bold]{len(df):,}[/bold] rows × {len(df.columns)} columns")
 
-    # --- Temporal splits ---
+    # --- Temporal splits (backward-compat static split) ---
     df = _assign_splits(df)
+
+    # --- Walk-forward fold labels ---
+    df, fold_boundaries = _assign_walk_forward_folds(
+        df, fold_step_months=fold_step, min_train_months=min_train
+    )
+    console.print(
+        f"Walk-forward folds: [bold]{len(fold_boundaries)}[/bold] "
+        f"(step={fold_step}m, min_train={min_train}m, test_window=63 trading days)"
+    )
+    if fold_boundaries:
+        console.print(
+            f"  First fold: {fold_boundaries[0][0].date()} → {fold_boundaries[0][1].date()}"
+        )
+        console.print(
+            f"  Last fold:  {fold_boundaries[-1][0].date()} → {fold_boundaries[-1][1].date()}"
+        )
 
     # --- Preprocessing (fit on train only) ---
     df, scaler_params = _apply_preprocessing(df)

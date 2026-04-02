@@ -373,6 +373,117 @@ def _upsert_model_config(model_dir: Path, name: str, model_type: str, test_ic: f
 
 
 # ---------------------------------------------------------------------------
+# Walk-forward CV
+# ---------------------------------------------------------------------------
+
+def walk_forward_cv(
+    dataset_path: str,
+    model_id: str,
+    target: str = "forward_63d_composite_rank",
+    embargo_days: int = 10,
+) -> pd.DataFrame:
+    """Expanding-window walk-forward CV using pre-assigned test_fold labels.
+
+    For each fold N in the dataset:
+      - Train  : all rows where date < fold_N_test_start  (minus embargo)
+      - Val    : last 90 calendar days of that train window (early stopping)
+      - Test   : rows tagged test_fold == N
+
+    Uses the best params stored in models/{model_id}_params.json.
+    Returns a DataFrame with per-fold IC, hit rate, n_train, n_test.
+    """
+    from morningalpha.ml.baselines import LightGBMModel
+
+    df = pd.read_parquet(dataset_path)
+    feat_cols = [c for c in FEATURE_COLUMNS if c in df.columns]
+
+    if "test_fold" not in df.columns:
+        raise ValueError(
+            "Dataset has no 'test_fold' column. "
+            "Re-run `alpha ml dataset` to generate walk-forward labels."
+        )
+    if target not in df.columns:
+        raise ValueError(f"Target '{target}' not in dataset.")
+
+    # Drop high-missing rows, fill remainder with 0 (rank-normalized median)
+    missing_thresh = 0.30 * len(feat_cols)
+    df = df[df[feat_cols].isna().sum(axis=1) <= missing_thresh].copy()
+    df[feat_cols] = df[feat_cols].fillna(0)
+    df["date"] = pd.to_datetime(df["date"])
+
+    # Load best hyperparameters for this model
+    params_path = MODEL_DIR / f"{model_id}_params.json"
+    if params_path.exists():
+        with open(params_path) as f:
+            best_params = json.load(f)
+        console.print(f"Loaded params from {params_path}")
+    else:
+        console.print(f"[yellow]No params file at {params_path} — using defaults[/yellow]")
+        best_params = {}
+
+    lgbm_params = {"n_estimators": 1000, "verbose": -1, **best_params}
+
+    n_folds = int(df["test_fold"].max())
+    if n_folds == 0:
+        raise ValueError("No walk-forward folds found in dataset.")
+
+    fold_results = []
+    for fold_n in range(1, n_folds + 1):
+        fold_test = df[df["test_fold"] == fold_n]
+        if len(fold_test) < 10:
+            continue
+
+        fold_test_start = fold_test["date"].min()
+        embargo_cutoff = fold_test_start - pd.Timedelta(days=embargo_days)
+
+        fold_train_all = df[df["date"] < embargo_cutoff]
+        if len(fold_train_all) < 100:
+            continue
+
+        # Val = last 90 calendar days of training window (for early stopping)
+        val_cutoff = embargo_cutoff - pd.Timedelta(days=90)
+        fold_val = fold_train_all[fold_train_all["date"] >= val_cutoff]
+        fold_tr = fold_train_all[fold_train_all["date"] < val_cutoff]
+
+        if len(fold_tr) < 50 or len(fold_val) < 10:
+            # Not enough data for inner val split — use full train, no early stopping
+            fold_tr = fold_train_all
+            fold_val = fold_train_all.tail(max(10, len(fold_train_all) // 10))
+
+        X_tr = fold_tr[feat_cols].astype(np.float32)
+        y_tr = fold_tr[target].values.astype(np.float32)
+        X_va = fold_val[feat_cols].astype(np.float32)
+        y_va = fold_val[target].values.astype(np.float32)
+        X_te = fold_test[feat_cols].astype(np.float32)
+        y_te = fold_test[target].values.astype(np.float32)
+
+        model = LightGBMModel(params=lgbm_params)
+        model.fit(X_tr, y_tr, X_va, y_va)
+
+        preds = model.predict(X_te)
+        ic = rank_ic(preds, y_te)
+        hr = hit_rate(preds, y_te)
+
+        fold_results.append({
+            "fold":       fold_n,
+            "test_start": fold_test_start.date(),
+            "test_end":   fold_test["date"].max().date(),
+            "n_train":    len(fold_tr),
+            "n_test":     len(fold_test),
+            "ic":         round(ic, 4),
+            "hit_rate":   round(hr, 4),
+        })
+
+        console.print(
+            f"  Fold {fold_n:>3}  "
+            f"{str(fold_test_start.date()):>12} → {str(fold_test['date'].max().date()):<12}  "
+            f"IC={ic:+.4f}  hit={hr:.3f}  train={len(fold_tr):,}"
+        )
+
+    return pd.DataFrame(fold_results)
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -539,3 +650,65 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
     elif model_type == "ridge":
         ridge_model.save(output)
         console.print(f"\n[bold green]Ridge model saved → {output}[/bold green]")
+
+
+# ---------------------------------------------------------------------------
+# Walk-forward CV CLI
+# ---------------------------------------------------------------------------
+
+@click.command("wfcv")
+@click.option("--model-id", "model_id", required=True, help="Model ID to evaluate (e.g. lgbm_breakout_v5).")
+@click.option("--dataset", default="data/training/dataset.parquet", show_default=True, help="Path to dataset parquet.")
+@click.option("--target", default="forward_63d_composite_rank", show_default=True, help="Target label column.")
+@click.option("--embargo", default=10, show_default=True, help="Embargo gap in calendar days between train and test.")
+@click.option("--output", default=None, help="Optional CSV path to save fold results.")
+def wfcv(model_id, dataset, target, embargo, output):
+    """Expanding-window walk-forward CV across all pre-assigned test folds.
+
+    \b
+    For each fold N the model is retrained on all data before that fold's
+    test window (minus an embargo gap) and evaluated on the 63-day test
+    window. Reports per-fold IC, hit rate, and summary statistics.
+
+    \b
+    Examples:
+      alpha ml wfcv --model-id lgbm_breakout_v5
+      alpha ml wfcv --model-id lgbm_composite_v6 --target forward_63d_composite_rank
+      alpha ml wfcv --model-id lgbm_breakout_v5 --output results/wfcv_breakout.csv
+    """
+    console.print(f"\n[bold cyan]Walk-Forward CV — {model_id}[/bold cyan]")
+    console.print(f"Dataset : {dataset}")
+    console.print(f"Target  : {target}")
+    console.print(f"Embargo : {embargo} days\n")
+
+    results_df = walk_forward_cv(dataset, model_id, target=target, embargo_days=embargo)
+
+    if len(results_df) == 0:
+        console.print("[red]No folds completed — check dataset has test_fold column.[/red]")
+        return
+
+    mean_ic  = results_df["ic"].mean()
+    std_ic   = results_df["ic"].std()
+    pos_folds = (results_df["ic"] > 0).sum()
+    mean_hr  = results_df["hit_rate"].mean()
+
+    table = Table(title=f"Walk-Forward CV Summary — {model_id}", show_header=True)
+    table.add_column("Metric", style="dim")
+    table.add_column("Value", style="bold")
+    table.add_row("Folds completed", str(len(results_df)))
+    table.add_row("Mean IC",  f"{mean_ic:+.4f}")
+    table.add_row("Std IC",   f"{std_ic:.4f}")
+    table.add_row("IC > 0",   f"{pos_folds}/{len(results_df)} ({pos_folds/len(results_df):.0%})")
+    table.add_row("Mean Hit Rate", f"{mean_hr:.3f}")
+    table.add_row(
+        "Date range",
+        f"{results_df['test_start'].min()} → {results_df['test_end'].max()}"
+    )
+    console.print(table)
+
+    if output:
+        out_path = Path(output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        results_df.to_csv(out_path, index=False)
+        console.print(f"\n[green]Results saved → {out_path}[/green]")
+
