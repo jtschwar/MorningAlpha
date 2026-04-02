@@ -24,7 +24,7 @@ jobs:
         run: pip install -e .
 
       - name: Run spread pipeline (all windows)
-        run: alpha spread --universe nasdaq --universe nyse --universe sp500 --output-dir data/latest --min-market-cap 1.0
+        run: alpha spread --universe nasdaq --universe nyse --universe sp500 --output-dir data/latest --min-market-cap 0.1
         env:
           # No Alpha Vantage key needed for spread (uses yfinance)
           PYTHONUNBUFFERED: '1'
@@ -40,5 +40,6 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/
           git diff --staged --quiet || git commit -m "chore: daily data update $(date -u +%Y-%m-%d)"
+          git pull --rebase
           git push
 
