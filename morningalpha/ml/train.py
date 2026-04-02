@@ -92,35 +92,82 @@ def purged_kfold_splits(
 # Data loading
 # ---------------------------------------------------------------------------
 
-def load_splits(dataset_path: str, target: str = "forward_10d"):
-    """Load dataset and return (X, y, dates) for each split."""
+def load_data(dataset_path: str, target: str) -> Tuple[pd.DataFrame, List[str]]:
+    """Load and clean the dataset. Returns (df, feat_cols).
+
+    Downstream callers slice by date or split column as needed.
+    """
     df = pd.read_parquet(dataset_path)
     console.print(f"Loaded {len(df):,} rows from {dataset_path}")
 
     feat_cols = [c for c in FEATURE_COLUMNS if c in df.columns]
     if target not in df.columns:
-        raise ValueError(f"Target column '{target}' not found in dataset.")
+        raise ValueError(f"Target '{target}' not in dataset.")
 
-    # Drop rows with >20% features missing
     missing_thresh = 0.30 * len(feat_cols)
     df = df[df[feat_cols].isna().sum(axis=1) <= missing_thresh].copy()
-    console.print(f"After missing-value filter: {len(df):,} rows")
-
-    # Fill remaining NaN with 0 (post rank-normalize, 0 = median)
     df[feat_cols] = df[feat_cols].fillna(0)
+    df["date"] = pd.to_datetime(df["date"])
+    console.print(f"After missing-value filter: {len(df):,} rows  ({df['date'].min().date()} → {df['date'].max().date()})")
+    return df, feat_cols
 
-    def _split(name):
-        sub = df[df["split"] == name]
-        X = sub[feat_cols].astype(np.float32)  # keep as DataFrame — preserves feature names for LightGBM
-        y = sub[target].values.astype(np.float32)
-        return X, y, sub["date"], sub
 
-    X_tr, y_tr, d_tr, df_tr = _split("train")
-    X_va, y_va, d_va, df_va = _split("val")
-    X_te, y_te, d_te, df_te = _split("test")
+def _xy(df: pd.DataFrame, feat_cols: List[str], target: str):
+    """Extract (X, y, dates, df) arrays from a pre-filtered DataFrame slice."""
+    X = df[feat_cols].astype(np.float32)
+    y = df[target].values.astype(np.float32)
+    return X, y, df["date"], df
+
+
+def load_splits(dataset_path: str, target: str = "forward_10d"):
+    """Load dataset and return (X, y, dates) for each static split (backward compat)."""
+    df, feat_cols = load_data(dataset_path, target)
+
+    X_tr, y_tr, d_tr, df_tr = _xy(df[df["split"] == "train"], feat_cols, target)
+    X_va, y_va, d_va, df_va = _xy(df[df["split"] == "val"],   feat_cols, target)
+    X_te, y_te, d_te, df_te = _xy(df[df["split"] == "test"],  feat_cols, target)
 
     console.print(f"  train={len(X_tr):,}  val={len(X_va):,}  test={len(X_te):,}")
     return (X_tr, y_tr, d_tr, df_tr), (X_va, y_va, d_va, df_va), (X_te, y_te, d_te, df_te), feat_cols
+
+
+def load_splits_walk_forward(
+    dataset_path: str,
+    target: str,
+    embargo_days: int = 10,
+) -> Tuple[pd.DataFrame, List[str], dict]:
+    """Load dataset and derive the final production splits from walk-forward folds.
+
+    Final training window = all data before the last fold's test start (minus embargo).
+    Final val window      = 90 days before that cutoff (for early stopping).
+    Final test window     = last fold's test rows.
+
+    Returns (df, feat_cols, split_dates) where split_dates has keys:
+      train_end, val_start, test_start, test_end, n_folds
+    """
+    df, feat_cols = load_data(dataset_path, target)
+
+    if "test_fold" not in df.columns:
+        raise ValueError("Dataset has no 'test_fold' column. Re-run `alpha ml dataset`.")
+
+    n_folds = int(df["test_fold"].max())
+    if n_folds == 0:
+        raise ValueError("No walk-forward folds in dataset.")
+
+    last_fold_rows = df[df["test_fold"] == n_folds]
+    test_start = last_fold_rows["date"].min()
+    test_end   = last_fold_rows["date"].max()
+    train_end  = test_start - pd.Timedelta(days=embargo_days)
+    val_start  = train_end  - pd.Timedelta(days=90)
+
+    split_dates = {
+        "train_end":  train_end,
+        "val_start":  val_start,
+        "test_start": test_start,
+        "test_end":   test_end,
+        "n_folds":    n_folds,
+    }
+    return df, feat_cols, split_dates
 
 
 # ---------------------------------------------------------------------------
@@ -377,92 +424,56 @@ def _upsert_model_config(model_dir: Path, name: str, model_type: str, test_ic: f
 # ---------------------------------------------------------------------------
 
 def walk_forward_cv(
-    dataset_path: str,
-    model_id: str,
+    df: pd.DataFrame,
+    feat_cols: List[str],
+    best_params: dict,
     target: str = "forward_63d_composite_rank",
     embargo_days: int = 10,
 ) -> pd.DataFrame:
     """Expanding-window walk-forward CV using pre-assigned test_fold labels.
 
-    For each fold N in the dataset:
-      - Train  : all rows where date < fold_N_test_start  (minus embargo)
-      - Val    : last 90 calendar days of that train window (early stopping)
-      - Test   : rows tagged test_fold == N
+    Accepts an already-loaded, cleaned DataFrame and tuned best_params.
+    For each fold N:
+      - Train : all rows where date < fold_N_test_start (minus embargo)
+      - Val   : last 90 calendar days of that window (early stopping)
+      - Test  : rows tagged test_fold == N
 
-    Uses the best params stored in models/{model_id}_params.json.
     Returns a DataFrame with per-fold IC, hit rate, n_train, n_test.
     """
     from morningalpha.ml.baselines import LightGBMModel
 
-    df = pd.read_parquet(dataset_path)
-    feat_cols = [c for c in FEATURE_COLUMNS if c in df.columns]
-
-    if "test_fold" not in df.columns:
-        raise ValueError(
-            "Dataset has no 'test_fold' column. "
-            "Re-run `alpha ml dataset` to generate walk-forward labels."
-        )
-    if target not in df.columns:
-        raise ValueError(f"Target '{target}' not in dataset.")
-
-    # Drop high-missing rows, fill remainder with 0 (rank-normalized median)
-    missing_thresh = 0.30 * len(feat_cols)
-    df = df[df[feat_cols].isna().sum(axis=1) <= missing_thresh].copy()
-    df[feat_cols] = df[feat_cols].fillna(0)
-    df["date"] = pd.to_datetime(df["date"])
-
-    # Load best hyperparameters for this model
-    params_path = MODEL_DIR / f"{model_id}_params.json"
-    if params_path.exists():
-        with open(params_path) as f:
-            best_params = json.load(f)
-        console.print(f"Loaded params from {params_path}")
-    else:
-        console.print(f"[yellow]No params file at {params_path} — using defaults[/yellow]")
-        best_params = {}
-
     lgbm_params = {"n_estimators": 1000, "verbose": -1, **best_params}
-
     n_folds = int(df["test_fold"].max())
-    if n_folds == 0:
-        raise ValueError("No walk-forward folds found in dataset.")
-
     fold_results = []
+
     for fold_n in range(1, n_folds + 1):
         fold_test = df[df["test_fold"] == fold_n]
         if len(fold_test) < 10:
             continue
 
         fold_test_start = fold_test["date"].min()
-        embargo_cutoff = fold_test_start - pd.Timedelta(days=embargo_days)
-
-        fold_train_all = df[df["date"] < embargo_cutoff]
+        embargo_cutoff  = fold_test_start - pd.Timedelta(days=embargo_days)
+        fold_train_all  = df[df["date"] < embargo_cutoff]
         if len(fold_train_all) < 100:
             continue
 
-        # Val = last 90 calendar days of training window (for early stopping)
         val_cutoff = embargo_cutoff - pd.Timedelta(days=90)
         fold_val = fold_train_all[fold_train_all["date"] >= val_cutoff]
-        fold_tr = fold_train_all[fold_train_all["date"] < val_cutoff]
+        fold_tr  = fold_train_all[fold_train_all["date"] <  val_cutoff]
 
         if len(fold_tr) < 50 or len(fold_val) < 10:
-            # Not enough data for inner val split — use full train, no early stopping
-            fold_tr = fold_train_all
+            fold_tr  = fold_train_all
             fold_val = fold_train_all.tail(max(10, len(fold_train_all) // 10))
 
-        X_tr = fold_tr[feat_cols].astype(np.float32)
-        y_tr = fold_tr[target].values.astype(np.float32)
-        X_va = fold_val[feat_cols].astype(np.float32)
-        y_va = fold_val[target].values.astype(np.float32)
-        X_te = fold_test[feat_cols].astype(np.float32)
-        y_te = fold_test[target].values.astype(np.float32)
+        X_tr, y_tr, _, _ = _xy(fold_tr,   feat_cols, target)
+        X_va, y_va, _, _ = _xy(fold_val,  feat_cols, target)
+        X_te, y_te, _, _ = _xy(fold_test, feat_cols, target)
 
         model = LightGBMModel(params=lgbm_params)
         model.fit(X_tr, y_tr, X_va, y_va)
 
-        preds = model.predict(X_te)
-        ic = rank_ic(preds, y_te)
-        hr = hit_rate(preds, y_te)
+        ic = rank_ic(model.predict(X_te), y_te)
+        hr = hit_rate(model.predict(X_te), y_te)
 
         fold_results.append({
             "fold":       fold_n,
@@ -501,7 +512,9 @@ def walk_forward_cv(
 @click.option("--momentum-universe", "momentum_universe", is_flag=True, default=False,
               help="Filter training data to confirmed uptrends (momentum_12_1 > 10, price_to_sma200 > 0) "
                    "and exclude pure value features. Trains a momentum-continuation model.")
-def train(dataset, model_type, target, name, output, n_trials, finetune, checkpoint, no_plots, exclude_features, momentum_universe):
+@click.option("--no-walk-forward", "no_walk_forward", is_flag=True, default=False,
+              help="Skip walk-forward CV and train on static splits only (faster, less rigorous).")
+def train(dataset, model_type, target, name, output, n_trials, finetune, checkpoint, no_plots, exclude_features, momentum_universe, no_walk_forward):
     """Train a model on the labeled dataset.
 
     \b
@@ -517,9 +530,29 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
         MODEL_DIR.mkdir(parents=True, exist_ok=True)
         output = str(MODEL_DIR / f"{name}.pkl")
 
-    # Load data
-    (X_tr, y_tr, d_tr, df_tr), (X_va, y_va, d_va, df_va), (X_te, y_te, d_te, df_te), feat_cols = \
-        load_splits(dataset, target=target)
+    use_walk_forward = (not no_walk_forward) and (model_type == "lgbm")
+
+    # Load data — walk-forward uses date-based final splits; static uses split column
+    if use_walk_forward:
+        df_full, feat_cols, split_dates = load_splits_walk_forward(dataset, target=target)
+        console.print(
+            f"\n[bold]Walk-forward mode:[/bold] "
+            f"final train → {split_dates['train_end'].date()}  "
+            f"val {split_dates['val_start'].date()} → {split_dates['train_end'].date()}  "
+            f"test {split_dates['test_start'].date()} → {split_dates['test_end'].date()}  "
+            f"({split_dates['n_folds']} folds)"
+        )
+        df_tr_final = df_full[df_full["date"] <  split_dates["val_start"]]
+        df_va_final = df_full[(df_full["date"] >= split_dates["val_start"]) &
+                              (df_full["date"] <  split_dates["train_end"])]
+        df_te_final = df_full[df_full["test_fold"] == split_dates["n_folds"]]
+        X_tr, y_tr, d_tr, df_tr = _xy(df_tr_final, feat_cols, target)
+        X_va, y_va, d_va, df_va = _xy(df_va_final, feat_cols, target)
+        X_te, y_te, d_te, df_te = _xy(df_te_final, feat_cols, target)
+    else:
+        (X_tr, y_tr, d_tr, df_tr), (X_va, y_va, d_va, df_va), (X_te, y_te, d_te, df_te), feat_cols = \
+            load_splits(dataset, target=target)
+        df_full = None
 
     # Apply feature exclusions (ablation experiments)
     if exclude_features:
@@ -585,12 +618,47 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
 
     # --- LightGBM ---
     if model_type == "lgbm":
-        console.print("\n[bold cyan]--- LightGBM ---[/bold cyan]")
+        console.print("\n[bold cyan]--- LightGBM: Hyperparameter Tuning ---[/bold cyan]")
         best_params = tune_lgbm(X_tr, y_tr, d_tr, X_va, y_va, n_trials=n_trials, finetune_model=finetune_model)
+
+        # Persist best params so wfcv / future runs can reuse them
+        params_path = MODEL_DIR / f"{name}_params.json"
+        with open(params_path, "w") as f:
+            json.dump(best_params, f, indent=2)
+        console.print(f"Best params saved → {params_path}")
+
+        # --- Walk-forward CV across all historical folds ---
+        if use_walk_forward:
+            console.print(f"\n[bold cyan]--- Walk-Forward CV ({split_dates['n_folds']} folds) ---[/bold cyan]")
+            wf_results = walk_forward_cv(df_full, feat_cols, best_params, target=target)
+
+            if len(wf_results) > 0:
+                mean_ic   = wf_results["ic"].mean()
+                std_ic    = wf_results["ic"].std()
+                pos_folds = (wf_results["ic"] > 0).sum()
+                mean_hr   = wf_results["hit_rate"].mean()
+
+                wf_table = Table(title="Walk-Forward CV Summary", show_header=True)
+                wf_table.add_column("Metric"); wf_table.add_column("Value", style="bold")
+                wf_table.add_row("Folds completed",  str(len(wf_results)))
+                wf_table.add_row("Mean IC",          f"{mean_ic:+.4f}")
+                wf_table.add_row("Std IC",           f"{std_ic:.4f}")
+                wf_table.add_row("IC > 0",           f"{pos_folds}/{len(wf_results)} ({pos_folds/len(wf_results):.0%})")
+                wf_table.add_row("Mean Hit Rate",    f"{mean_hr:.3f}")
+                wf_table.add_row("Date range",       f"{wf_results['test_start'].min()} → {wf_results['test_end'].max()}")
+                console.print(wf_table)
+
+                wf_csv = Path("results") / f"{name}_wfcv.csv"
+                wf_csv.parent.mkdir(parents=True, exist_ok=True)
+                wf_results.to_csv(wf_csv, index=False)
+                console.print(f"Per-fold results → {wf_csv}")
+
+        # --- Final model on largest expanding window ---
+        console.print("\n[bold cyan]--- Final Model (expanding window) ---[/bold cyan]")
         final_model, lgbm_results = train_lgbm(X_tr, y_tr, X_va, y_va, X_te, y_te, best_params, finetune_model)
 
         # Summary table
-        table = Table(title="LightGBM Results", show_header=True)
+        table = Table(title="Final Model Results", show_header=True)
         table.add_column("Split")
         table.add_column("Rank IC", justify="right")
         table.add_column("Hit Rate", justify="right")
@@ -600,9 +668,9 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
         console.print(table)
 
         if lgbm_results["test_ic"] < 0.03:
-            console.print("[bold yellow]WARNING: test IC < 0.03 — fix dataset before Phase 3.[/bold yellow]")
+            console.print("[bold yellow]WARNING: test IC < 0.03 — check dataset and features.[/bold yellow]")
         elif lgbm_results["test_ic"] >= 0.05:
-            console.print("[bold green]IC >= 0.05 — skip Phase 3 (LSTM), go straight to Phase 4 (Set Transformer).[/bold green]")
+            console.print("[bold green]IC >= 0.05 — good signal.[/bold green]")
 
         # SHAP top-15 summary
         try:
@@ -681,7 +749,17 @@ def wfcv(model_id, dataset, target, embargo, output):
     console.print(f"Target  : {target}")
     console.print(f"Embargo : {embargo} days\n")
 
-    results_df = walk_forward_cv(dataset, model_id, target=target, embargo_days=embargo)
+    df, feat_cols, _ = load_splits_walk_forward(dataset, target=target, embargo_days=embargo)
+    params_path = MODEL_DIR / f"{model_id}_params.json"
+    if params_path.exists():
+        with open(params_path) as f:
+            best_params = json.load(f)
+        console.print(f"Loaded params from {params_path}")
+    else:
+        console.print(f"[yellow]No params file at {params_path} — using defaults[/yellow]")
+        best_params = {}
+
+    results_df = walk_forward_cv(df, feat_cols, best_params, target=target, embargo_days=embargo)
 
     if len(results_df) == 0:
         console.print("[red]No folds completed — check dataset has test_fold column.[/red]")
