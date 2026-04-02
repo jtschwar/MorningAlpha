@@ -17,73 +17,7 @@
       "id": "st_sector_relative_v1",
       "type": "set_transformer",
       "checkpoint": "results/set_transformer/st_sector_relative_v1_fold0.pt",
-      "description": "Set Transformer — sector-relative rank target, cross-stock attention within sectors, d_model=128, blocks=3, test IC 0.141 (monthly mean 0.146). Disabled pending MPS warmup fix.",
-      "status": "retired"
-    },
-    {
-      "id": "lgbm_breakout_v4",
-      "type": "lgbm",
-      "description": "LGBM — raw return rank target, 10y universal weekly dataset, IC 0.180. Retired: superseded by v5.",
-      "status": "retired"
-    },
-    {
-      "id": "lgbm_composite_v5",
-      "type": "lgbm",
-      "description": "LGBM — composite target, 10y universal weekly dataset, IC 0.173. Retired: superseded by v6.",
-      "status": "retired"
-    },
-    {
-      "id": "lgbm_composite_v4",
-      "type": "lgbm",
-      "description": "LGBM — composite target, old staggered dataset, IC 0.195. Retired: old dataset.",
-      "status": "retired"
-    },
-    {
-      "id": "lgbm_composite_v2",
-      "type": "lgbm",
-      "description": "LGBM — composite target, VIX/WML, IC 0.200. Retired: old dataset.",
-      "status": "retired"
-    },
-    {
-      "id": "lgbm_composite_v3",
-      "type": "lgbm",
-      "description": "LGBM — composite target with short_pct_float, IC 0.181. Retired: superseded by v4.",
-      "status": "retired"
-    },
-    {
-      "id": "lgbm_breakout_v2",
-      "type": "lgbm",
-      "description": "LGBM — raw return rank target, IC 0.187. Retired: old dataset.",
-      "status": "retired"
-    },
-    {
-      "id": "lgbm_breakout_v3",
-      "type": "lgbm",
-      "description": "LGBM — test IC 0.142. Retired: superseded by v4.",
-      "status": "retired"
-    },
-    {
-      "id": "lgbm_breakout_63d",
-      "type": "lgbm",
-      "description": "LGBM — market excess rank target, IC 0.136. Retired.",
-      "status": "retired"
-    },
-    {
-      "id": "lgbm_composite_63d",
-      "type": "lgbm",
-      "description": "LGBM — composite target, no VIX/WML, IC 0.187. Retired.",
-      "status": "retired"
-    },
-    {
-      "id": "lgbm_sector_relative_v2",
-      "type": "lgbm",
-      "description": "LGBM — sector-relative rank target, IC 0.164. Retired: L/S Sharpe -0.02.",
-      "status": "retired"
-    },
-    {
-      "id": "lgbm_sector_relative_63d",
-      "type": "lgbm",
-      "description": "LGBM — sector-relative rank, no VIX/WML, IC 0.167. Retired.",
+      "description": "Set Transformer — sector-relative rank target, cross-stock attention within sectors, d_model=128, blocks=3, test IC 0.141. Disabled pending MPS warmup fix.",
       "status": "retired"
     }
   ]
