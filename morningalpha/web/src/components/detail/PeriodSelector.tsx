@@ -6,11 +6,12 @@ export type DetailPeriod = (typeof PERIODS)[number]
 interface Props {
   value: DetailPeriod
   onChange: (p: DetailPeriod) => void
+  className?: string
 }
 
-export default function PeriodSelector({ value, onChange }: Props) {
+export default function PeriodSelector({ value, onChange, className }: Props) {
   return (
-    <div className={styles.group}>
+    <div className={`${styles.group}${className ? ` ${className}` : ''}`}>
       <span className={styles.label}>Period</span>
       {PERIODS.map(p => (
         <button

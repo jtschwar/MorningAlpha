@@ -13,6 +13,7 @@ import type { DetailPeriod } from '../../components/detail/PeriodSelector'
 import PriceChart from '../../components/detail/PriceChart'
 import RsiChart from '../../components/detail/RsiChart'
 import VolumeChart from '../../components/detail/VolumeChart'
+import MacdChart from '../../components/detail/MacdChart'
 import HelpDrawer from '../../components/common/HelpDrawer'
 import styles from './StockDetail.module.css'
 
@@ -33,7 +34,7 @@ export default function StockDetail() {
   const { ticker } = useParams<{ ticker: string }>()
   const { state } = useStock()
   const [period, setPeriod] = useState<DetailPeriod>('3M')
-  const [expandedChart, setExpandedChart] = useState(false)
+  const [expandedChart, setExpandedChart] = useState(true)
 
   // Find the stock in any loaded window
   const stock =
@@ -73,7 +74,17 @@ export default function StockDetail() {
           section="overview"
         />
 
-        <PeriodSelector value={period} onChange={setPeriod} />
+        <div className={styles.periodRow}>
+          <PeriodSelector value={period} onChange={setPeriod} className={styles.periodSelectorInRow} />
+          {data && !loading && (
+            <button
+              className={styles.toggleBtn}
+              onClick={() => setExpandedChart(v => !v)}
+            >
+              {expandedChart ? 'Hide Full Technicals' : 'Show Full Technicals'}
+            </button>
+          )}
+        </div>
 
         {loading && (
           <div className={styles.status}>Loading {ticker} ({period})&hellip;</div>
@@ -87,21 +98,10 @@ export default function StockDetail() {
 
         {data && !loading && (
           <>
-            <div className={styles.chartToggle}>
-              <button
-                className={styles.toggleBtn}
-                onClick={() => setExpandedChart(v => !v)}
-              >
-                {expandedChart ? 'Hide Full Technicals' : 'Show Full Technicals'}
-              </button>
-            </div>
             <PriceChart data={data} ticker={ticker ?? ''} expanded={expandedChart} />
-            {!expandedChart && (
-              <>
-                <RsiChart data={data} />
-                <VolumeChart data={data} />
-              </>
-            )}
+            <VolumeChart data={data} />
+            <RsiChart data={data} />
+            {expandedChart && <MacdChart data={data} />}
           </>
         )}
 
