@@ -77,10 +77,10 @@ export default function TopBar({ showHamburger, onToggleSidebar, sidebarOpen }: 
             Screener
           </button>
           <button
-            className={`${styles.navBtn} ${location.pathname === '/backtest' ? styles.navActive : ''}`}
-            onClick={() => navigate('/backtest')}
+            className={`${styles.navBtn} ${location.pathname === '/portfolio' ? styles.navActive : ''}`}
+            onClick={() => navigate('/portfolio')}
           >
-            Backtest
+            Portfolio
           </button>
           <button
             className={`${styles.navBtn} ${location.pathname === '/forecast' ? styles.navActive : ''}`}
@@ -89,10 +89,10 @@ export default function TopBar({ showHamburger, onToggleSidebar, sidebarOpen }: 
             Forecast
           </button>
           <button
-            className={`${styles.navBtn} ${location.pathname === '/portfolio' ? styles.navActive : ''}`}
-            onClick={() => navigate('/portfolio')}
+            className={`${styles.navBtn} ${location.pathname === '/backtest' ? styles.navActive : ''}`}
+            onClick={() => navigate('/backtest')}
           >
-            Portfolio
+            Backtest
           </button>
         </nav>
         <button className={styles.themeBtn} onClick={toggle} title="Toggle light/dark mode">

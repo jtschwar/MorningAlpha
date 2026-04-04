@@ -1,10 +1,11 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { Holding } from '../../lib/portfolioStorage'
 import type { TickerEntry } from '../../hooks/useTickerIndex'
 import styles from './HoldingsTable.module.css'
 
 type TabId = 'holdings' | 'signals'
-type SortKey = 'ticker' | 'shares' | 'avgCost' | 'mlScore' | 'investmentScore'
+type SortKey = 'ticker' | 'sector' | 'breakout' | 'mlScore' | 'investmentScore'
 
 interface Props {
   holdings: Holding[]
@@ -31,6 +32,7 @@ function scoreClass(v: number | null): string {
 }
 
 export default function HoldingsTable({ holdings, tickerIndex, onDelete }: Props) {
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<TabId>('holdings')
   const [sortKey, setSortKey] = useState<SortKey>('ticker')
   const [sortAsc, setSortAsc] = useState(true)
@@ -44,8 +46,14 @@ export default function HoldingsTable({ holdings, tickerIndex, onDelete }: Props
     let va: number | string = 0
     let vb: number | string = 0
     if (sortKey === 'ticker') { va = a.ticker; vb = b.ticker }
-    else if (sortKey === 'shares') { va = a.shares; vb = b.shares }
-    else if (sortKey === 'avgCost') { va = a.avgCost; vb = b.avgCost }
+    else if (sortKey === 'sector') {
+      va = getEntry(a.ticker, tickerIndex)?.sector ?? ''
+      vb = getEntry(b.ticker, tickerIndex)?.sector ?? ''
+    }
+    else if (sortKey === 'breakout') {
+      va = getEntry(a.ticker, tickerIndex)?.mlScore_breakout ?? -1
+      vb = getEntry(b.ticker, tickerIndex)?.mlScore_breakout ?? -1
+    }
     else if (sortKey === 'mlScore') {
       va = getEntry(a.ticker, tickerIndex)?.mlScore ?? -1
       vb = getEntry(b.ticker, tickerIndex)?.mlScore ?? -1
@@ -102,8 +110,8 @@ export default function HoldingsTable({ holdings, tickerIndex, onDelete }: Props
             <thead>
               <tr>
                 <th {...thProps('ticker', 'Ticker')} style={{ textAlign: 'left' }} />
-                <th {...thProps('shares', 'Shares')} />
-                <th {...thProps('avgCost', 'Avg Cost')} />
+                <th {...thProps('sector', 'Sector')} style={{ textAlign: 'left' }} />
+                <th {...thProps('breakout', 'Breakout')} />
                 <th {...thProps('investmentScore', 'Score')} />
                 <th {...thProps('mlScore', 'ML Score')} />
                 <th>Signal</th>
@@ -118,11 +126,20 @@ export default function HoldingsTable({ holdings, tickerIndex, onDelete }: Props
                 return (
                   <tr key={h.id}>
                     <td>
-                      <span className={styles.ticker}>{h.ticker}</span>
+                      <span
+                        className={`${styles.ticker} ${styles.tickerLink}`}
+                        onClick={() => navigate(`/stock/${h.ticker}`)}
+                        title={`View ${h.ticker} detail`}
+                      >
+                        {h.ticker}
+                      </span>
                       {entry?.name && <span className={styles.name}>{entry.name}</span>}
                     </td>
-                    <td>{h.shares.toLocaleString()}</td>
-                    <td>{h.avgCost > 0 ? `$${h.avgCost.toFixed(2)}` : '—'}</td>
+                    <td className={styles.sector}>{entry?.sector ?? '—'}</td>
+                    <td className={scoreClass(entry?.mlScore_breakout ?? null)}>
+                      {entry?.mlScore_breakout !== null && entry?.mlScore_breakout !== undefined
+                        ? Math.round(entry.mlScore_breakout) : '—'}
+                    </td>
                     <td className={scoreClass(entry?.investmentScore ?? null)}>
                       {entry?.investmentScore !== null && entry?.investmentScore !== undefined
                         ? entry.investmentScore.toFixed(1) : '—'}
@@ -169,7 +186,13 @@ export default function HoldingsTable({ holdings, tickerIndex, onDelete }: Props
                 return (
                   <tr key={h.id}>
                     <td>
-                      <span className={styles.ticker}>{h.ticker}</span>
+                      <span
+                        className={`${styles.ticker} ${styles.tickerLink}`}
+                        onClick={() => navigate(`/stock/${h.ticker}`)}
+                        title={`View ${h.ticker} detail`}
+                      >
+                        {h.ticker}
+                      </span>
                     </td>
                     <td className={scoreClass(entry?.mlScore ?? null)}>
                       {entry?.mlScore !== null && entry?.mlScore !== undefined ? Math.round(entry.mlScore) : '—'}

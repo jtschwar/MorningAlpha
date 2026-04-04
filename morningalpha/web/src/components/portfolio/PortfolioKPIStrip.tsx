@@ -21,17 +21,14 @@ function getEntry(ticker: string, index: TickerEntry[]): TickerEntry | undefined
 export default function PortfolioKPIStrip({ holdings, tickerIndex }: Props) {
   const holdingCount = holdings.length
 
-  // Weighted average mlScore by shares
-  let totalShares = 0
-  let weightedScore = 0
-  holdings.forEach(h => {
+  // Simple average mlScore across holdings
+  const scoredHoldings = holdings.filter(h => {
     const entry = getEntry(h.ticker, tickerIndex)
-    if (entry?.mlScore !== null && entry?.mlScore !== undefined) {
-      weightedScore += (entry.mlScore ?? 0) * h.shares
-      totalShares += h.shares
-    }
+    return entry?.mlScore !== null && entry?.mlScore !== undefined
   })
-  const mlHealth = totalShares > 0 ? weightedScore / totalShares : null
+  const mlHealth = scoredHoldings.length > 0
+    ? scoredHoldings.reduce((sum, h) => sum + (getEntry(h.ticker, tickerIndex)?.mlScore ?? 0), 0) / scoredHoldings.length
+    : null
 
   // Top signal
   interface TopEntry { ticker: string; score: number }
@@ -67,7 +64,7 @@ export default function PortfolioKPIStrip({ holdings, tickerIndex }: Props) {
         <span className={`${styles.value} ${scoreClass(mlHealth)}`}>
           {mlHealth !== null ? Math.round(mlHealth) : '—'}
         </span>
-        <span className={`${styles.sub} ${styles.muted}`}>wt. avg</span>
+        <span className={`${styles.sub} ${styles.muted}`}>avg score</span>
       </div>
 
       <div className={styles.card}>

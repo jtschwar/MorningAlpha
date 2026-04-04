@@ -1,0 +1,102 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+  margin-bottom: 4px;
+}
+
+.tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 14px;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+  user-select: none;
+}
+
+.tab:hover {
+  color: var(--text-secondary);
+}
+
+.tabActive {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent-blue);
+  cursor: default;
+}
+
+.tabName {
+  line-height: 1;
+}
+
+.deleteTab {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 0 2px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.tab:hover .deleteTab,
+.tabActive .deleteTab {
+  opacity: 1;
+}
+
+.deleteTab:hover {
+  color: var(--color-neg);
+}
+
+.editInput {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--accent-blue);
+  color: var(--text-primary);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8rem;
+  outline: none;
+  padding: 0 2px;
+  width: 120px;
+}
+
+.newBtn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+
+.newBtn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}

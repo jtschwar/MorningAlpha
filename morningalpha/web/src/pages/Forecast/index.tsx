@@ -139,17 +139,6 @@ function ForecastInner() {
             and KPI strip to understand each ticker's score tier and expected win rate at your
             chosen horizon.
           </p>
-          <div className={styles.introFeatures}>
-            <span className={styles.feat}>Fan chart · percentile bands</span>
-            <span className={styles.featDot}>·</span>
-            <span className={styles.feat}>3 ML models · toggle &amp; compare</span>
-            <span className={styles.featDot}>·</span>
-            <span className={styles.feat}>1W / 2W / 1M / 3M horizons</span>
-            <span className={styles.featDot}>·</span>
-            <span className={styles.feat}>Decile win-rate context</span>
-            <span className={styles.featDot}>·</span>
-            <span className={styles.feat}>Up to 5 tickers</span>
-          </div>
         </div>
 
         {/* Search + chips row */}

@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import AppShell from '../../components/layout/AppShell'
+import PortfolioTabs from '../../components/portfolio/PortfolioTabs'
 import PortfolioKPIStrip from '../../components/portfolio/PortfolioKPIStrip'
 import AddHoldingRow from '../../components/portfolio/AddHoldingRow'
 import HoldingsTable from '../../components/portfolio/HoldingsTable'
@@ -62,6 +63,37 @@ export default function PortfolioPage() {
     }))
   }
 
+  function handleCreatePortfolio(name: string) {
+    const id = crypto.randomUUID()
+    updateStore(s => ({
+      ...s,
+      portfolios: [...s.portfolios, { id, name, holdings: [], createdAt: new Date().toISOString() }],
+      activePortfolioId: id,
+    }))
+  }
+
+  function handleRenamePortfolio(id: string, name: string) {
+    updateStore(s => ({
+      ...s,
+      portfolios: s.portfolios.map(p => p.id === id ? { ...p, name } : p),
+    }))
+  }
+
+  function handleDeletePortfolio(id: string) {
+    updateStore(s => {
+      const remaining = s.portfolios.filter(p => p.id !== id)
+      return {
+        ...s,
+        portfolios: remaining,
+        activePortfolioId: s.activePortfolioId === id ? (remaining[0]?.id ?? null) : s.activePortfolioId,
+      }
+    })
+  }
+
+  function handleSwitchPortfolio(id: string) {
+    updateStore(s => ({ ...s, activePortfolioId: id }))
+  }
+
   function handleExportJSON() {
     const json = exportAsJSON(store)
     downloadFile(json, 'morningalpha_portfolio.json', 'application/json')
@@ -80,10 +112,10 @@ export default function PortfolioPage() {
         <div className={styles.pageIntro}>
           <div className={styles.introTop}>
             <p className={styles.introDesc}>
-              Track holdings and monitor ML scores across your portfolio. Add positions by ticker,
-              shares, and optional cost basis — scores update automatically from the latest scoring
-              run. Use sector allocation and score distribution to spot concentration risk and
-              identify where the models see the strongest setups.
+              Track holdings and monitor ML scores across your portfolio. Add positions by ticker
+              — scores update automatically from the latest scoring run. Use sector allocation and
+              score distribution to spot concentration risk and identify where the models see the
+              strongest setups.
             </p>
             <div className={styles.exportGroup}>
               <button className={styles.exportBtn} onClick={handleExportJSON}>
@@ -94,18 +126,17 @@ export default function PortfolioPage() {
               </button>
             </div>
           </div>
-          <div className={styles.introFeatures}>
-            <span className={styles.feat}>Holdings tracker · cost basis</span>
-            <span className={styles.featDot}>·</span>
-            <span className={styles.feat}>ML scores per position</span>
-            <span className={styles.featDot}>·</span>
-            <span className={styles.feat}>Sector allocation</span>
-            <span className={styles.featDot}>·</span>
-            <span className={styles.feat}>Score distribution</span>
-            <span className={styles.featDot}>·</span>
-            <span className={styles.feat}>Export JSON / CSV</span>
-          </div>
         </div>
+
+        {/* List switcher */}
+        <PortfolioTabs
+          portfolios={store.portfolios}
+          activeId={store.activePortfolioId}
+          onSwitch={handleSwitchPortfolio}
+          onCreate={handleCreatePortfolio}
+          onRename={handleRenamePortfolio}
+          onDelete={handleDeletePortfolio}
+        />
 
         {/* KPI strip */}
         <PortfolioKPIStrip holdings={holdings} tickerIndex={tickerIndex} />
@@ -114,7 +145,6 @@ export default function PortfolioPage() {
         <div className={styles.splitRow}>
           <div className={styles.splitLeft}>
             <AddHoldingRow
-              tickerIndex={tickerIndex}
               onAdd={handleAddHolding}
             />
             <HoldingsTable

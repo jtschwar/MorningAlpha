@@ -97,10 +97,32 @@
   font-weight: 600;
 }
 
+.tickerLink {
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 0.15s;
+}
+
+.tickerLink:hover {
+  text-decoration-color: var(--accent-blue);
+}
+
 .name {
   color: var(--text-muted);
   font-size: 0.75rem;
   display: block;
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sector {
+  text-align: left;
+  color: var(--text-muted);
+  font-size: 0.78rem;
   max-width: 140px;
   white-space: nowrap;
   overflow: hidden;

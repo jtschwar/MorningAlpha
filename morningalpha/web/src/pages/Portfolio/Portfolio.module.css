@@ -11,6 +11,7 @@
   padding-bottom: 4px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 2px;
+  width: 100%;
 }
 
 .introTop {
@@ -19,6 +20,7 @@
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+  width: 100%;
 }
 
 .introDesc {
@@ -28,6 +30,7 @@
   color: var(--text-secondary);
   max-width: 820px;
   margin: 0;
+  flex: 1;
 }
 
 .introFeatures {

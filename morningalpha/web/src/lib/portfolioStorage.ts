@@ -1,8 +1,6 @@
 export interface Holding {
   id: string
   ticker: string
-  shares: number
-  avgCost: number
   addedAt: string
 }
 
@@ -67,9 +65,9 @@ export function exportAsJSON(store: PortfolioStore): string {
 }
 
 export function exportAsCSV(portfolio: Portfolio): string {
-  const header = 'ticker,shares,avgCost,addedAt'
+  const header = 'ticker,addedAt'
   const rows = portfolio.holdings.map(h =>
-    `${h.ticker},${h.shares},${h.avgCost},${h.addedAt}`
+    `${h.ticker},${h.addedAt}`
   )
   return [header, ...rows].join('\n')
 }
