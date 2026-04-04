@@ -44,9 +44,8 @@ jobs:
           git add data/latest/ticker_index.json \
                   data/factors/model_weights.json \
                   data/factors/predictions_ledger.parquet
-          git add --ignore-missing \
-                  data/factors/live_ic_*.json \
-                  data/factors/calibrator_*.pkl
+          git add data/factors/live_ic_*.json 2>/dev/null || true
+          git add data/factors/calibrator_*.pkl 2>/dev/null || true
           git diff --cached --quiet && echo "No changes" && exit 0
           git commit -m "chore(ml): weekly score update $(date -u +%Y-%m-%d)"
           git pull --rebase origin main
