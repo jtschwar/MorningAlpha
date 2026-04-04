@@ -6,6 +6,7 @@ from morningalpha.ml.train import train as ml_train, wfcv as ml_wfcv
 from morningalpha.fundamentals import fundamentals_cmd as ml_fundamentals
 from morningalpha.ml.backtest import backtest as ml_backtest
 from morningalpha.ml.score import score as ml_score
+from morningalpha.ml.backfill import backfill as ml_backfill
 
 
 @click.group(context_settings=cli_context)
@@ -20,3 +21,4 @@ ml.add_command(ml_wfcv)
 ml.add_command(ml_fundamentals)
 ml.add_command(ml_backtest)
 ml.add_command(ml_score)
+ml.add_command(ml_backfill)

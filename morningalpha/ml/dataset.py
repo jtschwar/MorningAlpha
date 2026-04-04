@@ -945,7 +945,11 @@ def _get_snapshot_dates(
     return valid_idx.tolist()
 
 
-def _build_universal_date_grid(lookback_days: int, freq: str) -> List[pd.Timestamp]:
+def _build_universal_date_grid(
+    lookback_days: int,
+    freq: str,
+    start_from: Optional[pd.Timestamp] = None,
+) -> List[pd.Timestamp]:
     """Return a fixed calendar of snapshot dates shared across all tickers.
 
     All tickers are evaluated on the same dates, so (sector, date) sets contain
@@ -955,12 +959,18 @@ def _build_universal_date_grid(lookback_days: int, freq: str) -> List[pd.Timesta
       'weekly'   — every Friday  (~52 dates/year)
       'biweekly' — every other Friday (~26 dates/year)
       'monthly'  — last business day of each month (~12 dates/year)
+
+    start_from: if provided, only return dates strictly after this timestamp.
+                Used by --extend to build only the new portion of the grid.
     """
     freq_map = {"weekly": "W-FRI", "biweekly": "2W-FRI", "monthly": "BME"}
     pandas_freq = freq_map.get(freq, "W-FRI")
     end = pd.Timestamp.now().normalize()
     start = end - pd.Timedelta(days=lookback_days)
-    return pd.date_range(start=start, end=end, freq=pandas_freq).tolist()
+    dates = pd.date_range(start=start, end=end, freq=pandas_freq).tolist()
+    if start_from is not None:
+        dates = [d for d in dates if d > start_from]
+    return dates
 
 
 def _snap_universal_dates_to_ohlcv(
@@ -1306,6 +1316,7 @@ def _apply_preprocessing(df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
                    "Set to --cpus-per-task on HPC. Each worker is independent (no API calls).")
 @click.option("--refresh-only", "refresh_only", is_flag=True, default=False, help="Update raw OHLCV cache only; skip dataset build.")
 @click.option("--from-cache", "from_cache", is_flag=True, default=False, help="Build dataset from existing cache (no network).")
+@click.option("--extend", "extend", is_flag=True, default=False, help="Incrementally extend an existing dataset from its last snapshot date to today.")
 @click.option(
     "--fundamentals-csv",
     "fundamentals_csv",
@@ -1334,7 +1345,7 @@ def _apply_preprocessing(df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
     show_default=True,
     help="Minimum months of training data before the first walk-forward test fold.",
 )
-def dataset(lookback, output, tickers_from, horizons, snapshot_freq, no_overlap, n_workers, refresh_only, from_cache, fundamentals_csv, min_market_cap, fold_step, min_train):
+def dataset(lookback, output, tickers_from, horizons, snapshot_freq, no_overlap, n_workers, refresh_only, from_cache, extend, fundamentals_csv, min_market_cap, fold_step, min_train):
     """Build a point-in-time labeled dataset for ML training.
 
     \b
@@ -1344,8 +1355,30 @@ def dataset(lookback, output, tickers_from, horizons, snapshot_freq, no_overlap,
       alpha ml dataset --tickers-from data/latest/stocks_3m.csv --snapshot-freq staggered
       alpha ml dataset --refresh-only
       alpha ml dataset --from-cache --output data/training/dataset.parquet
+      alpha ml dataset --extend
     """
     horizons_list = sorted(int(h.strip()) for h in horizons.split(","))
+
+    # ── Extend mode: determine the start_from date ────────────────────────────
+    extend_from: Optional[pd.Timestamp] = None
+    existing_df: Optional[pd.DataFrame] = None
+    output_path = Path(output)
+
+    if extend:
+        if not output_path.exists():
+            console.print(f"[yellow]--extend: no existing dataset at {output_path} — building from scratch.[/yellow]")
+        else:
+            existing_df = pd.read_parquet(output_path)
+            existing_df["date"] = pd.to_datetime(existing_df["date"])
+            extend_from = existing_df["date"].max()
+            console.print(
+                f"[bold]--extend[/bold]: existing dataset ends at [cyan]{extend_from.date()}[/cyan]. "
+                f"Building new snapshots after that date."
+            )
+            # Load saved scaler params for winsorization of new rows
+            scaler_path = Path("data/training/scaler_params.json")
+            if not scaler_path.exists():
+                console.print("[yellow]scaler_params.json not found — new rows will use fresh winsorization.[/yellow]")
 
     # Parse min_market_cap: accept "1b", "500m", or raw integer string
     def _parse_market_cap(val: str) -> float:
@@ -1359,7 +1392,6 @@ def dataset(lookback, output, tickers_from, horizons, snapshot_freq, no_overlap,
     min_cap = _parse_market_cap(min_market_cap)
     max_horizon = max(horizons_list)
     lookback_days = _parse_lookback(lookback)
-    output_path = Path(output)
 
     TRAINING_DIR.mkdir(parents=True, exist_ok=True)
     RAW_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -1441,11 +1473,15 @@ def dataset(lookback, output, tickers_from, horizons, snapshot_freq, no_overlap,
 
     # Pre-build universal date grid once (shared across all tickers)
     if snapshot_freq != "staggered":
-        universal_dates = _build_universal_date_grid(lookback_days, snapshot_freq)
+        universal_dates = _build_universal_date_grid(lookback_days, snapshot_freq, start_from=extend_from)
         console.print(
             f"Universal snapshot grid: [bold]{len(universal_dates)}[/bold] dates "
             f"({snapshot_freq}, {lookback_days // 365}y lookback)"
+            + (f", extending from {extend_from.date()}" if extend_from else "")
         )
+        if extend and not universal_dates:
+            console.print("[green]Dataset is already up to date — no new snapshot dates.[/green]")
+            return
     else:
         universal_dates = None
 
@@ -1693,6 +1729,30 @@ def dataset(lookback, output, tickers_from, horizons, snapshot_freq, no_overlap,
     with open(scaler_path, "w") as f:
         json.dump(scaler_params, f, indent=2)
     console.print(f"Scaler params saved to {scaler_path}")
+
+    # --- Merge with existing dataset if extending ---
+    if extend and existing_df is not None:
+        # Apply saved winsorization bounds to new rows (not re-fit from training)
+        scaler_path = Path("data/training/scaler_params.json")
+        if scaler_path.exists():
+            with open(scaler_path) as f:
+                saved_params = json.load(f)
+            from morningalpha.ml.features import FLOAT_FEATURES as _FF, MARKET_CONTEXT_COLUMNS as _MCC
+            for col in [c for c in _FF + _MCC if c in df.columns and c in saved_params]:
+                lo = saved_params[col]["lower"]
+                hi = saved_params[col]["upper"]
+                df[col] = df[col].clip(lo, hi)
+            console.print("[dim]Winsorization applied using saved scaler_params.json[/dim]")
+
+        # Align columns — new rows may lack cols added in later dataset versions
+        for col in existing_df.columns:
+            if col not in df.columns:
+                df[col] = np.nan
+        df = df[existing_df.columns]
+
+        df = pd.concat([existing_df, df], ignore_index=True)
+        df = df.sort_values(["date", "ticker"]).reset_index(drop=True)
+        console.print(f"[dim]Merged: {len(existing_df):,} existing + {len(df) - len(existing_df):,} new rows[/dim]")
 
     # --- Save parquet ---
     df.to_parquet(output_path, index=False)
