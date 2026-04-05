@@ -1,14 +1,28 @@
-"""alpha ml train-lstm — Train the StockPriceLSTM on the unified daily dataset.
+"""alpha ml train lstm — Train the StockPriceLSTM on the unified daily dataset.
 
 Usage
 -----
-    alpha ml train-lstm
-    alpha ml train-lstm --epochs 100 --hidden 512
-    alpha ml train-lstm --dataset data/training/dataset.parquet --output models/lstm_price_v1.pt
+    alpha ml train lstm
+    alpha ml train lstm --epochs 100 --hidden 512
+    alpha ml train lstm --target-mode clip --name lstm_clip_v1
+    alpha ml train lstm --target-mode rank --name lstm_rank_v1
+    alpha ml train lstm --spike-threshold 0.5 --name lstm_spike_cls_v1
 
-The dataset must have been built with --snapshot-freq daily (includes is_anchor,
-forward_1d, and daily rows for all tickers). LGBM-only datasets (weekly/staggered)
-still work but the LSTM will have far fewer sequence steps per ticker.
+Target modes
+------------
+    log   (default) — log1p(clip(r, -0.99, 5.0)) — preserves spike direction,
+                      compresses magnitude, upper-clipped to prevent extreme
+                      outliers (964x → capped before log)
+    clip  — raw returns clipped to ±2.0 — simple, interpretable scale
+    rank  — cross-sectional rank targets (forward_Nd_rank columns already in
+            dataset) — normalized to [-1, 1], immune to outliers; best for
+            comparing relative outperformance across stocks
+
+Spike classifier
+----------------
+    --spike-threshold 0.5  trains a binary classifier: did |forward_5d| > 0.5?
+    Uses BCE loss and reports AUC instead of rank IC. Answers whether historical
+    features contain pre-spike signal before investing in a full ensemble.
 """
 from __future__ import annotations
 
@@ -16,7 +30,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -24,13 +38,15 @@ import rich_click as click
 import torch
 import torch.nn as nn
 from scipy.stats import spearmanr
+from sklearn.metrics import roc_auc_score
+from sklearn.preprocessing import StandardScaler
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 from torch.utils.data import DataLoader, Dataset
 
 from morningalpha.ml.lstm_model import LSTM_HORIZONS, StockPriceLSTM
-from morningalpha.ml.features import FEATURE_COLUMNS
+from morningalpha.ml.features import FEATURE_COLUMNS, MARKET_CONTEXT_COLUMNS
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -45,6 +61,51 @@ DEFAULT_OUTPUT = MODEL_DIR / "lstm_price_v1.pt"
 # Horizon columns that must be present as targets
 TARGET_COLS = [f"forward_{h}d" for h in LSTM_HORIZONS]  # forward_1d … forward_63d
 
+# Rank-target columns corresponding to each LSTM horizon (already in dataset)
+RANK_TARGET_COLS = [f"forward_{h}d_rank" for h in LSTM_HORIZONS]
+
+# Columns that are NOT cross-sectionally rank-normalized in the dataset
+# (market context is constant per date; categoricals are ordinal integers).
+# These need StandardScaler normalization before feeding to the LSTM.
+COLS_TO_SCALE = MARKET_CONTEXT_COLUMNS + ["sector", "market_cap_cat"]
+
+
+# ---------------------------------------------------------------------------
+# Feature scaler
+# ---------------------------------------------------------------------------
+
+def fit_feature_scaler(
+    df_train: pd.DataFrame,
+    cols: List[str],
+) -> Tuple[StandardScaler, List[str]]:
+    """Fit a StandardScaler on train rows for columns that need it.
+
+    Skips columns missing from df_train or with zero variance (constant).
+    Returns (fitted_scaler, cols_actually_scaled).
+    """
+    present = [c for c in cols if c in df_train.columns]
+    # Drop constant columns — StandardScaler would produce NaN for std=0
+    non_constant = [c for c in present if df_train[c].std() > 0]
+    dropped = set(present) - set(non_constant)
+    if dropped:
+        logger.info("Skipping constant columns from scaler: %s", dropped)
+
+    scaler = StandardScaler()
+    scaler.fit(df_train[non_constant].fillna(0).values)
+    return scaler, non_constant
+
+
+def apply_feature_scaler(
+    df: pd.DataFrame,
+    scaler: StandardScaler,
+    cols: List[str],
+) -> pd.DataFrame:
+    """Apply a fitted scaler to a DataFrame in-place (copy returned)."""
+    df = df.copy()
+    present = [c for c in cols if c in df.columns]
+    df[present] = scaler.transform(df[present].fillna(0).values)
+    return df
+
 
 # ---------------------------------------------------------------------------
 # Dataset
@@ -55,10 +116,18 @@ class LSTMSequenceDataset(Dataset):
 
     Each sample: (x, y)
       x : float32 [lookback, n_features]  — the feature window
-      y : float32 [n_horizons]            — log-return targets at each horizon
+      y : float32 [n_horizons]            — targets at each horizon
 
-    Only uses rows where all targets are non-NaN and the ticker has enough
-    consecutive dates to fill a full lookback window.
+    Target modes
+    ------------
+    log   : log1p(clip(r, -0.99, 5.0)) — default; compresses outliers
+    clip  : raw returns clipped to ±2.0
+    rank  : forward_Nd_rank columns (pre-normalized cross-sectional ranks)
+
+    Spike mode (spike_threshold > 0)
+    ---------------------------------
+    Overrides target_mode. Binary target: 1 if |forward_5d| > threshold else 0.
+    Only one output per sample (single horizon).
     """
 
     def __init__(
@@ -68,10 +137,15 @@ class LSTMSequenceDataset(Dataset):
         lookback: int = 60,
         stride: int = 3,
         split: str = "train",
+        target_mode: str = "log",
+        spike_threshold: float = 0.0,
     ) -> None:
         self.feat_cols = feat_cols
         self.lookback = lookback
         self.n_features = len(feat_cols)
+        self.target_mode = target_mode
+        self.spike_threshold = spike_threshold
+        self.is_spike_mode = spike_threshold > 0.0
 
         split_df = df[df["split"] == split].copy()
 
@@ -81,24 +155,35 @@ class LSTMSequenceDataset(Dataset):
         n_tickers = 0
         for ticker, grp in split_df.groupby("ticker"):
             grp = grp.sort_values("date")
-
-            # Feature and target arrays for this ticker
-            X = grp[feat_cols].values.astype(np.float32)      # [T, F]
-            # forward_1d is a log return; the others are simple returns — convert all to log
-            Y_raw = grp[TARGET_COLS].values.astype(np.float32) # [T, n_horizons]
-            # forward_1d already log; forward_Xd are simple returns → log(1+r)
-            Y = Y_raw.copy()
-            Y[:, 1:] = np.log1p(np.clip(Y_raw[:, 1:], -0.99, None))
-
             n = len(grp)
             if n < lookback + 1:
                 continue
 
+            X = grp[feat_cols].values.astype(np.float32)  # [T, F]
+
+            if self.is_spike_mode:
+                # Binary: 1 if |forward_5d| > threshold else 0
+                fwd = grp["forward_5d"].values.astype(np.float32)
+                Y = (np.abs(fwd) > spike_threshold).astype(np.float32).reshape(-1, 1)
+            elif target_mode == "rank":
+                # Use pre-computed cross-sectional rank columns
+                rank_cols = [c for c in RANK_TARGET_COLS if c in grp.columns]
+                Y = grp[rank_cols].values.astype(np.float32)
+            elif target_mode == "clip":
+                Y_raw = grp[TARGET_COLS].values.astype(np.float32)
+                Y = np.clip(Y_raw, -2.0, 2.0)
+            else:  # "log" — default
+                Y_raw = grp[TARGET_COLS].values.astype(np.float32)
+                Y = Y_raw.copy()
+                # forward_1d is already a log return; Nd are simple returns → log1p
+                # Clip upper end at 5.0 before log to prevent 964x outliers (log1p(5)≈1.79)
+                Y[:, 1:] = np.log1p(np.clip(Y_raw[:, 1:], -0.99, 5.0))
+
             valid_windows = 0
             for start in range(0, n - lookback, stride):
                 end = start + lookback
-                x = X[start:end]                   # [lookback, F]
-                y = Y[end - 1]                      # label at last step of window
+                x = X[start:end]       # [lookback, F]
+                y = Y[end - 1]         # label at last step of window
 
                 if np.any(np.isnan(x)) or np.any(np.isnan(y)):
                     continue
@@ -111,8 +196,9 @@ class LSTMSequenceDataset(Dataset):
                 n_tickers += 1
 
         logger.info(
-            "LSTMSequenceDataset [%s]: %d samples from %d tickers",
-            split, len(self._xs), n_tickers,
+            "LSTMSequenceDataset [%s, mode=%s]: %d samples from %d tickers",
+            split, "spike" if self.is_spike_mode else target_mode,
+            len(self._xs), n_tickers,
         )
 
     def __len__(self) -> int:
@@ -153,8 +239,9 @@ def _evaluate(
     loader: DataLoader,
     criterion: nn.Module,
     device: torch.device,
+    is_spike_mode: bool = False,
 ) -> Tuple[float, List[float]]:
-    """Return (mean_loss, [IC per horizon])."""
+    """Return (mean_loss, [IC per horizon]) or (mean_loss, [AUC]) for spike mode."""
     model.eval()
     total_loss = 0.0
     all_preds: List[np.ndarray] = []
@@ -168,11 +255,21 @@ def _evaluate(
             all_preds.append(pred.cpu().numpy())
             all_targets.append(y.cpu().numpy())
 
-    preds = np.concatenate(all_preds)    # [N, n_horizons]
+    preds = np.concatenate(all_preds)    # [N, n_out]
     targets = np.concatenate(all_targets)
 
-    ics = [_rank_ic(preds[:, i], targets[:, i]) for i in range(len(LSTM_HORIZONS))]
-    return total_loss / len(loader.dataset), ics
+    if is_spike_mode:
+        # AUC for the single spike output
+        try:
+            probs = 1.0 / (1.0 + np.exp(-preds[:, 0]))  # sigmoid
+            auc = float(roc_auc_score(targets[:, 0].astype(int), probs))
+        except ValueError:
+            auc = float("nan")
+        metrics = [auc]
+    else:
+        metrics = [_rank_ic(preds[:, i], targets[:, i]) for i in range(preds.shape[1])]
+
+    return total_loss / len(loader.dataset), metrics
 
 
 # ---------------------------------------------------------------------------
@@ -191,6 +288,28 @@ def _evaluate(
 @click.option("--lr", default=1e-3, show_default=True)
 @click.option("--stride", default=3, show_default=True, help="Step between training windows per ticker.")
 @click.option("--workers", default=0, show_default=True, help="DataLoader num_workers.")
+@click.option(
+    "--target-mode", "target_mode",
+    default="log",
+    show_default=True,
+    type=click.Choice(["log", "clip", "rank"]),
+    help=(
+        "Target encoding: log=log1p(clip(r,-0.99,5)) [default], "
+        "clip=raw returns ±2.0, rank=cross-sectional rank [-1,1]."
+    ),
+)
+@click.option(
+    "--spike-threshold", "spike_threshold",
+    default=0.0,
+    show_default=True,
+    type=float,
+    help=(
+        "When >0, trains a binary spike classifier: target=1 if |forward_5d|>threshold. "
+        "Overrides --target-mode. Reports AUC instead of rank IC. "
+        "Example: --spike-threshold 0.5 for >50%% 5-day moves."
+    ),
+)
+@click.option("--name", default=None, help="Model name suffix for checkpoint (e.g. 'clip_v1' → lstm_clip_v1.pt).")
 def train_lstm(
     dataset_path: str,
     output: str,
@@ -203,18 +322,30 @@ def train_lstm(
     lr: float,
     stride: int,
     workers: int,
+    target_mode: str,
+    spike_threshold: float,
+    name: Optional[str],
 ) -> None:
     """Train the StockPriceLSTM on the unified daily dataset.
 
     \b
     Examples:
-      alpha ml train-lstm
-      alpha ml train-lstm --epochs 100 --hidden 512
-      alpha ml train-lstm --dataset data/training/dataset.parquet
+      alpha ml train lstm                                        # log mode (default)
+      alpha ml train lstm --target-mode clip --name clip_v1
+      alpha ml train lstm --target-mode rank --name rank_v1
+      alpha ml train lstm --spike-threshold 0.5 --name spike_cls_v1
+      alpha ml train lstm --epochs 100 --hidden 512
     """
-    device = _select_device()
+    is_spike_mode = spike_threshold > 0.0
+
+    # Resolve output path
+    if name:
+        output = str(MODEL_DIR / f"lstm_{name}.pt")
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    mode_label = f"spike(>{spike_threshold})" if is_spike_mode else target_mode
+    console.print(f"[bold cyan]LSTM training — target mode: {mode_label}[/bold cyan]")
 
     # --- Load dataset ---
     console.print(f"[bold cyan]Loading dataset: {dataset_path}[/bold cyan]")
@@ -243,20 +374,52 @@ def train_lstm(
         )
         df["forward_1d"] = df.get("forward_5d", np.nan)
 
-    # Feature columns: same as LGBM (already rank-normalised in the parquet)
+    # --- Feature columns ---
     feat_cols = [c for c in FEATURE_COLUMNS if c in df.columns]
+
+    # Drop zero-variance features — constant cols add noise and break StandardScaler
+    df_train = df[df["split"] == "train"]
+    zero_var = [c for c in feat_cols if df_train[c].std() == 0]
+    if zero_var:
+        console.print(f"  [yellow]Dropping {len(zero_var)} constant feature(s): {zero_var}[/yellow]")
+        feat_cols = [c for c in feat_cols if c not in zero_var]
+
     console.print(f"  Features: [bold]{len(feat_cols)}[/bold]")
-    console.print(f"  Targets:  {TARGET_COLS}")
+
+    # --- Feature scaling ---
+    # MARKET_CONTEXT_COLUMNS + categoricals are not rank-normalized in the dataset.
+    # Fit StandardScaler on train split, apply to all splits.
+    scale_cols = [c for c in COLS_TO_SCALE if c in feat_cols]
+    console.print(f"  Scaling {len(scale_cols)} market-context/categorical columns with StandardScaler")
+    scaler, scaled_cols = fit_feature_scaler(df_train, scale_cols)
+    df = apply_feature_scaler(df, scaler, scaled_cols)
+
+    # --- Validate rank target columns for rank mode ---
+    if not is_spike_mode and target_mode == "rank":
+        missing_rank = [c for c in RANK_TARGET_COLS if c not in df.columns]
+        if missing_rank:
+            console.print(f"[bold red]Rank target columns missing: {missing_rank}[/bold red]")
+            raise SystemExit(1)
+        console.print(f"  Targets: {RANK_TARGET_COLS}")
+    elif is_spike_mode:
+        console.print(f"  Target: binary spike — |forward_5d| > {spike_threshold}")
+    else:
+        console.print(f"  Targets: {TARGET_COLS}  (mode={target_mode})")
 
     # --- Build datasets ---
     console.print("\n[bold cyan]Building sequence datasets...[/bold cyan]")
-    train_ds = LSTMSequenceDataset(df, feat_cols, lookback=lookback, stride=stride, split="train")
-    val_ds   = LSTMSequenceDataset(df, feat_cols, lookback=lookback, stride=stride, split="val")
-    test_ds  = LSTMSequenceDataset(df, feat_cols, lookback=lookback, stride=stride, split="test")
-
-    console.print(
-        f"  train={len(train_ds):,}  val={len(val_ds):,}  test={len(test_ds):,}"
+    ds_kwargs = dict(
+        feat_cols=feat_cols,
+        lookback=lookback,
+        stride=stride,
+        target_mode=target_mode,
+        spike_threshold=spike_threshold,
     )
+    train_ds = LSTMSequenceDataset(df, split="train", **ds_kwargs)
+    val_ds   = LSTMSequenceDataset(df, split="val",   **ds_kwargs)
+    test_ds  = LSTMSequenceDataset(df, split="test",  **ds_kwargs)
+
+    console.print(f"  train={len(train_ds):,}  val={len(val_ds):,}  test={len(test_ds):,}")
 
     if len(train_ds) == 0:
         console.print("[bold red]No training samples. Check dataset splits.[/bold red]")
@@ -267,18 +430,31 @@ def train_lstm(
     test_loader  = DataLoader(test_ds,  batch_size=batch_size, shuffle=False, num_workers=workers, pin_memory=True)
 
     # --- Build model ---
+    # Spike classifier: single horizon output; otherwise all 5 horizons
+    horizon_days = [5] if is_spike_mode else LSTM_HORIZONS
     model = StockPriceLSTM(
         n_features=len(feat_cols),
         hidden_dim=hidden,
         num_layers=layers,
         dropout=dropout,
-        horizon_days=LSTM_HORIZONS,
-    ).to(device)
+        horizon_days=horizon_days,
+    ).to(_select_device())
+    device = next(model.parameters()).device
 
     n_params = sum(p.numel() for p in model.parameters())
-    console.print(f"\n[bold]StockPriceLSTM[/bold]: {n_params:,} parameters")
+    console.print(f"\n[bold]StockPriceLSTM[/bold]: {n_params:,} parameters  horizons={horizon_days}")
 
-    criterion = nn.HuberLoss(delta=0.05)
+    # Loss function
+    if is_spike_mode:
+        # BCEWithLogitsLoss handles class imbalance better with pos_weight
+        n_pos = sum(train_ds._ys[i][0] for i in range(len(train_ds)))
+        n_neg = len(train_ds) - n_pos
+        pos_weight = torch.tensor([n_neg / max(n_pos, 1)], device=device)
+        criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+        console.print(f"  Spike prevalence: {n_pos/len(train_ds)*100:.1f}%  pos_weight={pos_weight.item():.2f}")
+    else:
+        criterion = nn.HuberLoss(delta=0.05)
+
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=lr * 0.01)
 
@@ -291,6 +467,8 @@ def train_lstm(
 
     history = []
     t0 = time.time()
+
+    metric_label = "AUC" if is_spike_mode else "IC"
 
     with Progress(
         SpinnerColumn(),
@@ -316,16 +494,25 @@ def train_lstm(
                 train_loss += loss.item() * len(x)
             train_loss /= len(train_loader.dataset)
 
-            val_loss, val_ics = _evaluate(model, val_loader, criterion, device)
+            val_loss, val_metrics = _evaluate(model, val_loader, criterion, device, is_spike_mode)
             scheduler.step()
 
-            mean_val_ic = float(np.nanmean(val_ics))
-            history.append({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss, "val_ic": mean_val_ic})
+            mean_metric = float(np.nanmean(val_metrics))
+            history.append({
+                "epoch": epoch,
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+                f"val_{metric_label.lower()}": mean_metric,
+            })
 
             progress.advance(task)
             progress.update(
                 task,
-                description=f"Epoch {epoch}/{epochs}  train={train_loss:.4f}  val={val_loss:.4f}  IC={mean_val_ic:.4f}",
+                description=(
+                    f"Epoch {epoch}/{epochs}  "
+                    f"train={train_loss:.4f}  val={val_loss:.4f}  "
+                    f"{metric_label}={mean_metric:.4f}"
+                ),
             )
 
             if val_loss < best_val_loss:
@@ -344,15 +531,21 @@ def train_lstm(
     # --- Evaluate best checkpoint on test set ---
     if best_state is not None:
         model.load_state_dict(best_state)
-    model.eval()
 
-    _, test_ics = _evaluate(model, test_loader, criterion, device)
+    _, test_metrics = _evaluate(model, test_loader, criterion, device, is_spike_mode)
 
-    table = Table(title="Test IC per horizon", show_header=True)
-    table.add_column("Horizon")
-    table.add_column("IC", justify="right")
-    for h, ic in zip(LSTM_HORIZONS, test_ics):
-        table.add_row(f"{h}d", f"{ic:.4f}" if not np.isnan(ic) else "n/a")
+    if is_spike_mode:
+        table = Table(title="Test AUC — spike classifier", show_header=True)
+        table.add_column("Horizon")
+        table.add_column("AUC", justify="right")
+        table.add_row("5d spike", f"{test_metrics[0]:.4f}" if not np.isnan(test_metrics[0]) else "n/a")
+    else:
+        horizons = LSTM_HORIZONS if target_mode != "rank" else LSTM_HORIZONS
+        table = Table(title=f"Test IC per horizon (mode={target_mode})", show_header=True)
+        table.add_column("Horizon")
+        table.add_column("IC", justify="right")
+        for h, ic in zip(horizons, test_metrics):
+            table.add_row(f"{h}d", f"{ic:.4f}" if not np.isnan(ic) else "n/a")
     console.print(table)
 
     # --- Save checkpoint ---
@@ -360,11 +553,25 @@ def train_lstm(
         "model_state_dict": best_state or model.state_dict(),
         "config": model.config(),
         "feature_cols": feat_cols,
-        "horizon_days": LSTM_HORIZONS,
+        "horizon_days": horizon_days,
         "lookback": lookback,
+        "target_mode": "spike" if is_spike_mode else target_mode,
+        "spike_threshold": spike_threshold,
         "val_loss": best_val_loss,
-        "test_ics": {str(h): round(float(ic), 4) for h, ic in zip(LSTM_HORIZONS, test_ics)},
+        "test_metrics": {
+            metric_label.lower(): (
+                {str(h): round(float(m), 4) for h, m in zip(horizon_days, test_metrics)}
+                if not is_spike_mode
+                else {"5d_spike_auc": round(float(test_metrics[0]), 4)}
+            )
+        },
         "history": history,
+        # Scaler params — needed to apply same normalization at inference
+        "feature_scaler": {
+            "cols": scaled_cols,
+            "mean": scaler.mean_.tolist(),
+            "scale": scaler.scale_.tolist(),
+        },
     }
     torch.save(checkpoint, output_path)
     console.print(f"\n[bold green]Checkpoint saved → {output_path}[/bold green]")
