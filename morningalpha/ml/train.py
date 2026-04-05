@@ -100,6 +100,13 @@ def load_data(dataset_path: str, target: str) -> Tuple[pd.DataFrame, List[str]]:
     df = pd.read_parquet(dataset_path)
     console.print(f"Loaded {len(df):,} rows from {dataset_path}")
 
+    # Filter to anchor rows so LGBM sees non-overlapping snapshots regardless
+    # of whether the dataset was built at daily or weekly frequency.
+    if "is_anchor" in df.columns:
+        n_before = len(df)
+        df = df[df["is_anchor"] == True].copy()
+        console.print(f"  is_anchor filter: {len(df):,}/{n_before:,} rows ({len(df)/n_before:.1%})")
+
     feat_cols = [c for c in FEATURE_COLUMNS if c in df.columns]
     if target not in df.columns:
         raise ValueError(f"Target '{target}' not in dataset.")

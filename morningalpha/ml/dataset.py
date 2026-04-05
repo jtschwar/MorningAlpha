@@ -83,15 +83,16 @@ def _process_ticker_worker(ticker: str) -> List[dict]:
         dates = _snap_universal_dates_to_ohlcv(_W_DATES, ohlcv, _W_MAX_HORIZON)
     else:
         dates = _get_snapshot_dates(ohlcv, _W_NO_OVERLAP, PRIMARY_HORIZON, _W_MAX_HORIZON)
+    anchors = _mark_anchors(dates, _W_NO_OVERLAP, PRIMARY_HORIZON)
     ticker_rows = []
-    for t in dates:
+    for t, is_anchor in zip(dates, anchors):
         features = _compute_features_at_date(ohlcv, t, ticker_meta, _W_FUNDAMENTALS)
         if features is None:
             continue
         labels = _compute_labels(ohlcv, t, _W_HORIZONS)
         if labels is None:
             continue
-        ticker_rows.append({**features, **labels, "ticker": ticker, "date": t})
+        ticker_rows.append({**features, **labels, "ticker": ticker, "date": t, "is_anchor": is_anchor})
     return ticker_rows
 
 
@@ -945,6 +946,18 @@ def _get_snapshot_dates(
     return valid_idx.tolist()
 
 
+def _mark_anchors(dates: List[pd.Timestamp], no_overlap: bool, primary_horizon: int) -> List[bool]:
+    """Return a boolean list marking which dates are LGBM anchor rows.
+
+    When no_overlap=True (staggered mode) every row is an anchor by definition.
+    When building daily data, anchor every primary_horizon-th row so LGBM sees
+    the same non-overlapping distribution it was trained on before.
+    """
+    if no_overlap:
+        return [True] * len(dates)
+    return [i % primary_horizon == 0 for i in range(len(dates))]
+
+
 def _build_universal_date_grid(
     lookback_days: int,
     freq: str,
@@ -963,7 +976,7 @@ def _build_universal_date_grid(
     start_from: if provided, only return dates strictly after this timestamp.
                 Used by --extend to build only the new portion of the grid.
     """
-    freq_map = {"weekly": "W-FRI", "biweekly": "2W-FRI", "monthly": "BME"}
+    freq_map = {"weekly": "W-FRI", "biweekly": "2W-FRI", "monthly": "BME", "daily": "B"}
     pandas_freq = freq_map.get(freq, "W-FRI")
     end = pd.Timestamp.now().normalize()
     start = end - pd.Timedelta(days=lookback_days)
@@ -1124,6 +1137,15 @@ def _compute_labels(
         return None
 
     labels: Dict = {}
+
+    # forward_1d: next-bar log return — LSTM primary target, kept separate from
+    # the quality-metrics suite (no drawdown/sharpe/consistency at 1-day horizon).
+    if idx_pos + 1 < len(prices):
+        p1 = prices.iloc[idx_pos + 1]
+        labels["forward_1d"] = float(np.log(p1 / price_t)) if p1 > 0 else np.nan
+    else:
+        labels["forward_1d"] = np.nan
+
     for h in horizons:
         price_h = prices.iloc[idx_pos + h]
         labels[f"forward_{h}d"] = float((price_h / price_t) - 1)
@@ -1258,8 +1280,10 @@ def _apply_preprocessing(df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
     """
     df = df.copy()
     train_mask = df["split"] == "train"
-    float_feats = [f for f in FLOAT_FEATURES if f in df.columns]
-    market_feats = [f for f in MARKET_CONTEXT_COLUMNS if f in df.columns]
+    # Exclude passthrough columns (boolean / non-numeric) from winsorization and rank-norm
+    _PASSTHROUGH = {"is_anchor", "forward_1d", "forward_1d_rank"}
+    float_feats = [f for f in FLOAT_FEATURES if f in df.columns and f not in _PASSTHROUGH]
+    market_feats = [f for f in MARKET_CONTEXT_COLUMNS if f in df.columns and f not in _PASSTHROUGH]
 
     # --- Winsorize: compute bounds from training rows, apply globally ---
     scaler_params: dict = {}
@@ -1304,7 +1328,7 @@ def _apply_preprocessing(df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
     "snapshot_freq",
     default="weekly",
     show_default=True,
-    type=click.Choice(["weekly", "biweekly", "monthly", "staggered"]),
+    type=click.Choice(["daily", "weekly", "biweekly", "monthly", "staggered"]),
     help=(
         "Snapshot date strategy. 'weekly/biweekly/monthly' use a universal calendar so all "
         "tickers share the same dates — required for set transformer cross-sectional learning. "
@@ -1628,6 +1652,10 @@ def dataset(lookback, output, tickers_from, horizons, snapshot_freq, no_overlap,
         if col in df.columns:
             df[f"{col}_rank"] = df.groupby("date")[col].transform(_rank_norm_series)
 
+    # forward_1d_rank: cross-sectional rank of the 1-day log return (LSTM target)
+    if "forward_1d" in df.columns:
+        df["forward_1d_rank"] = df.groupby("date")["forward_1d"].transform(_rank_norm_series)
+
     # --- Composite quality target ---
     # Mirrors the traditional investment score weighting:
     #   Return 30% | Sharpe 35% | Consistency 20% | Drawdown protection 15%
@@ -1748,6 +1776,9 @@ def dataset(lookback, output, tickers_from, horizons, snapshot_freq, no_overlap,
         for col in existing_df.columns:
             if col not in df.columns:
                 df[col] = np.nan
+        # Old datasets pre-dating is_anchor should treat all their rows as anchors
+        if "is_anchor" not in existing_df.columns:
+            existing_df["is_anchor"] = True
         df = df[existing_df.columns]
 
         df = pd.concat([existing_df, df], ignore_index=True)
