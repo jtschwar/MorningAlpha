@@ -16,7 +16,9 @@ import torch
 from torch.utils.data import Dataset, WeightedRandomSampler
 
 from morningalpha.ml.lstm_model import LSTM_HORIZONS
-from morningalpha.ml.train_lstm import TARGET_COLS, RANK_TARGET_COLS
+
+TARGET_COLS      = [f"forward_{h}d"      for h in LSTM_HORIZONS]
+RANK_TARGET_COLS = [f"forward_{h}d_rank" for h in LSTM_HORIZONS]
 
 
 # ---------------------------------------------------------------------------

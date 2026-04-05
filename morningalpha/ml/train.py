@@ -436,6 +436,7 @@ def walk_forward_cv(
     best_params: dict,
     target: str = "forward_63d_composite_rank",
     embargo_days: int = 10,
+    lookback_years: float = 5.0,
 ) -> pd.DataFrame:
     """Expanding-window walk-forward CV using pre-assigned test_fold labels.
 
@@ -445,15 +446,22 @@ def walk_forward_cv(
       - Val   : last 90 calendar days of that window (early stopping)
       - Test  : rows tagged test_fold == N
 
+    lookback_years : evaluate this many years of recent folds (default 5.0).
+                     Converted to max_folds via years * 12 since fold_step=1mo.
+                     Use 0 to evaluate all folds.
+
     Returns a DataFrame with per-fold IC, hit rate, n_train, n_test.
     """
     from morningalpha.ml.baselines import LightGBMModel
 
     lgbm_params = {"n_estimators": 1000, "verbose": -1, **best_params}
     n_folds = int(df["test_fold"].max())
+
+    max_folds = round(lookback_years * 12) if lookback_years > 0 else None
+    first_fold = (n_folds - max_folds + 1) if (max_folds and n_folds > max_folds) else 1
     fold_results = []
 
-    for fold_n in range(1, n_folds + 1):
+    for fold_n in range(first_fold, n_folds + 1):
         fold_test = df[df["test_fold"] == fold_n]
         if len(fold_test) < 10:
             continue
@@ -521,7 +529,9 @@ def walk_forward_cv(
                    "and exclude pure value features. Trains a momentum-continuation model.")
 @click.option("--no-walk-forward", "no_walk_forward", is_flag=True, default=False,
               help="Skip walk-forward CV and train on static splits only (faster, less rigorous).")
-def train(dataset, model_type, target, name, output, n_trials, finetune, checkpoint, no_plots, exclude_features, momentum_universe, no_walk_forward):
+@click.option("--wfcv-years", "wfcv_years", default=5.0, show_default=True,
+              help="Years of recent history to evaluate in walk-forward CV (default 5.0 ≈ 60 folds). Use 0 for all folds.")
+def train(dataset, model_type, target, name, output, n_trials, finetune, checkpoint, no_plots, exclude_features, momentum_universe, no_walk_forward, wfcv_years):
     """Train a model on the labeled dataset.
 
     \b
@@ -637,7 +647,8 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
         # --- Walk-forward CV across all historical folds ---
         if use_walk_forward:
             console.print(f"\n[bold cyan]--- Walk-Forward CV ({split_dates['n_folds']} folds) ---[/bold cyan]")
-            wf_results = walk_forward_cv(df_full, feat_cols, best_params, target=target)
+            wf_results = walk_forward_cv(df_full, feat_cols, best_params, target=target,
+                                         lookback_years=wfcv_years)
 
             if len(wf_results) > 0:
                 mean_ic   = wf_results["ic"].mean()
@@ -740,8 +751,10 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
 @click.option("--dataset", default="data/training/dataset.parquet", show_default=True, help="Path to dataset parquet.")
 @click.option("--target", default="forward_63d_composite_rank", show_default=True, help="Target label column.")
 @click.option("--embargo", default=10, show_default=True, help="Embargo gap in calendar days between train and test.")
+@click.option("--wfcv-years", "wfcv_years", default=5.0, show_default=True,
+              help="Years of recent history to evaluate (default 5.0 ≈ 60 folds). Use 0 for all folds.")
 @click.option("--output", default=None, help="Optional CSV path to save fold results.")
-def wfcv(model_id, dataset, target, embargo, output):
+def wfcv(model_id, dataset, target, embargo, wfcv_years, output):
     """Expanding-window walk-forward CV across all pre-assigned test folds.
 
     \b
@@ -770,7 +783,8 @@ def wfcv(model_id, dataset, target, embargo, output):
         console.print(f"[yellow]No params file at {params_path} — using defaults[/yellow]")
         best_params = {}
 
-    results_df = walk_forward_cv(df, feat_cols, best_params, target=target, embargo_days=embargo)
+    results_df = walk_forward_cv(df, feat_cols, best_params, target=target, embargo_days=embargo,
+                                 lookback_years=wfcv_years)
 
     if len(results_df) == 0:
         console.print("[red]No folds completed — check dataset has test_fold column.[/red]")

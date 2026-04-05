@@ -47,6 +47,9 @@ from torch.utils.data import DataLoader, Dataset
 
 from morningalpha.ml.lstm_model import LSTM_HORIZONS, StockPriceLSTM
 from morningalpha.ml.features import FEATURE_COLUMNS, MARKET_CONTEXT_COLUMNS
+from morningalpha.ml.lstm_wfcv import (
+    make_wfcv_folds, LSTMDateRangeDataset, make_ema_sampler,
+)
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -273,6 +276,82 @@ def _evaluate(
 
 
 # ---------------------------------------------------------------------------
+# Training loop (shared by WFCV folds and final model)
+# ---------------------------------------------------------------------------
+
+def _run_training_loop(
+    model: StockPriceLSTM,
+    train_loader: DataLoader,
+    val_loader: DataLoader,
+    epochs: int,
+    lr: float,
+    device: torch.device,
+    patience: int = 10,
+    criterion: Optional[nn.Module] = None,
+    label: str = "Training",
+) -> Tuple[Optional[dict], float, List[dict]]:
+    """Train with early stopping. Returns (best_state_dict, best_val_loss, history)."""
+    if criterion is None:
+        criterion = nn.HuberLoss(delta=0.05)
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=lr * 0.01)
+
+    best_val_loss = float("inf")
+    best_state: Optional[dict] = None
+    patience_count = 0
+    history: List[dict] = []
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        TimeElapsedColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task(label, total=epochs)
+
+        for epoch in range(1, epochs + 1):
+            model.train()
+            train_loss = 0.0
+            for x, y in train_loader:
+                x, y = x.to(device), y.to(device)
+                optimizer.zero_grad()
+                pred = model(x)
+                loss = criterion(pred, y)
+                loss.backward()
+                nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                optimizer.step()
+                train_loss += loss.item() * len(x)
+            train_loss /= len(train_loader.dataset)
+
+            val_loss, val_metrics = _evaluate(model, val_loader, criterion, device)
+            scheduler.step()
+
+            mean_ic = float(np.nanmean(val_metrics))
+            history.append({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss, "val_ic": mean_ic})
+
+            progress.advance(task)
+            progress.update(
+                task,
+                description=f"{label}  ep={epoch}/{epochs}  train={train_loss:.4f}  val={val_loss:.4f}  IC={mean_ic:.4f}",
+            )
+
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+                patience_count = 0
+            else:
+                patience_count += 1
+                if patience_count >= patience:
+                    console.print(f"[yellow]  Early stopping at epoch {epoch}[/yellow]")
+                    break
+
+    return best_state, best_val_loss, history
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -310,6 +389,12 @@ def _evaluate(
     ),
 )
 @click.option("--name", default=None, help="Model name suffix for checkpoint (e.g. 'clip_v1' → lstm_clip_v1.pt).")
+@click.option("--walk-forward/--no-walk-forward", "walk_forward", default=True, show_default=True,
+              help="Use expanding-window WFCV for evaluation then train final model on full window.")
+@click.option("--n-folds", "n_folds", default=6, show_default=True,
+              help="Number of WFCV folds (walk-forward mode only).")
+@click.option("--ema-halflife", "ema_halflife", default=180, show_default=True,
+              help="EMA sample weighting half-life in days (0 = uniform). Ablation best: 180.")
 def train_lstm(
     dataset_path: str,
     output: str,
@@ -325,18 +410,22 @@ def train_lstm(
     target_mode: str,
     spike_threshold: float,
     name: Optional[str],
+    walk_forward: bool,
+    n_folds: int,
+    ema_halflife: int,
 ) -> None:
     """Train the StockPriceLSTM on the unified daily dataset.
 
     \b
     Examples:
-      alpha ml train lstm                                        # log mode (default)
-      alpha ml train lstm --target-mode clip --name clip_v1
-      alpha ml train lstm --target-mode rank --name rank_v1
+      alpha ml train lstm --target-mode clip --name clip_v1   # recommended (ablation winner)
+      alpha ml train lstm --target-mode log --name log_v1
+      alpha ml train lstm --no-walk-forward --name simple_v1  # simple split, faster
       alpha ml train lstm --spike-threshold 0.5 --name spike_cls_v1
-      alpha ml train lstm --epochs 100 --hidden 512
+      alpha ml train lstm --epochs 100 --hidden 256
     """
     is_spike_mode = spike_threshold > 0.0
+    use_wfcv = walk_forward and not is_spike_mode  # WFCV not applicable to spike classifier
 
     # Resolve output path
     if name:
@@ -344,8 +433,10 @@ def train_lstm(
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    ema_label = f"ema={ema_halflife}d" if ema_halflife > 0 else "ema=none"
     mode_label = f"spike(>{spike_threshold})" if is_spike_mode else target_mode
-    console.print(f"[bold cyan]LSTM training — target mode: {mode_label}[/bold cyan]")
+    wfcv_label = f"walk-forward ({n_folds} folds, {ema_label})" if use_wfcv else "simple split"
+    console.print(f"[bold cyan]LSTM training — target={mode_label}  split={wfcv_label}[/bold cyan]")
 
     # --- Load dataset ---
     console.print(f"[bold cyan]Loading dataset: {dataset_path}[/bold cyan]")
@@ -406,147 +497,153 @@ def train_lstm(
     else:
         console.print(f"  Targets: {TARGET_COLS}  (mode={target_mode})")
 
-    # --- Build datasets ---
-    console.print("\n[bold cyan]Building sequence datasets...[/bold cyan]")
-    ds_kwargs = dict(
-        feat_cols=feat_cols,
-        lookback=lookback,
-        stride=stride,
-        target_mode=target_mode,
-        spike_threshold=spike_threshold,
-    )
-    train_ds = LSTMSequenceDataset(df, split="train", **ds_kwargs)
-    val_ds   = LSTMSequenceDataset(df, split="val",   **ds_kwargs)
-    test_ds  = LSTMSequenceDataset(df, split="test",  **ds_kwargs)
-
-    console.print(f"  train={len(train_ds):,}  val={len(val_ds):,}  test={len(test_ds):,}")
-
-    if len(train_ds) == 0:
-        console.print("[bold red]No training samples. Check dataset splits.[/bold red]")
-        raise SystemExit(1)
-
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,  num_workers=workers, pin_memory=True)
-    val_loader   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False, num_workers=workers, pin_memory=True)
-    test_loader  = DataLoader(test_ds,  batch_size=batch_size, shuffle=False, num_workers=workers, pin_memory=True)
-
-    # --- Build model ---
-    # Spike classifier: single horizon output; otherwise all 5 horizons
     horizon_days = [5] if is_spike_mode else LSTM_HORIZONS
-    model = StockPriceLSTM(
-        n_features=len(feat_cols),
-        hidden_dim=hidden,
-        num_layers=layers,
-        dropout=dropout,
-        horizon_days=horizon_days,
-    ).to(_select_device())
-    device = next(model.parameters()).device
+    device = _select_device()
+    criterion = nn.HuberLoss(delta=0.05)
 
-    n_params = sum(p.numel() for p in model.parameters())
-    console.print(f"\n[bold]StockPriceLSTM[/bold]: {n_params:,} parameters  horizons={horizon_days}")
+    ds_range_kwargs = dict(lookback=lookback, stride=stride, target_mode=target_mode)
+    ds_split_kwargs = dict(feat_cols=feat_cols, lookback=lookback, stride=stride,
+                           target_mode=target_mode, spike_threshold=spike_threshold)
 
-    # Loss function
-    if is_spike_mode:
-        # BCEWithLogitsLoss handles class imbalance better with pos_weight
-        n_pos = sum(train_ds._ys[i][0] for i in range(len(train_ds)))
-        n_neg = len(train_ds) - n_pos
-        pos_weight = torch.tensor([n_neg / max(n_pos, 1)], device=device)
-        criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-        console.print(f"  Spike prevalence: {n_pos/len(train_ds)*100:.1f}%  pos_weight={pos_weight.item():.2f}")
-    else:
-        criterion = nn.HuberLoss(delta=0.05)
+    def _make_model() -> StockPriceLSTM:
+        return StockPriceLSTM(
+            n_features=len(feat_cols),
+            hidden_dim=hidden,
+            num_layers=layers,
+            dropout=dropout,
+            horizon_days=horizon_days,
+        ).to(device)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=lr * 0.01)
+    def _make_loader(ds, shuffle: bool, sampler=None):
+        if sampler:
+            return DataLoader(ds, batch_size=batch_size, sampler=sampler, num_workers=workers, pin_memory=True)
+        return DataLoader(ds, batch_size=batch_size, shuffle=shuffle, num_workers=workers, pin_memory=True)
 
-    # --- Training loop ---
-    console.print(f"\n[bold cyan]Training for {epochs} epochs...[/bold cyan]")
-    best_val_loss = float("inf")
+    halflife = ema_halflife if ema_halflife > 0 else None
+    wfcv_fold_ics: List[dict] = []
     best_state: Optional[dict] = None
-    patience_count = 0
-    patience = 10
-
-    history = []
+    best_val_loss = float("inf")
+    history: List[dict] = []
     t0 = time.time()
 
-    metric_label = "AUC" if is_spike_mode else "IC"
+    if use_wfcv:
+        # --- Walk-forward CV evaluation + final model ---
+        console.print("\n[bold cyan]Building walk-forward folds...[/bold cyan]")
+        folds = make_wfcv_folds(df, n_folds=n_folds, embargo_days=10)
+        console.print(f"  {len(folds)} folds  ({str(folds[0]['train_start'])[:10]} → {str(folds[-1]['val_end'])[:10]})")
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("{task.completed}/{task.total}"),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Epochs", total=epochs)
+        for fold in folds:
+            console.print(
+                f"\n[bold]Fold {fold['fold']}/{len(folds)}[/bold]  "
+                f"train → {str(fold['train_end'])[:10]}  "
+                f"val {str(fold['val_start'])[:10]} → {str(fold['val_end'])[:10]}"
+            )
+            tr_ds = LSTMDateRangeDataset(df, feat_cols, fold["train_start"], fold["train_end"], **ds_range_kwargs)
+            va_ds = LSTMDateRangeDataset(df, feat_cols, fold["val_start"],   fold["val_end"],   **ds_range_kwargs)
 
-        for epoch in range(1, epochs + 1):
-            model.train()
-            train_loss = 0.0
-            for x, y in train_loader:
-                x, y = x.to(device), y.to(device)
-                optimizer.zero_grad()
-                pred = model(x)
-                loss = criterion(pred, y)
-                loss.backward()
-                nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                optimizer.step()
-                train_loss += loss.item() * len(x)
-            train_loss /= len(train_loader.dataset)
+            if len(tr_ds) == 0 or len(va_ds) == 0:
+                console.print("  [yellow]Empty fold — skipping[/yellow]")
+                continue
 
-            val_loss, val_metrics = _evaluate(model, val_loader, criterion, device, is_spike_mode)
-            scheduler.step()
+            console.print(f"  train={len(tr_ds):,}  val={len(va_ds):,}")
+            sampler = make_ema_sampler(tr_ds, halflife)
+            tr_loader = _make_loader(tr_ds, shuffle=True,  sampler=sampler)
+            va_loader = _make_loader(va_ds, shuffle=False)
 
-            mean_metric = float(np.nanmean(val_metrics))
-            history.append({
-                "epoch": epoch,
-                "train_loss": train_loss,
-                "val_loss": val_loss,
-                f"val_{metric_label.lower()}": mean_metric,
-            })
-
-            progress.advance(task)
-            progress.update(
-                task,
-                description=(
-                    f"Epoch {epoch}/{epochs}  "
-                    f"train={train_loss:.4f}  val={val_loss:.4f}  "
-                    f"{metric_label}={mean_metric:.4f}"
-                ),
+            fold_model = _make_model()
+            fold_state, _, _ = _run_training_loop(
+                fold_model, tr_loader, va_loader, epochs, lr, device,
+                criterion=criterion, label=f"Fold {fold['fold']}",
+            )
+            if fold_state:
+                fold_model.load_state_dict(fold_state)
+            _, fold_metrics = _evaluate(fold_model, va_loader, criterion, device)
+            ics = {f"ic_{h}d": round(m, 4) for h, m in zip(LSTM_HORIZONS, fold_metrics)}
+            wfcv_fold_ics.append(ics)
+            console.print(
+                f"  IC-5d={ics.get('ic_5d', float('nan')):.4f}  "
+                f"IC-63d={ics.get('ic_63d', float('nan')):.4f}"
             )
 
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
-                patience_count = 0
-            else:
-                patience_count += 1
-                if patience_count >= patience:
-                    console.print(f"[yellow]Early stopping at epoch {epoch}[/yellow]")
-                    break
+        # WFCV summary table
+        if wfcv_fold_ics:
+            wf_table = Table(title="WFCV Summary", show_header=True)
+            wf_table.add_column("Metric")
+            wf_table.add_column("Value", style="bold")
+            for h in LSTM_HORIZONS:
+                vals = [f[f"ic_{h}d"] for f in wfcv_fold_ics if not np.isnan(f.get(f"ic_{h}d", float("nan")))]
+                if vals:
+                    wf_table.add_row(f"Mean IC-{h}d", f"{np.mean(vals):+.4f}  (std {np.std(vals):.4f})")
+            console.print(wf_table)
+
+        # Final model: full expanding window (start → last fold train_end) with EMA
+        last_fold = folds[-1]
+        console.print(f"\n[bold cyan]Final model — full window → {str(last_fold['train_end'])[:10]}[/bold cyan]")
+        train_ds = LSTMDateRangeDataset(df, feat_cols, df["date"].min(), last_fold["train_end"], **ds_range_kwargs)
+        val_ds   = LSTMDateRangeDataset(df, feat_cols, last_fold["val_start"], last_fold["val_end"], **ds_range_kwargs)
+        console.print(f"  train={len(train_ds):,}  val={len(val_ds):,}")
+
+        sampler = make_ema_sampler(train_ds, halflife)
+        train_loader = _make_loader(train_ds, shuffle=True,  sampler=sampler)
+        val_loader   = _make_loader(val_ds,   shuffle=False)
+        test_loader  = None  # val_end is the end of the dataset in WFCV mode
+
+    else:
+        # --- Simple train/val/test split ---
+        console.print("\n[bold cyan]Building sequence datasets...[/bold cyan]")
+        train_ds = LSTMSequenceDataset(df, split="train", **ds_split_kwargs)
+        val_ds   = LSTMSequenceDataset(df, split="val",   **ds_split_kwargs)
+        test_ds  = LSTMSequenceDataset(df, split="test",  **ds_split_kwargs)
+        console.print(f"  train={len(train_ds):,}  val={len(val_ds):,}  test={len(test_ds):,}")
+
+        if len(train_ds) == 0:
+            console.print("[bold red]No training samples. Check dataset splits.[/bold red]")
+            raise SystemExit(1)
+
+        if is_spike_mode:
+            n_pos = sum(train_ds._ys[i][0] for i in range(len(train_ds)))
+            n_neg = len(train_ds) - n_pos
+            pos_weight = torch.tensor([n_neg / max(n_pos, 1)], device=device)
+            criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+            console.print(f"  Spike prevalence: {n_pos/len(train_ds)*100:.1f}%  pos_weight={pos_weight.item():.2f}")
+
+        train_loader = _make_loader(train_ds, shuffle=True)
+        val_loader   = _make_loader(val_ds,   shuffle=False)
+        test_loader  = _make_loader(test_ds,  shuffle=False)
+
+    # --- Train final / only model ---
+    model = _make_model()
+    n_params = sum(p.numel() for p in model.parameters())
+    console.print(f"\n[bold]StockPriceLSTM[/bold]: {n_params:,} parameters  horizons={horizon_days}")
+    console.print(f"[bold cyan]Training final model for up to {epochs} epochs...[/bold cyan]")
+
+    best_state, best_val_loss, history = _run_training_loop(
+        model, train_loader, val_loader, epochs, lr, device,
+        criterion=criterion, label="Final model",
+    )
 
     elapsed = time.time() - t0
-    console.print(f"Training complete in {elapsed:.0f}s. Best val loss: {best_val_loss:.6f}")
+    console.print(f"Done in {elapsed:.0f}s. Best val loss: {best_val_loss:.6f}")
 
-    # --- Evaluate best checkpoint on test set ---
-    if best_state is not None:
+    if best_state:
         model.load_state_dict(best_state)
 
-    _, test_metrics = _evaluate(model, test_loader, criterion, device, is_spike_mode)
-
-    if is_spike_mode:
-        table = Table(title="Test AUC — spike classifier", show_header=True)
-        table.add_column("Horizon")
-        table.add_column("AUC", justify="right")
-        table.add_row("5d spike", f"{test_metrics[0]:.4f}" if not np.isnan(test_metrics[0]) else "n/a")
+    # --- Evaluate on test set (simple split only) ---
+    if test_loader is not None:
+        _, test_metrics = _evaluate(model, test_loader, criterion, device, is_spike_mode)
+        if is_spike_mode:
+            table = Table(title="Test AUC — spike classifier", show_header=True)
+            table.add_column("Horizon"); table.add_column("AUC", justify="right")
+            table.add_row("5d spike", f"{test_metrics[0]:.4f}" if not np.isnan(test_metrics[0]) else "n/a")
+        else:
+            table = Table(title=f"Test IC (mode={target_mode})", show_header=True)
+            table.add_column("Horizon"); table.add_column("IC", justify="right")
+            for h, ic in zip(horizon_days, test_metrics):
+                table.add_row(f"{h}d", f"{ic:.4f}" if not np.isnan(ic) else "n/a")
+        console.print(table)
+        final_test_metrics = test_metrics
     else:
-        horizons = LSTM_HORIZONS if target_mode != "rank" else LSTM_HORIZONS
-        table = Table(title=f"Test IC per horizon (mode={target_mode})", show_header=True)
-        table.add_column("Horizon")
-        table.add_column("IC", justify="right")
-        for h, ic in zip(horizons, test_metrics):
-            table.add_row(f"{h}d", f"{ic:.4f}" if not np.isnan(ic) else "n/a")
-    console.print(table)
+        final_test_metrics = []
 
     # --- Save checkpoint ---
     checkpoint = {
@@ -559,14 +656,19 @@ def train_lstm(
         "spike_threshold": spike_threshold,
         "val_loss": best_val_loss,
         "test_metrics": {
-            metric_label.lower(): (
-                {str(h): round(float(m), 4) for h, m in zip(horizon_days, test_metrics)}
-                if not is_spike_mode
-                else {"5d_spike_auc": round(float(test_metrics[0]), 4)}
-            )
-        },
+            str(h): round(float(m), 4)
+            for h, m in zip(horizon_days, final_test_metrics)
+        } if final_test_metrics else {},
+        "wfcv": {
+            "n_folds": len(wfcv_fold_ics),
+            "ema_halflife": ema_halflife,
+            "fold_ics": wfcv_fold_ics,
+            "mean_ic": {
+                f"ic_{h}d": round(float(np.nanmean([f.get(f"ic_{h}d", float("nan")) for f in wfcv_fold_ics])), 4)
+                for h in LSTM_HORIZONS
+            } if wfcv_fold_ics else {},
+        } if use_wfcv else None,
         "history": history,
-        # Scaler params — needed to apply same normalization at inference
         "feature_scaler": {
             "cols": scaled_cols,
             "mean": scaler.mean_.tolist(),
