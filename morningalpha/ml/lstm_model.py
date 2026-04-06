@@ -48,6 +48,7 @@ class StockPriceLSTM(nn.Module):
         num_layers: int = 2,
         dropout: float = 0.3,
         horizon_days: List[int] = LSTM_HORIZONS,
+        combo: bool = False,
     ) -> None:
         super().__init__()
         self.n_features = n_features
@@ -55,6 +56,7 @@ class StockPriceLSTM(nn.Module):
         self.num_layers = num_layers
         self.dropout_rate = dropout
         self.horizon_days = horizon_days
+        self.combo = combo
         n_out = len(horizon_days)
 
         # Soft feature selector: learns to suppress low-signal inputs
@@ -75,13 +77,20 @@ class StockPriceLSTM(nn.Module):
         # MC dropout — kept active at inference via predict_paths()
         self.mc_dropout = nn.Dropout(p=dropout)
 
-        # Output head predicts all horizons at once
-        self.head = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.GELU(),
-            nn.Dropout(p=dropout),
-            nn.Linear(hidden_dim // 2, n_out),
-        )
+        def _head():
+            return nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim // 2),
+                nn.GELU(),
+                nn.Dropout(p=dropout),
+                nn.Linear(hidden_dim // 2, n_out),
+            )
+
+        if combo:
+            # Separate heads: rank (cross-sectional ranking) + clip (price magnitude)
+            self.rank_head = _head()
+            self.clip_head = _head()
+        else:
+            self.head = _head()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass.
@@ -92,14 +101,15 @@ class StockPriceLSTM(nn.Module):
 
         Returns
         -------
-        [batch, n_horizons] — predicted cumulative log-returns
+        [batch, n_horizons]       — single-head mode
+        [batch, 2 * n_horizons]   — combo mode: rank_preds || clip_preds
         """
-        # Apply input gate per timestep
         g = self.input_gate(x)          # [B, T, F]
         h = x * g                        # [B, T, F]
-
         h, _ = self.lstm(h)             # [B, T, D]
         h = self.mc_dropout(h[:, -1])   # [B, D]
+        if self.combo:
+            return torch.cat([self.rank_head(h), self.clip_head(h)], dim=1)
         return self.head(h)             # [B, n_horizons]
 
     def predict_paths(
@@ -131,11 +141,12 @@ class StockPriceLSTM(nn.Module):
 
     def config(self) -> dict:
         return {
-            "n_features": self.n_features,
-            "hidden_dim": self.hidden_dim,
-            "num_layers": self.num_layers,
-            "dropout": self.dropout_rate,
+            "n_features":  self.n_features,
+            "hidden_dim":  self.hidden_dim,
+            "num_layers":  self.num_layers,
+            "dropout":     self.dropout_rate,
             "horizon_days": self.horizon_days,
+            "combo":       self.combo,
         }
 
     @classmethod

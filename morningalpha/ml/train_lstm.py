@@ -172,6 +172,13 @@ class LSTMSequenceDataset(Dataset):
                 # Use pre-computed cross-sectional rank columns
                 rank_cols = [c for c in RANK_TARGET_COLS if c in grp.columns]
                 Y = grp[rank_cols].values.astype(np.float32)
+            elif target_mode == "combo":
+                # Rank targets (cross-sectional ranking, [-1,1]) || clip targets (±2.0)
+                # Concatenated → Y shape [T, 2*n_horizons]
+                rank_cols = [c for c in RANK_TARGET_COLS if c in grp.columns]
+                Y_rank = grp[rank_cols].values.astype(np.float32)
+                Y_clip = np.clip(grp[TARGET_COLS].values.astype(np.float32), -2.0, 2.0)
+                Y = np.concatenate([Y_rank, Y_clip], axis=1)
             elif target_mode == "clip":
                 Y_raw = grp[TARGET_COLS].values.astype(np.float32)
                 Y = np.clip(Y_raw, -2.0, 2.0)
@@ -237,12 +244,33 @@ def _rank_ic(pred: np.ndarray, actual: np.ndarray) -> float:
     return float(spearmanr(pred[mask], actual[mask]).correlation)
 
 
+class ComboLoss(nn.Module):
+    """Weighted sum of Huber losses on rank and clip output halves.
+
+    pred / target shape: [B, 2*n_horizons]
+    First half  → rank predictions vs rank targets
+    Second half → clip predictions vs clip targets
+    """
+    def __init__(self, n_horizons: int, rank_weight: float = 0.5, delta: float = 0.05):
+        super().__init__()
+        self.n = n_horizons
+        self.rank_w = rank_weight
+        self.clip_w = 1.0 - rank_weight
+        self.huber = nn.HuberLoss(delta=delta)
+
+    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        rank_loss = self.huber(pred[:, :self.n],  target[:, :self.n])
+        clip_loss = self.huber(pred[:, self.n:],  target[:, self.n:])
+        return self.rank_w * rank_loss + self.clip_w * clip_loss
+
+
 def _evaluate(
     model: StockPriceLSTM,
     loader: DataLoader,
     criterion: nn.Module,
     device: torch.device,
     is_spike_mode: bool = False,
+    is_combo_mode: bool = False,
 ) -> Tuple[float, List[float]]:
     """Return (mean_loss, [IC per horizon]) or (mean_loss, [AUC]) for spike mode."""
     model.eval()
@@ -262,13 +290,16 @@ def _evaluate(
     targets = np.concatenate(all_targets)
 
     if is_spike_mode:
-        # AUC for the single spike output
         try:
-            probs = 1.0 / (1.0 + np.exp(-preds[:, 0]))  # sigmoid
+            probs = 1.0 / (1.0 + np.exp(-preds[:, 0]))
             auc = float(roc_auc_score(targets[:, 0].astype(int), probs))
         except ValueError:
             auc = float("nan")
         metrics = [auc]
+    elif is_combo_mode:
+        # IC on rank half only (first n_horizons outputs vs first n_horizons targets)
+        n = preds.shape[1] // 2
+        metrics = [_rank_ic(preds[:, i], targets[:, i]) for i in range(n)]
     else:
         metrics = [_rank_ic(preds[:, i], targets[:, i]) for i in range(preds.shape[1])]
 
@@ -326,7 +357,7 @@ def _run_training_loop(
                 train_loss += loss.item() * len(x)
             train_loss /= len(train_loader.dataset)
 
-            val_loss, val_metrics = _evaluate(model, val_loader, criterion, device)
+            val_loss, val_metrics = _evaluate(model, val_loader, criterion, device, is_combo_mode=is_combo_mode)
             scheduler.step()
 
             mean_ic = float(np.nanmean(val_metrics))
@@ -372,10 +403,11 @@ def _run_training_loop(
     "--target-mode", "target_mode",
     default="log",
     show_default=True,
-    type=click.Choice(["log", "clip", "rank"]),
+    type=click.Choice(["log", "clip", "rank", "combo"]),
     help=(
         "Target encoding: log=log1p(clip(r,-0.99,5)) [default], "
-        "clip=raw returns ±2.0, rank=cross-sectional rank [-1,1]."
+        "clip=raw returns ±2.0, rank=cross-sectional rank [-1,1], "
+        "combo=rank+clip dual-head (rank fixes bias, clip preserves magnitude for fan chart)."
     ),
 )
 @click.option(
@@ -427,6 +459,7 @@ def train_lstm(
       alpha ml train lstm --epochs 100 --hidden 256
     """
     is_spike_mode = spike_threshold > 0.0
+    is_combo_mode = target_mode == "combo" and not is_spike_mode
     use_wfcv = walk_forward and not is_spike_mode  # WFCV not applicable to spike classifier
 
     # Resolve output path
@@ -493,12 +526,15 @@ def train_lstm(
     scaler, scaled_cols = fit_feature_scaler(df_train, scale_cols)
     df = apply_feature_scaler(df, scaler, scaled_cols)
 
-    # --- Validate rank target columns for rank mode ---
-    if not is_spike_mode and target_mode == "rank":
+    # --- Validate rank target columns for rank/combo mode ---
+    if not is_spike_mode and target_mode in ("rank", "combo"):
         missing_rank = [c for c in RANK_TARGET_COLS if c not in df.columns]
         if missing_rank:
             console.print(f"[bold red]Rank target columns missing: {missing_rank}[/bold red]")
             raise SystemExit(1)
+    if is_combo_mode:
+        console.print(f"  Targets: rank={RANK_TARGET_COLS} + clip={TARGET_COLS}  (mode=combo)")
+    elif target_mode == "rank":
         console.print(f"  Targets: {RANK_TARGET_COLS}")
     elif is_spike_mode:
         console.print(f"  Target: binary spike — |forward_5d| > {spike_threshold}")
@@ -507,7 +543,10 @@ def train_lstm(
 
     horizon_days = [5] if is_spike_mode else LSTM_HORIZONS
     device = _select_device()
-    criterion = nn.HuberLoss(delta=0.05)
+    criterion: nn.Module = (
+        ComboLoss(n_horizons=len(horizon_days), rank_weight=0.5)
+        if is_combo_mode else nn.HuberLoss(delta=0.05)
+    )
 
     ds_range_kwargs = dict(lookback=lookback, stride=stride, target_mode=target_mode)
     ds_split_kwargs = dict(feat_cols=feat_cols, lookback=lookback, stride=stride,
@@ -520,6 +559,7 @@ def train_lstm(
             num_layers=layers,
             dropout=dropout,
             horizon_days=horizon_days,
+            combo=is_combo_mode,
         ).to(device)
 
     def _make_loader(ds, shuffle: bool, sampler=None):
@@ -565,7 +605,7 @@ def train_lstm(
             )
             if fold_state:
                 fold_model.load_state_dict(fold_state)
-            _, fold_metrics = _evaluate(fold_model, va_loader, criterion, device)
+            _, fold_metrics = _evaluate(fold_model, va_loader, criterion, device, is_combo_mode=is_combo_mode)
             ics = {f"ic_{h}d": round(m, 4) for h, m in zip(LSTM_HORIZONS, fold_metrics)}
             wfcv_fold_ics.append(ics)
             console.print(
@@ -638,7 +678,7 @@ def train_lstm(
 
     # --- Evaluate on test set (simple split only) ---
     if test_loader is not None:
-        _, test_metrics = _evaluate(model, test_loader, criterion, device, is_spike_mode)
+        _, test_metrics = _evaluate(model, test_loader, criterion, device, is_spike_mode, is_combo_mode=is_combo_mode)
         if is_spike_mode:
             table = Table(title="Test AUC — spike classifier", show_header=True)
             table.add_column("Horizon"); table.add_column("AUC", justify="right")

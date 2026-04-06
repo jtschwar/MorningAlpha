@@ -67,6 +67,8 @@ def fetch_forecast(ticker: str, n_paths: int = 6) -> dict:
     lookback     = ckpt.get("lookback", 60)
     horizon_days = ckpt.get("horizon_days", [1, 5, 10, 21, 63])
     scaler_info  = ckpt.get("feature_scaler", {})
+    is_combo     = ckpt.get("config", {}).get("combo", False)
+    n_horizons   = len(horizon_days)
 
     # Load only this ticker's rows — pyarrow handles the filter efficiently
     _REPO_ROOT   = Path(__file__).parents[2]
@@ -105,10 +107,13 @@ def fetch_forecast(ticker: str, n_paths: int = 6) -> dict:
         pass
 
     # MC dropout — N forward passes
+    # Combo model: outputs [rank || clip]; use clip half for price-level fan chart
     paths = []
     for _ in range(n_paths):
         with torch.no_grad():
-            pred = model(x).cpu().numpy()[0]  # [n_horizons]
+            pred = model(x).cpu().numpy()[0]  # [n_horizons] or [2*n_horizons]
+        if is_combo:
+            pred = pred[n_horizons:]          # clip half
         # Filter: reject paths implying price < 0 or > 3× last_price
         if last_price:
             implied = [last_price * math.exp(float(v)) for v in pred]

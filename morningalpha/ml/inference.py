@@ -578,10 +578,15 @@ def get_lstm_raw_scores(df_score: pd.DataFrame, model_path: Path) -> np.ndarray:
     feat_cols    = ckpt["feature_cols"]
     lookback     = ckpt.get("lookback", 60)
     horizon_days = ckpt.get("horizon_days", LSTM_HORIZONS)
+    is_combo     = ckpt.get("config", {}).get("combo", False)
+    n_horizons   = len(horizon_days)
     try:
         idx_63d = horizon_days.index(63)
     except ValueError:
-        idx_63d = len(horizon_days) - 1
+        idx_63d = n_horizons - 1
+    # In combo mode outputs are [rank_0..rank_N, clip_0..clip_N].
+    # For scoring we want rank half — idx_63d is already correct (rank half is first).
+    _ = is_combo  # used below in batch loop
 
     try:
         ds = _lstm_prepare_dataset(ckpt)
@@ -641,6 +646,8 @@ def generate_forecast_paths(
     feat_cols    = ckpt["feature_cols"]
     lookback     = ckpt.get("lookback", 60)
     horizon_days = ckpt.get("horizon_days", LSTM_HORIZONS)
+    is_combo     = ckpt.get("config", {}).get("combo", False)
+    n_horizons   = len(horizon_days)
 
     try:
         ds = _lstm_prepare_dataset(ckpt)
@@ -686,7 +693,10 @@ def generate_forecast_paths(
         all_paths = []
         for _ in range(n_paths):
             with torch.no_grad():
-                preds = model(x).cpu().numpy()  # [B, n_horizons]
+                preds = model(x).cpu().numpy()  # [B, n_horizons] or [B, 2*n_horizons]
+            # Combo: use clip half (second n_horizons cols) for price-level fan chart
+            if is_combo:
+                preds = preds[:, n_horizons:]
             all_paths.append(preds)
         # all_paths: [n_paths, B, n_horizons] → [B, n_paths, n_horizons]
         stacked = np.stack(all_paths, axis=1)
