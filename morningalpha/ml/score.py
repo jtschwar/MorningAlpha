@@ -672,18 +672,15 @@ def score(data_dir, models_dir, score_only, run_calibrate):
     # No pre-scoring return or quality filters — the model was trained on the full universe
     # and learned to rank good from bad. Pre-filtering by return defeats the purpose.
 
-    # Trend gate — only score stocks above their 200-day MA.
-    # Filters confirmed downtrends and value traps for a long-only portfolio.
-    # MomentumAccel is intentionally NOT gated here — the model learned from it during
-    # training and already prices it in; a hard gate would cut early-stage breakouts.
-    gate_mask = pd.Series(True, index=df_score.index)
+    # SMA200 flag — model already learned price_to_sma200 as a feature and prices it in.
+    # Hard-gating would remove potential recovery/mean-reversion plays and mismatches
+    # the training distribution. Instead, surface it as a warning flag in the output.
     if "PriceToSMA200Pct" in df_score.columns:
         sma200_pct = pd.to_numeric(df_score["PriceToSMA200Pct"], errors="coerce")
-        gate_mask &= (sma200_pct > 0) | sma200_pct.isna()
-    n_gated = (~gate_mask).sum()
-    df_score = df_score[gate_mask].copy()
-    if n_gated:
-        console.print(f"[dim]Trend gate (price > SMA200): removed {n_gated} downtrending stocks[/dim]")
+        df_score["AboveSMA200"] = (sma200_pct > 0).fillna(True)
+        n_below = int((~df_score["AboveSMA200"]).sum())
+        if n_below:
+            console.print(f"[dim]SMA200 flag: {n_below} stocks below 200-day MA (scored, not removed)[/dim]")
 
     raw_scores: dict[str, np.ndarray] = {}
 
@@ -845,7 +842,8 @@ def score(data_dir, models_dir, score_only, run_calibrate):
         + [f"CalibProb_{mid}" for mid in calibrated_probs]
         if calibrated_probs else []
     )
-    score_cols = ["MLScore"] + delta_col + [f"MLScore_{m['id']}" for m in active_models if m["id"] in raw_scores] + calib_cols
+    sma200_col = ["AboveSMA200"] if "AboveSMA200" in df_score.columns else []
+    score_cols = ["MLScore"] + delta_col + sma200_col + [f"MLScore_{m['id']}" for m in active_models if m["id"] in raw_scores] + calib_cols
     scores_by_ticker = df_score.set_index("Ticker")[score_cols]
 
     top_ticker = scores_by_ticker["MLScore"].idxmax()
