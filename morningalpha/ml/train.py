@@ -96,13 +96,39 @@ def load_data(dataset_path: str, target: str) -> Tuple[pd.DataFrame, List[str]]:
     """Load and clean the dataset. Returns (df, feat_cols).
 
     Downstream callers slice by date or split column as needed.
+
+    Daily datasets are automatically downsampled to weekly (every 5th row per
+    ticker) so LGBM sees non-overlapping snapshots without overlapping forward
+    return labels. Weekly/staggered datasets are left as-is.
     """
     df = pd.read_parquet(dataset_path)
+    df["date"] = pd.to_datetime(df["date"])
     console.print(f"Loaded {len(df):,} rows from {dataset_path}")
 
-    # Filter to anchor rows so LGBM sees non-overlapping snapshots regardless
-    # of whether the dataset was built at daily or weekly frequency.
-    if "is_anchor" in df.columns:
+    # Detect daily vs weekly by median gap across all tickers on a sample date
+    sample_ticker = df["ticker"].iloc[0]
+    sample_gaps = (
+        df[df["ticker"] == sample_ticker]
+        .sort_values("date")["date"]
+        .diff().dt.days.dropna()
+    )
+    is_daily = sample_gaps.median() <= 2
+
+    if is_daily:
+        # Downsample to every 5th row per ticker (non-overlapping weekly equiv).
+        # Keeps the most recent anchor in each window so forward labels don't overlap.
+        n_before = len(df)
+        df = (
+            df.sort_values(["ticker", "date"])
+            .groupby("ticker", sort=False)
+            .apply(lambda g: g.iloc[::5])
+            .reset_index(drop=True)
+        )
+        console.print(
+            f"  Daily dataset detected — downsampled to weekly: "
+            f"{len(df):,}/{n_before:,} rows ({len(df)/n_before:.1%})"
+        )
+    elif "is_anchor" in df.columns:
         n_before = len(df)
         df = df[df["is_anchor"] == True].copy()
         console.print(f"  is_anchor filter: {len(df):,}/{n_before:,} rows ({len(df)/n_before:.1%})")

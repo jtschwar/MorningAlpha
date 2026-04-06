@@ -450,10 +450,16 @@ def train_lstm(
     )
 
     # Check for daily data
-    is_daily = "is_anchor" in df.columns and (df["is_anchor"] == False).any()
+    # Detect daily data by median date gap across a sample of tickers, not by
+    # is_anchor (which is True for all rows when built with --no-overlap, even
+    # on daily datasets).
+    sample_ticker = df["ticker"].iloc[0]
+    sample_gaps = df[df["ticker"] == sample_ticker].sort_values("date")["date"].diff().dt.days.dropna()
+    is_daily = sample_gaps.median() <= 2
     if not is_daily:
         console.print(
-            "[yellow]Dataset appears to be weekly/staggered (no daily rows). "
+            "[yellow]Dataset appears to be weekly/staggered (median gap "
+            f"{sample_gaps.median():.0f} days). "
             "Rebuild with --snapshot-freq daily for best LSTM performance.[/yellow]"
         )
 
