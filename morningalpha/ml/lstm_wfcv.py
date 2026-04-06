@@ -82,7 +82,7 @@ class LSTMDateRangeDataset(Dataset):
     end_date    : inclusive end date for this dataset
     lookback    : sequence length (trading days)
     stride      : step between windows per ticker
-    target_mode : "log" | "clip" | "rank"
+    target_mode : "log" | "clip" | "rank" | "combo"
     """
 
     def __init__(
@@ -126,6 +126,13 @@ class LSTMDateRangeDataset(Dataset):
                 Y = grp[rank_cols].values.astype(np.float32)
             elif target_mode == "clip":
                 Y = np.clip(grp[TARGET_COLS].values.astype(np.float32), -2.0, 2.0)
+            elif target_mode == "combo":
+                rank_cols = [c for c in RANK_TARGET_COLS if c in grp.columns]
+                if not rank_cols:
+                    continue
+                Y_rank = grp[rank_cols].values.astype(np.float32)
+                Y_clip = np.clip(grp[TARGET_COLS].values.astype(np.float32), -2.0, 2.0)
+                Y = np.concatenate([Y_rank, Y_clip], axis=1)  # [T, 2*n_horizons]
             else:  # "log"
                 Y_raw = grp[TARGET_COLS].values.astype(np.float32)
                 Y = Y_raw.copy()
