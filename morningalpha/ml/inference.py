@@ -487,6 +487,242 @@ def get_raw_scores(df: pd.DataFrame, model_path: Path) -> np.ndarray:
     return _predict_raw(model, X)
 
 
+# ---------------------------------------------------------------------------
+# LSTM shared helpers
+# ---------------------------------------------------------------------------
+
+def _lstm_load_model_and_device(model_path: Path, dropout: float = 0.0):
+    """Load LSTM checkpoint, rebuild model, select device. Returns (model, ckpt, device)."""
+    import torch
+    from morningalpha.ml.lstm_model import StockPriceLSTM
+    ckpt = torch.load(str(model_path), map_location="cpu", weights_only=False)
+    cfg = dict(ckpt["config"])
+    cfg["dropout"] = dropout
+    model = StockPriceLSTM.from_config(cfg)
+    model.load_state_dict(ckpt["model_state_dict"])
+    if dropout == 0.0:
+        model.eval()
+    else:
+        model.train()  # keep dropout active for MC paths
+    if torch.backends.mps.is_available():
+        device = torch.device("mps")
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+    model.to(device)
+    return model, ckpt, device
+
+
+def _lstm_prepare_dataset(ckpt: dict) -> pd.DataFrame:
+    """Load dataset.parquet and apply the checkpoint's stored StandardScaler."""
+    dataset_path = Path("data/training/dataset.parquet")
+    if not dataset_path.exists():
+        raise FileNotFoundError(f"LSTM dataset not found: {dataset_path}")
+    ds = pd.read_parquet(dataset_path)
+    scaler_info = ckpt.get("feature_scaler", {})
+    if scaler_info and "cols" in scaler_info:
+        full_cols  = scaler_info["cols"]
+        mean_map   = dict(zip(full_cols, scaler_info["mean"]))
+        scale_map  = dict(zip(full_cols, scaler_info["scale"]))
+        sc_cols    = [c for c in full_cols if c in ds.columns]
+        for col in sc_cols:
+            ds[col] = (ds[col].fillna(0) - mean_map[col]) / max(scale_map[col], 1e-8)
+    feat_cols = ckpt["feature_cols"]
+    for c in [c for c in feat_cols if c not in ds.columns]:
+        ds[c] = 0.0
+    return ds.sort_values(["ticker", "date"])
+
+
+def _lstm_build_batch(tickers, ticker_groups, feat_cols: list, lookback: int,
+                      batch_size: int = 512):
+    """Yield (seq_batch [B,T,F], ticker_indices) in chunks of batch_size."""
+    import torch
+    seqs: list = []
+    indices: list = []
+    for i, ticker in enumerate(tickers):
+        if ticker not in ticker_groups.groups:
+            continue
+        grp = ticker_groups.get_group(ticker)
+        if len(grp) < lookback:
+            continue
+        seq = np.nan_to_num(grp[feat_cols].tail(lookback).values.astype(np.float32), nan=0.0)
+        seqs.append(seq)
+        indices.append(i)
+        if len(seqs) == batch_size:
+            yield torch.tensor(np.stack(seqs)), indices
+            seqs, indices = [], []
+    if seqs:
+        yield torch.tensor(np.stack(seqs)), indices
+
+
+# ---------------------------------------------------------------------------
+# Public LSTM API
+# ---------------------------------------------------------------------------
+
+def get_lstm_raw_scores(df_score: pd.DataFrame, model_path: Path) -> np.ndarray:
+    """Return raw LSTM predictions (63d horizon) for each row in df_score.
+
+    Unlike LightGBM (cross-sectional snapshot), the LSTM needs a 60-day
+    historical sequence per ticker from data/training/dataset.parquet.
+    Returns the 63d-horizon prediction for each ticker, in df_score row order.
+    Falls back to 0.0 for tickers with insufficient history.
+    """
+    try:
+        import torch
+        from morningalpha.ml.lstm_model import LSTM_HORIZONS
+    except ImportError as exc:
+        raise ImportError(f"PyTorch required for LSTM inference: {exc}") from exc
+
+    model, ckpt, device = _lstm_load_model_and_device(model_path, dropout=0.0)
+    feat_cols    = ckpt["feature_cols"]
+    lookback     = ckpt.get("lookback", 60)
+    horizon_days = ckpt.get("horizon_days", LSTM_HORIZONS)
+    try:
+        idx_63d = horizon_days.index(63)
+    except ValueError:
+        idx_63d = len(horizon_days) - 1
+
+    try:
+        ds = _lstm_prepare_dataset(ckpt)
+    except FileNotFoundError as exc:
+        logger.warning("%s — returning zeros", exc)
+        return np.zeros(len(df_score), dtype=np.float32)
+
+    ticker_groups = ds.groupby("ticker", sort=False)
+    tickers       = df_score["Ticker"].values if "Ticker" in df_score.columns else df_score.index.values
+    raw_scores    = np.zeros(len(tickers), dtype=np.float32)
+
+    for batch, valid_indices in _lstm_build_batch(tickers, ticker_groups, feat_cols, lookback):
+        with torch.no_grad():
+            preds = model(batch.to(device)).cpu().numpy()  # [B, n_horizons]
+        for j, idx in enumerate(valid_indices):
+            raw_scores[idx] = float(preds[j, idx_63d])
+
+    n_scored = int((raw_scores != 0.0).sum())
+    logger.info("LSTM inference: scored %d / %d tickers (63d horizon)", n_scored, len(tickers))
+    return raw_scores
+
+
+def generate_forecast_paths(
+    df_score: pd.DataFrame,
+    model_path: Path,
+    n_paths: int = 6,
+) -> dict:
+    """Generate MC-dropout forecast paths for all scored tickers.
+
+    Returns a dict ready to serialise as forecast_paths.json:
+    {
+        "model":     "lstm_clip_v1",
+        "horizons":  [1, 5, 10, 21, 63],
+        "generated_at": "2026-04-05",
+        "last_prices": {"AAPL": 185.5, ...},
+        "paths": {
+            "AAPL": [[log_ret_1d, log_ret_5d, ...], ...],   # n_paths × n_horizons
+            ...
+        }
+    }
+
+    log-returns are relative to the ticker's last known price; the frontend
+    converts them to price levels via price * exp(log_ret).
+    Paths that exceed 2× historical max or go below historical min are filtered.
+    Tickers with < lookback rows in the dataset are omitted.
+    """
+    try:
+        import torch
+        from morningalpha.ml.lstm_model import LSTM_HORIZONS
+    except ImportError as exc:
+        raise ImportError(f"PyTorch required for LSTM forecast paths: {exc}") from exc
+
+    import torch as _torch
+    _ckpt_tmp = _torch.load(str(model_path), map_location="cpu", weights_only=False)
+    _mc_dropout = float(_ckpt_tmp.get("config", {}).get("dropout", 0.3))
+    model, ckpt, device = _lstm_load_model_and_device(model_path, dropout=_mc_dropout)
+    feat_cols    = ckpt["feature_cols"]
+    lookback     = ckpt.get("lookback", 60)
+    horizon_days = ckpt.get("horizon_days", LSTM_HORIZONS)
+
+    try:
+        ds = _lstm_prepare_dataset(ckpt)
+    except FileNotFoundError as exc:
+        logger.warning("%s — returning empty paths", exc)
+        return {}
+
+    ticker_groups = ds.groupby("ticker", sort=False)
+    tickers       = df_score["Ticker"].values if "Ticker" in df_score.columns else df_score.index.values
+
+    # Resolve last price from spread CSV (used for path filtering + JSON output).
+    # The spread CSV has no raw close column but does have SMA20 + PriceToSMA20Pct,
+    # so we reconstruct: price = SMA20 * (1 + PriceToSMA20Pct / 100).
+    price_map: dict[str, float] = {}
+    if "Ticker" in df_score.columns:
+        if "SMA20" in df_score.columns and "PriceToSMA20Pct" in df_score.columns:
+            sma20  = pd.to_numeric(df_score["SMA20"], errors="coerce")
+            pct    = pd.to_numeric(df_score["PriceToSMA20Pct"], errors="coerce")
+            prices = sma20 * (1.0 + pct / 100.0)
+            price_map = (
+                df_score.assign(_price=prices)
+                .dropna(subset=["_price"])
+                .set_index("Ticker")["_price"]
+                .to_dict()
+            )
+        else:
+            # Fallback: any column that looks like a raw price
+            price_col = next(
+                (c for c in df_score.columns
+                 if c.lower() in ("close", "price", "last", "lastprice")), None
+            )
+            if price_col:
+                price_map = df_score.set_index("Ticker")[price_col].dropna().to_dict()
+
+    paths_out:  dict[str, list] = {}
+    prices_out: dict[str, float] = {}
+
+    for batch, valid_indices in _lstm_build_batch(tickers, ticker_groups, feat_cols, lookback):
+        batch_tickers = [tickers[i] for i in valid_indices]
+        x = batch.to(device)
+
+        # n_paths forward passes with MC dropout active
+        all_paths = []
+        for _ in range(n_paths):
+            with torch.no_grad():
+                preds = model(x).cpu().numpy()  # [B, n_horizons]
+            all_paths.append(preds)
+        # all_paths: [n_paths, B, n_horizons] → [B, n_paths, n_horizons]
+        stacked = np.stack(all_paths, axis=1)
+
+        for j, ticker in enumerate(batch_tickers):
+            last_price = float(price_map.get(ticker, 0.0))
+            ticker_paths = stacked[j]  # [n_paths, n_horizons]
+
+            # Filter extreme paths: reject if any horizon implies price < 0
+            # or > 3× last price (catches runaway MC samples)
+            if last_price > 0:
+                implied = last_price * np.exp(ticker_paths)  # [n_paths, n_horizons]
+                keep = (implied > 0).all(axis=1) & (implied < last_price * 3).all(axis=1)
+                ticker_paths = ticker_paths[keep]
+
+            if len(ticker_paths) == 0:
+                continue
+
+            paths_out[ticker]  = [[round(float(v), 5) for v in path] for path in ticker_paths]
+            prices_out[ticker] = last_price
+
+    from datetime import date
+    return {
+        "model":        model_path.stem,
+        "horizons":     horizon_days,
+        "generated_at": str(date.today()),
+        "last_prices":  prices_out,
+        "paths":        paths_out,
+    }
+
+
+def ckpt_dropout(ckpt: dict) -> float:
+    """Return the training-time dropout rate from a checkpoint config."""
+    return float(ckpt.get("config", {}).get("dropout", 0.3))
+
+
 def get_st_raw_scores(df: pd.DataFrame, model_path: Path) -> np.ndarray:
     """Return raw Set Transformer scores for each row in df.
 

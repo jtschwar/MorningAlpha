@@ -1,9 +1,9 @@
 import styles from './ModelControls.module.css'
 
 const MODELS = [
-  { id: 'lgbm_breakout_v5', label: 'Breakout' },
-  { id: 'lgbm_composite_v6', label: 'Composite' },
-  { id: 'st_sector_relative_v1', label: 'Set Transformer' },
+  { id: 'lgbm_breakout_v7',  label: 'Breakout' },
+  { id: 'lgbm_composite_v7', label: 'Composite' },
+  { id: 'lstm_clip_v1',      label: 'LSTM' },
 ]
 
 const HORIZONS: { value: 5 | 10 | 21 | 63; label: string }[] = [

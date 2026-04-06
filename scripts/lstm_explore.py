@@ -299,10 +299,12 @@ def main():
         df = apply_feature_scaler(df, scaler, scaled_cols)
         print(f"  Scaled {len(scaled_cols)} market-context/categorical columns")
 
-        # Sample to keep quick-train fast
-        if len(df) > args.sample:
-            df = df.sort_values("date").tail(args.sample)
-            print(f"  Sampled to {len(df):,} most recent rows")
+        # Sample to keep quick-train fast — sample only the train split so
+        # val/test rows are always present for evaluation.
+        if len(df[df["split"] == "train"]) > args.sample:
+            df_train_sampled = df[df["split"] == "train"].sort_values("date").tail(args.sample)
+            df = pd.concat([df_train_sampled, df[df["split"] != "train"]]).sort_values("date")
+            print(f"  Sampled train split to {len(df_train_sampled):,} most recent rows (val/test kept in full)")
 
         if "forward_1d" not in df.columns:
             df["forward_1d"] = df.get("forward_5d", np.nan)

@@ -41,6 +41,7 @@ jobs:
             cp data/latest/_generated.json morningalpha/web/dist/data/latest/ 2>/dev/null || true
             cp data/latest/ticker_index.json morningalpha/web/dist/data/latest/ 2>/dev/null || true
             cp data/latest/forecast_calibration_*.json morningalpha/web/dist/data/latest/ 2>/dev/null || true
+            cp data/latest/forecast_paths_*.json morningalpha/web/dist/data/latest/ 2>/dev/null || true
           fi
 
       - name: Upload Pages artifact

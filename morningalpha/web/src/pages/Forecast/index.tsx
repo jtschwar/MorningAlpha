@@ -10,15 +10,16 @@ import ModelComparisonTable from '../../components/forecast/ModelComparisonTable
 import DecileContextChart from '../../components/forecast/DecileContextChart'
 import CalibrationDisclaimer from '../../components/forecast/CalibrationDisclaimer'
 import { useForecastCalibration } from '../../hooks/useForecastCalibration'
+import { useForecast } from '../../hooks/useForecast'
 import { useTickerIndex, type TickerEntry } from '../../hooks/useTickerIndex'
 import type { DecileStats } from '../../hooks/useForecastCalibration'
 import styles from './Forecast.module.css'
 
 // Fixed model IDs — hooks are always called for all 3 (React rules)
 const ALL_MODEL_IDS = [
-  'lgbm_breakout_v5',
-  'lgbm_composite_v6',
-  'st_sector_relative_v1',
+  'lgbm_breakout_v7',
+  'lgbm_composite_v7',
+  'lstm_clip_v1',
 ] as const
 
 // Inner component that always calls all 3 calibration hooks
@@ -29,9 +30,9 @@ function ForecastInner() {
   const [selectedTickers, setSelectedTickers] = useState<TickerEntry[]>([])
   const [activeIndex, setActiveIndex] = useState<number>(0)
   const [selectedModels, setSelectedModels] = useState<string[]>([
-    'lgbm_breakout_v5',
-    'lgbm_composite_v6',
-    'st_sector_relative_v1',
+    'lgbm_breakout_v7',
+    'lgbm_composite_v7',
+    'lstm_clip_v1',
   ])
   const [horizon, setHorizon] = useState<5 | 10 | 21 | 63>(63)
   const [showBands, setShowBands] = useState(false)
@@ -70,6 +71,15 @@ function ForecastInner() {
   const cal1 = useForecastCalibration(ALL_MODEL_IDS[1])
   const cal2 = useForecastCalibration(ALL_MODEL_IDS[2])
 
+  // Always call useForecast for all 5 ticker slots (React rules of hooks)
+  // Only fires when LSTM is selected and the slot is populated
+  const lstmEnabled = selectedModels.includes('lstm_clip_v1')
+  const fp0 = useForecast(selectedTickers[0]?.ticker, lstmEnabled)
+  const fp1 = useForecast(selectedTickers[1]?.ticker, lstmEnabled)
+  const fp2 = useForecast(selectedTickers[2]?.ticker, lstmEnabled)
+  const fp3 = useForecast(selectedTickers[3]?.ticker, lstmEnabled)
+  const fp4 = useForecast(selectedTickers[4]?.ticker, lstmEnabled)
+
   const allCals = [cal0, cal1, cal2]
 
   const calibrations = useMemo(() => {
@@ -87,6 +97,25 @@ function ForecastInner() {
     })
     return map
   }, [cal0.loading, cal1.loading, cal2.loading])
+
+  // Build forecast path maps keyed by ticker symbol
+  const forecastPaths = useMemo(() => {
+    const map: Record<string, typeof fp0.data> = {}
+    ;[fp0, fp1, fp2, fp3, fp4].forEach((fp, i) => {
+      const ticker = selectedTickers[i]?.ticker
+      if (ticker) map[ticker] = fp.data
+    })
+    return map
+  }, [fp0.data, fp1.data, fp2.data, fp3.data, fp4.data, selectedTickers])
+
+  const forecastLoading = useMemo(() => {
+    const map: Record<string, boolean> = {}
+    ;[fp0, fp1, fp2, fp3, fp4].forEach((fp, i) => {
+      const ticker = selectedTickers[i]?.ticker
+      if (ticker) map[ticker] = fp.loading
+    })
+    return map
+  }, [fp0.loading, fp1.loading, fp2.loading, fp3.loading, fp4.loading, selectedTickers])
 
   // Primary calibration = first selected model
   const primaryModelId = selectedModels[0] ?? ALL_MODEL_IDS[0]
@@ -168,6 +197,8 @@ function ForecastInner() {
           activeIndex={activeIndex}
           selectedModels={selectedModels}
           calibrations={calibrations}
+          forecastPaths={forecastPaths}
+          forecastLoading={forecastLoading}
           horizon={horizon}
           showBands={showBands}
           loadingModels={loadingModels}

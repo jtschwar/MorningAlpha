@@ -183,10 +183,11 @@ def _evaluate_and_update_weights(df_current: pd.DataFrame, raw_scores: dict) -> 
             if eval_col not in ledger.columns:
                 continue
 
-            due_mask = (
-                (ledger[eval_col] <= today) &
-                (~ledger.get(matured_col, pd.Series(False, index=ledger.index)))
-            )
+            matured_series = ledger.get(matured_col, pd.Series(False, index=ledger.index))
+            if matured_series is None:
+                matured_series = pd.Series(False, index=ledger.index)
+            matured_bool = matured_series.fillna(False).astype(bool)
+            due_mask = (ledger[eval_col] <= today) & (~matured_bool)
             if not due_mask.any():
                 continue
 
@@ -214,7 +215,10 @@ def _evaluate_and_update_weights(df_current: pd.DataFrame, raw_scores: dict) -> 
             matured_col = f"matured_{suffix}"
             if ret_col not in ledger.columns:
                 continue
-            mature = ledger[ledger.get(matured_col, pd.Series(False, index=ledger.index)) == True]
+            matured_col_vals = ledger.get(matured_col, pd.Series(False, index=ledger.index))
+            if matured_col_vals is None:
+                matured_col_vals = pd.Series(False, index=ledger.index)
+            mature = ledger[matured_col_vals.fillna(False).astype(bool)]
             if len(mature) < 50:
                 continue
             model_cols = [c for c in mature.columns if c.startswith("raw_")]
@@ -426,6 +430,52 @@ def _load_config(models_dir: Path) -> dict:
     }
 
 
+def _generate_all_forecast_paths(
+    active_models: list,
+    df_score: pd.DataFrame,
+    data_path: Path,
+    n_paths: int = 6,
+) -> None:
+    """Generate MC-dropout forecast paths for every active LSTM model.
+
+    Writes data/latest/forecast_paths_<model_id>.json for each LSTM.
+    Skips non-LSTM models (LightGBM has no sequential forecast).
+    Mirrors output to the web public dir alongside ticker_index.json.
+    """
+    lstm_models = [m for m in active_models if m.get("type") == "lstm"]
+    if not lstm_models:
+        return
+
+    from morningalpha.ml.inference import generate_forecast_paths
+
+    _REPO_ROOT   = Path(__file__).parents[2]
+    _WEB_PUBLIC  = _REPO_ROOT / "morningalpha" / "web" / "public" / "data" / "latest"
+
+    for m in lstm_models:
+        model_path = Path(m["checkpoint"]) if "checkpoint" in m else (
+            Path(__file__).parents[2] / "models" / f"{m['id']}.pt"
+        )
+        if not model_path.exists():
+            continue
+        try:
+            console.print(f"[dim]Generating forecast paths for {m['id']} ({len(df_score)} tickers)…[/dim]")
+            result = generate_forecast_paths(df_score, model_path, n_paths=n_paths)
+            n_with_paths = len(result.get("paths", {}))
+
+            out_path = data_path / f"forecast_paths_{m['id']}.json"
+            with open(out_path, "w") as f:
+                json.dump(result, f, separators=(",", ":"))
+
+            console.print(f"[dim]✓ Forecast paths: {n_with_paths} tickers → {out_path.name}[/dim]")
+
+            # Mirror to web public dir
+            if _WEB_PUBLIC.exists():
+                import shutil
+                shutil.copy(out_path, _WEB_PUBLIC / out_path.name)
+        except Exception as exc:
+            logger.warning("Forecast path generation failed for %s: %s", m["id"], exc)
+
+
 def _write_ticker_index(
     scored_df: pd.DataFrame,
     active_models: list,
@@ -566,7 +616,7 @@ def score(data_dir, models_dir, score_only, run_calibrate):
     def _checkpoint_exists(m: dict) -> bool:
         if "checkpoint" in m:
             return Path(m["checkpoint"]).exists()
-        if m.get("type") == "set_transformer":
+        if m.get("type") in ("set_transformer", "lstm"):
             return (models_path / f"{m['id']}.pt").exists()
         return (models_path / f"{m['id']}.pkl").exists()
 
@@ -642,7 +692,7 @@ def score(data_dir, models_dir, score_only, run_calibrate):
         # Resolve checkpoint path: explicit in config, or default by type
         if "checkpoint" in m:
             model_path = Path(m["checkpoint"])
-        elif model_type == "set_transformer":
+        elif model_type in ("set_transformer", "lstm"):
             model_path = models_path / f"{m['id']}.pt"
         else:
             model_path = models_path / f"{m['id']}.pkl"
@@ -655,6 +705,9 @@ def score(data_dir, models_dir, score_only, run_calibrate):
             if model_type == "set_transformer":
                 from morningalpha.ml.inference import get_st_raw_scores
                 raw = get_st_raw_scores(df_score, model_path)
+            elif model_type == "lstm":
+                from morningalpha.ml.inference import get_lstm_raw_scores
+                raw = get_lstm_raw_scores(df_score, model_path)
             else:
                 raw = get_raw_scores(df_score, model_path)
             raw_scores[m["id"]] = raw

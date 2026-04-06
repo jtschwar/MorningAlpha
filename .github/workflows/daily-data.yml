@@ -19,9 +19,18 @@ jobs:
         with:
           python-version: '3.11'
           cache: pip
+          cache-dependency-path: |
+            setup.py
+            setup.cfg
+            pyproject.toml
 
       - name: Install Python dependencies
         run: pip install -e .
+
+      - name: Install PyTorch (CPU-only)
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+        env:
+          PIP_CACHE_DIR: ~/.cache/pip
 
       - name: Run spread pipeline (all windows)
         run: alpha spread --universe nasdaq --universe nyse --universe sp500 --output-dir data/latest --min-market-cap 0.1
