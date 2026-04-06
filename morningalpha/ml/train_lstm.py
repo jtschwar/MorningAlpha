@@ -364,7 +364,8 @@ def _run_training_loop(
 @click.option("--dropout", default=0.3, show_default=True, help="Dropout rate (also used for MC inference).")
 @click.option("--epochs", default=50, show_default=True)
 @click.option("--batch-size", "batch_size", default=512, show_default=True)
-@click.option("--lr", default=1e-3, show_default=True)
+@click.option("--lr", default=3e-4, show_default=True)
+@click.option("--patience", default=15, show_default=True, help="Early stopping patience (epochs).")
 @click.option("--stride", default=3, show_default=True, help="Step between training windows per ticker.")
 @click.option("--workers", default=0, show_default=True, help="DataLoader num_workers.")
 @click.option(
@@ -413,6 +414,7 @@ def train_lstm(
     walk_forward: bool,
     n_folds: int,
     ema_halflife: int,
+    patience: int,
 ) -> None:
     """Train the StockPriceLSTM on the unified daily dataset.
 
@@ -559,7 +561,7 @@ def train_lstm(
             fold_model = _make_model()
             fold_state, _, _ = _run_training_loop(
                 fold_model, tr_loader, va_loader, epochs, lr, device,
-                criterion=criterion, label=f"Fold {fold['fold']}",
+                patience=patience, criterion=criterion, label=f"Fold {fold['fold']}",
             )
             if fold_state:
                 fold_model.load_state_dict(fold_state)
@@ -625,7 +627,7 @@ def train_lstm(
 
     best_state, best_val_loss, history = _run_training_loop(
         model, train_loader, val_loader, epochs, lr, device,
-        criterion=criterion, label="Final model",
+        patience=patience, criterion=criterion, label="Final model",
     )
 
     elapsed = time.time() - t0
