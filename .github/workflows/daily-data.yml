@@ -39,7 +39,7 @@ jobs:
           PYTHONUNBUFFERED: '1'
 
       - name: Score with ML models
-        run: alpha ml score --data-dir data/latest --models-dir models
+        run: alpha ml score --data-dir data/latest --models-dir models --calibrate
         env:
           PYTHONUNBUFFERED: '1'
 

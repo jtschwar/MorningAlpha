@@ -16,6 +16,7 @@ from morningalpha.ml.features import (
     FLOAT_FEATURES,
     MARKET_CONTEXT_COLUMNS,
     SECTOR_MAP,
+    SPREAD_TO_ML,
     winsorize,
     rank_normalize,
 )
@@ -27,61 +28,8 @@ _REPO_MODELS = Path(__file__).parents[2] / "models"
 _HOME_MODELS = Path.home() / ".morningalpha" / "models"
 MODEL_DIR = _REPO_MODELS if _REPO_MODELS.exists() else _HOME_MODELS
 
-# ---------------------------------------------------------------------------
-# Column mapping: spread CSV names → ML feature names
-# ---------------------------------------------------------------------------
-
-_SPREAD_TO_ML: dict = {
-    # Core metrics (PascalCase in CSV)
-    "SharpeRatio":        "sharpe_ratio",
-    "SortinoRatio":       "sortino_ratio",
-    "MaxDrawdown":        "max_drawdown",
-    "ConsistencyScore":   "consistency_score",
-    "VolumeTrend":        "volume_trend",
-    "QualityScore":       "quality_score",
-    "RSI":                "rsi",
-    "MomentumAccel":      "momentum_accel",
-    "PriceVs20dHigh":     "price_vs_20d_high",
-    "VolumeSurge":        "volume_surge",
-    "EntryScore":         "entry_score",
-    "AnnualizedVol":      "volatility_20d",
-    "DistanceFromHigh":   "distance_from_high",
-    "AvgDrawdown":        "avg_drawdown",
-    "VolumeConsistency":  "volume_consistency",
-    "VolatilityRatio":    "volatility_ratio",
-    "VolumeUpDnRatio":   "volume_trend_confirmation",
-    # Tier 2 technicals
-    "RSI7":               "rsi_7",
-    "RSI21":              "rsi_21",
-    "MACD":               "macd",
-    "MACDSignal":         "macd_signal",
-    "MACDHist":           "macd_hist",
-    "BollingerPctB":      "bollinger_pct_b",
-    "BollingerBandwidth": "bollinger_bandwidth",
-    "StochK":             "stoch_k",
-    "StochD":             "stoch_d",
-    "ROC5":               "roc_5",
-    "ROC10":              "roc_10",
-    "ROC21":              "roc_21",
-    "ATR14":              "atr_14",
-    "PriceToSMA20Pct":    "price_to_sma20",
-    "PriceToSMA50Pct":    "price_to_sma50",
-    "PriceToSMA200Pct":   "price_to_sma200",
-    "PriceVs52wkHighPct":   "price_vs_52wk_high",
-    "PctDaysPositive21d":   "pct_days_positive_21d",
-    # Long-horizon momentum (academic factors)
-    "Momentum12_1":         "momentum_12_1",
-    "MomentumIntermediate": "momentum_intermediate",
-    "MomentumAccelLong":    "momentum_accel_long",
-    "InfoDiscreteness":     "info_discreteness",
-    # Fundamentals — actual column names from the spread CSV (merged from fundamentals.csv)
-    "ROE":          "roe",
-    "DebtEquity":   "debt_to_equity",
-    "RevenueGrowth":"revenue_growth",
-    "NetMargin":    "profit_margin",
-    "CurrentRatio": "current_ratio",
-    "ShortFloat":   "short_pct_float",
-}
+# Column mapping imported from features.py — single source of truth.
+_SPREAD_TO_ML = SPREAD_TO_ML
 
 _MARKET_CAP_CAT_MAP = {
     "Mega": 5, "Large": 4, "Mid": 3, "Small": 2, "Micro": 1,

@@ -6,7 +6,7 @@ from morningalpha.ml.train import train as ml_train_lgbm, wfcv as ml_wfcv
 from morningalpha.fundamentals import fundamentals_cmd as ml_fundamentals
 from morningalpha.ml.backtest import backtest as ml_backtest
 from morningalpha.ml.score import score as ml_score
-from morningalpha.ml.backfill import backfill as ml_backfill
+from morningalpha.ml.backfill import backfill as ml_backfill, seed_calibration_daily as ml_seed_calib
 from morningalpha.ml.train_lstm import train_lstm as ml_train_lstm
 
 
@@ -31,3 +31,4 @@ ml.add_command(ml_fundamentals)
 ml.add_command(ml_backtest)
 ml.add_command(ml_score)
 ml.add_command(ml_backfill)
+ml.add_command(ml_seed_calib, name="seed-calibration-daily")

@@ -115,6 +115,104 @@ FUNDAMENTAL_FEATURE_NAMES: List[str] = [
     "has_fundamentals",
 ]
 
+# ---------------------------------------------------------------------------
+# Column name mapping: spread CSV names (PascalCase) → ML feature names (snake_case)
+# Single source of truth — imported by inference.py, score.py, and backfill.py.
+# ---------------------------------------------------------------------------
+
+SPREAD_TO_ML: dict[str, str] = {
+    # Core metrics
+    "Return":              "return_pct",
+    "SharpeRatio":         "sharpe_ratio",
+    "SortinoRatio":        "sortino_ratio",
+    "MaxDrawdown":         "max_drawdown",
+    "ConsistencyScore":    "consistency_score",
+    "VolumeTrend":         "volume_trend",
+    "QualityScore":        "quality_score",
+    "RSI":                 "rsi",
+    "MomentumAccel":       "momentum_accel",
+    "VolumeSurge":         "volume_surge",
+    "EntryScore":          "entry_score",
+    "AnnualizedVol":       "volatility_20d",
+    "VolatilityRatio":     "volatility_ratio",
+    "AvgDrawdown":         "avg_drawdown",
+    "VolumeConsistency":   "volume_consistency",
+    "DistanceFromHigh":    "distance_from_high",
+    "PctDaysPositive21d":  "pct_days_positive_21d",
+    "PriceVs20dHigh":      "price_vs_20d_high",
+    # Tier 2 technicals
+    "RSI7":                "rsi_7",
+    "RSI21":               "rsi_21",
+    "MACD":                "macd",
+    "MACDSignal":          "macd_signal",
+    "MACDHist":            "macd_hist",
+    "BollingerPctB":       "bollinger_pct_b",
+    "BollingerBandwidth":  "bollinger_bandwidth",
+    "StochK":              "stoch_k",
+    "StochD":              "stoch_d",
+    "ROC5":                "roc_5",
+    "ROC10":               "roc_10",
+    "ROC21":               "roc_21",
+    "ATR14":               "atr_14",
+    "PriceToSMA20Pct":     "price_to_sma20",
+    "PriceToSMA50Pct":     "price_to_sma50",
+    "PriceToSMA200Pct":    "price_to_sma200",
+    "PriceVs52wkHighPct":  "price_vs_52wk_high",
+    # Long-horizon momentum
+    "Momentum12_1":        "momentum_12_1",
+    "MomentumIntermediate":"momentum_intermediate",
+    "MomentumAccelLong":   "momentum_accel_long",
+    "InfoDiscreteness":    "info_discreteness",
+    "VolumeUpDnRatio":     "volume_trend_confirmation",
+    # Cross-sectional features
+    "SectorReturnRank":    "sector_return_rank",
+    "ReturnXRegime":       "return_pct_x_regime",
+    "SectorMomentumRank":  "sector_momentum_rank",
+    "ValueXMomentum":      "value_x_momentum",
+    "QualityXMomentum":    "quality_x_momentum",
+    # Market context
+    "SPYReturn5d":         "spy_return_5d",
+    "SPYReturn10d":        "spy_return_10d",
+    "SPYReturn21d":        "spy_return_21d",
+    "SPYReturn63d":        "spy_return_63d",
+    "SPYDrawdownFromPeak": "spy_drawdown_from_peak",
+    "SPYVolatility20d":    "spy_volatility_20d",
+    "SPYRSI14":            "spy_rsi_14",
+    "SPYAboveSMA200":      "spy_above_sma200",
+    "SPYMomentumRegime":   "spy_momentum_regime",
+    "VIXLevel":            "vix_level",
+    "VIXPercentile":       "vix_percentile",
+    "VIX1mChange":         "vix_1m_change",
+    "VIXTermStructure":    "vix_term_structure",
+    "WMLRealizedVol126d":  "wml_realized_vol_126d",
+    "WMLTrailing1m":       "wml_trailing_1m",
+    "WMLTrailing3m":       "wml_trailing_3m",
+    # Fundamentals
+    "EarningsYield":       "earnings_yield",
+    "BookToMarket":        "book_to_market",
+    "SalesToPrice":        "sales_to_price",
+    "ROE":                 "roe",
+    "DebtEquity":          "debt_to_equity",
+    "RevenueGrowth":       "revenue_growth",
+    "NetMargin":           "profit_margin",
+    "CurrentRatio":        "current_ratio",
+    "ShortFloat":          "short_pct_float",
+    "EarningsYieldVsSector":   "earnings_yield_vs_sector",
+    "BookToMarketVsSector":    "book_to_market_vs_sector",
+    "EarningsYieldQuality":    "earnings_yield_quality",
+    # Categoricals
+    "Sector":              "sector",
+    "MarketCapCat":        "market_cap_cat",
+    "Exchange":            "exchange",
+    "HasFundamentals":     "has_fundamentals",
+    "LogMomentum12_1":     "log_momentum_12_1",
+    "RSRating":            "rs_rating",
+}
+
+# Reverse mapping: ML feature names → spread CSV names
+ML_TO_SPREAD: dict[str, str] = {v: k for k, v in SPREAD_TO_ML.items()}
+
+
 SECTOR_MAP = {
     "technology": 0,
     "healthcare": 1,

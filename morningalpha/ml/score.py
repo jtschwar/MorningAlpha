@@ -6,6 +6,7 @@ Usage:
 """
 import json
 import logging
+import warnings
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -16,12 +17,26 @@ from rich.console import Console
 from rich.table import Table
 from scipy.stats import spearmanr
 
+# Suppress pandas FutureWarning about object-dtype downcasting in fillna/astype chains.
+# These are cosmetic deprecations that don't affect correctness.
+warnings.filterwarnings(
+    "ignore",
+    message="Downcasting object dtype arrays",
+    category=FutureWarning,
+)
+
 logger = logging.getLogger(__name__)
 console = Console()
 
 DEFAULT_DATA_DIR = "data/latest"
-_WEIGHTS_PATH   = Path("data/factors/model_weights.json")
-_LEDGER_PATH    = Path("data/factors/predictions_ledger.parquet")
+_WEIGHTS_PATH        = Path("data/factors/model_weights.json")
+_LEDGER_PATH         = Path("data/factors/predictions_ledger.parquet")
+_IC_TIMESERIES_PATH  = Path("data/factors/live_ic_timeseries.parquet")
+_MODEL_HEALTH_PATH   = Path("data/factors/model_health.json")
+_CORRECTION_PATH     = Path("data/factors/correction_models.joblib")
+_CALIBRATION_PATH    = Path("data/factors/calibration_models.joblib")
+_CALIB_DAILY_PATH    = Path("data/factors/calibration_daily.parquet")
+_CALIB_DIR           = Path("data/factors")
 # How many trading days before we evaluate a prediction against realized returns
 _EVAL_HORIZON   = 63
 DEFAULT_MODELS_DIR = "models"
@@ -106,10 +121,11 @@ def _hedge_update(current_weights: dict, ic_by_model: dict, eta: float = 0.5) ->
 # ---------------------------------------------------------------------------
 
 # Three eval horizons: (trading_days, calendar_buffer, column_suffix)
+# Aligned with training targets (forward_5d, forward_21d, forward_63d).
 _HORIZONS = [
     (5,  7,  "5d"),   # ≈ 1 week  — first results after ~2 weeks
-    (13, 7,  "13d"),  # ≈ 2.5 wks — first results after ~3.5 weeks
-    (63, 14, "63d"),  # ≈ 13 wks  — full calibration target
+    (21, 7,  "21d"),  # ≈ 1 month — medium-term signal, matches training target
+    (63, 14, "63d"),  # ≈ 13 wks  — primary calibration target
 ]
 
 
@@ -118,11 +134,60 @@ def _td(trading_days: int, buffer: int) -> int:
     return trading_days * 7 // 5 + buffer
 
 
+def _fetch_market_context(today: pd.Timestamp) -> dict:
+    """Fetch SPY 21-day trailing return and VIX close for today.
+
+    Used as context features for the residual correction and calibration models.
+    Returns NaN values on failure (safe fallback).
+    """
+    try:
+        import yfinance as yf
+        start = (today - pd.Timedelta(days=45)).strftime("%Y-%m-%d")
+        end   = (today + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+
+        spy = yf.download("SPY", start=start, end=end, progress=False, auto_adjust=True)
+        vix = yf.download("^VIX", start=start, end=end, progress=False, auto_adjust=True)
+
+        spy_ret = float("nan")
+        vix_val = float("nan")
+
+        # Handle multi-level columns from newer yfinance
+        spy_close = spy["Close"] if "Close" in spy.columns else spy.iloc[:, 0]
+        vix_close = vix["Close"] if "Close" in vix.columns else vix.iloc[:, 0]
+
+        if isinstance(spy_close, pd.DataFrame):
+            spy_close = spy_close.iloc[:, 0]
+        if isinstance(vix_close, pd.DataFrame):
+            vix_close = vix_close.iloc[:, 0]
+
+        spy_close = spy_close.dropna()
+        vix_close = vix_close.dropna()
+
+        if len(spy_close) >= 22:
+            spy_ret = float(spy_close.iloc[-1] / spy_close.iloc[-22] - 1)
+        if len(vix_close) >= 1:
+            vix_val = float(vix_close.iloc[-1])
+
+        return {"market_return_21d": spy_ret, "vix_at_prediction": vix_val}
+    except Exception as exc:
+        logger.warning("Could not fetch market context (%s) — using NaN", exc)
+        return {"market_return_21d": float("nan"), "vix_at_prediction": float("nan")}
+
+
+_SECTOR_CODES: dict[str, int] = {
+    "Technology": 1, "Healthcare": 2, "Financial Services": 3,
+    "Consumer Cyclical": 4, "Communication Services": 5, "Industrials": 6,
+    "Consumer Defensive": 7, "Energy": 8, "Utilities": 9,
+    "Real Estate": 10, "Basic Materials": 11,
+}
+
+
 def _append_predictions_ledger(df_score: pd.DataFrame, raw_scores: dict) -> None:
     """Append this run's raw model scores to the predictions ledger.
 
-    Stores three eval_after dates (5d, 13d, 63d) so calibration feedback
-    arrives after ~2 weeks rather than waiting the full 13 weeks.
+    Stores eval_after dates for 5d, 21d, 63d horizons plus context features
+    (sector, market return, VIX, momentum bucket) needed for the residual
+    correction and calibration models.
     """
     try:
         _LEDGER_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -140,10 +205,27 @@ def _append_predictions_ledger(df_score: pd.DataFrame, raw_scores: dict) -> None
         for model_id, raw in raw_scores.items():
             rows[f"raw_{model_id}"] = raw
 
+        # Context features for correction/calibration models
+        if "Sector" in df_score.columns:
+            rows["sector_code"] = df_score["Sector"].map(_SECTOR_CODES).fillna(0).astype(np.int8).values
+        else:
+            rows["sector_code"] = np.int8(0)
+
+        if "Momentum12_1" in df_score.columns:
+            mom = pd.to_numeric(df_score["Momentum12_1"], errors="coerce")
+            rows["momentum_bucket"] = pd.qcut(mom.rank(method="first"), q=5, labels=False).fillna(2).astype(np.int8).values
+        else:
+            rows["momentum_bucket"] = np.int8(2)
+
+        ctx = _fetch_market_context(today)
+        rows["market_return_21d"]  = ctx["market_return_21d"]
+        rows["vix_at_prediction"]  = ctx["vix_at_prediction"]
+        rows["is_backfill"]        = False
+
         # Return columns filled in later by _evaluate_and_update_weights
         for _, _, suffix in _HORIZONS:
             rows[f"realized_return_{suffix}"] = np.nan
-            rows[f"matured_{suffix}"] = False
+            rows[f"matured_{suffix}"]         = False
 
         existing = pd.read_parquet(_LEDGER_PATH) if _LEDGER_PATH.exists() else pd.DataFrame()
         updated = pd.concat([existing, rows], ignore_index=True)
@@ -210,7 +292,7 @@ def _evaluate_and_update_weights(df_current: pd.DataFrame, raw_scores: dict) -> 
         # Hedge update — use the longest horizon that has enough matured data
         ic_by_model: dict = {}
         used_horizon = None
-        for _, _, suffix in reversed(_HORIZONS):   # 63d first, then 13d, then 5d
+        for _, _, suffix in reversed(_HORIZONS):   # 63d first, then 21d, then 5d
             ret_col     = f"realized_return_{suffix}"
             matured_col = f"matured_{suffix}"
             if ret_col not in ledger.columns:
@@ -253,167 +335,565 @@ def _evaluate_and_update_weights(df_current: pd.DataFrame, raw_scores: dict) -> 
         logger.warning("Weight evaluation failed (%s) — weights unchanged", exc)
 
 
-def _run_calibration(model_ids: list) -> None:
-    """Fit isotonic calibrator and write live_ic.json for each model.
+def _run_calibration(model_ids: list, active_model_ids: list | None = None) -> None:
+    """Run calibration pipeline: IC timeseries, alerts, residual correction, and
+    cross-model calibration model.
 
-    Computes per-horizon IC series (5d, 13d, 63d) so early signal health is
-    visible before the full 63-day window accumulates data.  Uses 63d returns
-    for isotonic fit, falls back to 13d if not enough 63d rows yet.
-    Only runs when invoked with --calibrate (weekly workflow).
+    Also writes per-model live_ic_{model_id}.json for the dashboard.
+    Only runs when invoked with --calibrate (intended for the daily workflow).
     """
     if not _LEDGER_PATH.exists():
         console.print("[dim]--calibrate: no ledger found yet — skipping[/dim]")
         return
 
+    if active_model_ids is None:
+        active_model_ids = model_ids
+
+    try:
+        import joblib
+    except ImportError:
+        logger.warning("joblib not available — calibration skipped")
+        return
+
     try:
         ledger = pd.read_parquet(_LEDGER_PATH)
         today  = pd.Timestamp(date.today())
-
-        _CALIB_DIR = Path("data/factors")
         _CALIB_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Load calibration_daily for rich feature context (join on ticker + scored_date)
+        calib_ctx: pd.DataFrame | None = None
+        if _CALIB_DAILY_PATH.exists():
+            try:
+                calib_ctx = pd.read_parquet(_CALIB_DAILY_PATH)
+                calib_ctx = calib_ctx.rename(columns={"date": "scored_date"})
+                console.print(
+                    f"[dim]calibration_daily loaded: {len(calib_ctx):,} rows "
+                    f"({calib_ctx['scored_date'].nunique()} days)[/dim]"
+                )
+            except Exception as exc:
+                logger.warning("Could not load calibration_daily (%s) — using basic features", exc)
+
+        # --- Part 1: IC timeseries + consolidated model_health.json ---
+        ic_ts = _update_ic_timeseries(ledger, today, model_ids)
+        _check_and_save_alerts(ic_ts, model_ids)
+
+        # --- Part 2: Residual correction models → single correction_models.joblib ---
+        correction_dict: dict = {}
+        if _CORRECTION_PATH.exists():
+            try:
+                correction_dict = joblib.load(_CORRECTION_PATH)
+            except Exception:
+                correction_dict = {}
 
         for model_id in model_ids:
             raw_col = f"raw_{model_id}"
             if raw_col not in ledger.columns:
+                console.print(f"[dim]--calibrate: {model_id} — no score column in ledger yet[/dim]")
                 continue
-
-            # --- Per-horizon live IC ---
-            horizon_ic: dict[str, list] = {}
-            horizon_summaries: dict[str, dict] = {}
 
             for _, _, suffix in _HORIZONS:
-                ret_col     = f"realized_return_{suffix}"
-                matured_col = f"matured_{suffix}"
-                if ret_col not in ledger.columns or matured_col not in ledger.columns:
-                    continue
+                cm = _fit_residual_correction(ledger, model_id, suffix, calib_ctx)
+                if cm is not None:
+                    key = f"{model_id}_{suffix}"
+                    correction_dict[key] = cm
+                    console.print(f"[dim]Correction model updated: {key}[/dim]")
 
-                mature = ledger[ledger[matured_col] == True][
-                    ["ticker", "scored_date", raw_col, ret_col]
-                ].dropna()
+        if correction_dict:
+            joblib.dump(correction_dict, _CORRECTION_PATH)
+            console.print(f"[cyan]Correction models saved:[/cyan] {len(correction_dict)} models → {_CORRECTION_PATH.name}")
 
-                if mature.empty:
-                    continue
-
-                # Cross-sectional Spearman IC per scoring cohort
-                ic_rows = []
-                for dt, grp in mature.groupby("scored_date"):
-                    if len(grp) < 30:
-                        continue
-                    ic = float(spearmanr(grp[raw_col], grp[ret_col]).correlation)
-                    if not np.isnan(ic):
-                        ic_rows.append({"date": str(dt.date()), "ic": round(ic, 4), "n": len(grp)})
-
-                if not ic_rows:
-                    continue
-
-                ic_vals = [r["ic"] for r in ic_rows]
-                ic_df   = pd.DataFrame(ic_rows)
-                ic_df["ic_21d"] = ic_df["ic"].rolling(21, min_periods=5).mean().round(4)
-                latest_rolling = float(ic_df["ic_21d"].dropna().iloc[-1]) if ic_df["ic_21d"].notna().any() else None
-                ic_mean = round(float(np.mean(ic_vals)), 4)
-                ic_std  = round(float(np.std(ic_vals)), 4)
-
-                horizon_ic[suffix] = ic_rows
-                horizon_summaries[suffix] = {
-                    "ic_mean":           ic_mean,
-                    "ic_std":            ic_std,
-                    "icir":              round(ic_mean / ic_std, 3) if ic_std > 0 else None,
-                    "ic_hit_rate":       round(float(np.mean([v > 0 for v in ic_vals])), 3),
-                    "latest_rolling_21d": latest_rolling,
-                    "total_cohorts":     len(ic_rows),
-                    "status": (
-                        "healthy"   if latest_rolling is not None and latest_rolling >= 0.03 else
-                        "degrading" if latest_rolling is not None and latest_rolling >= 0.02 else
-                        "retrain"   if latest_rolling is not None else
-                        "unknown"
-                    ),
-                }
-
-            if not horizon_ic:
-                console.print(f"[dim]--calibrate: {model_id} — no mature data in any horizon yet[/dim]")
-                continue
-
-            # Primary summary uses longest available horizon (63d → 13d → 5d)
-            primary_suffix = next(
-                (s for _, _, s in reversed(_HORIZONS) if s in horizon_ic),
-                list(horizon_ic.keys())[-1],
-            )
-            primary = horizon_summaries[primary_suffix]
-            summary = {
-                "model_id":       model_id,
-                "updated":        str(today.date()),
-                "primary_horizon": primary_suffix,
-                **{k: primary[k] for k in (
-                    "ic_mean", "ic_std", "icir", "ic_hit_rate",
-                    "latest_rolling_21d", "status", "total_cohorts",
-                )},
-                "horizons": horizon_summaries,
-            }
-
-            out = {"summary": summary, "daily": horizon_ic}
-            live_ic_path = _CALIB_DIR / f"live_ic_{model_id}.json"
-            with open(live_ic_path, "w") as f:
-                json.dump(out, f, indent=2)
-
-            horizon_str = "  ".join(
-                f"{s}:IC={horizon_summaries[s]['ic_mean']:+.4f}({horizon_summaries[s]['status']})"
-                for s in ["5d", "13d", "63d"] if s in horizon_summaries
-            )
-            console.print(
-                f"[cyan]live_ic {model_id}:[/cyan] {horizon_str}  → {live_ic_path}"
-            )
-
-            # --- Isotonic calibration: 63d preferred, fall back to 13d ---
-            cal_target_suffix = None
-            for _, _, suffix in reversed(_HORIZONS):   # 63d first
-                ret_col     = f"realized_return_{suffix}"
-                matured_col = f"matured_{suffix}"
-                if matured_col not in ledger.columns:
-                    continue
-                n_mature = int((ledger[matured_col] == True).sum())
-                if n_mature >= 500:
-                    cal_target_suffix = suffix
-                    break
-
-            if cal_target_suffix is None:
-                best_n = max(
-                    (int((ledger[f"matured_{s}"] == True).sum()), s)
-                    for _, _, s in _HORIZONS if f"matured_{s}" in ledger.columns
-                )[0] if any(f"matured_{s}" in ledger.columns for _, _, s in _HORIZONS) else 0
-                console.print(
-                    f"[dim]--calibrate: {model_id} insufficient data for isotonic fit "
-                    f"(best: {best_n} rows, need ≥500) — skipping[/dim]"
-                )
-                continue
-
-            ret_col     = f"realized_return_{cal_target_suffix}"
-            matured_col = f"matured_{cal_target_suffix}"
-            model_mature = ledger[ledger[matured_col] == True][[raw_col, ret_col]].dropna()
-
+        # --- Part 3: Cross-model calibration model → single calibration_models.joblib ---
+        calibration_dict: dict = {}
+        if _CALIBRATION_PATH.exists():
             try:
-                from sklearn.isotonic import IsotonicRegression
-                import pickle as _pkl
+                calibration_dict = joblib.load(_CALIBRATION_PATH)
+            except Exception:
+                calibration_dict = {}
 
-                X = model_mature[raw_col].values
-                y = (model_mature[ret_col] > 0).astype(float).values
-
-                cal = IsotonicRegression(y_min=0.0, y_max=1.0, out_of_bounds="clip")
-                cal.fit(X, y)
-
-                cal_path = _CALIB_DIR / f"calibrator_{model_id}.pkl"
-                with open(cal_path, "wb") as f:
-                    _pkl.dump(cal, f)
-                console.print(
-                    f"[cyan]Calibrator saved:[/cyan] {cal_path}  "
-                    f"(n={len(model_mature)}, horizon={cal_target_suffix})"
+        for _, _, suffix in _HORIZONS:
+            cal_model = _fit_calibration_model(ledger, suffix, active_model_ids, calib_ctx)
+            if cal_model is not None:
+                calibration_dict[suffix] = cal_model
+                n_resolved = int(
+                    ledger.get(f"matured_{suffix}", pd.Series(False, index=ledger.index))
+                    .fillna(False).astype(bool).sum()
                 )
-            except ImportError:
-                console.print("[yellow]scikit-learn not installed — skipping isotonic calibration[/yellow]")
-            except Exception as exc:
-                logger.warning("Calibration fit failed for %s: %s", model_id, exc)
+                console.print(
+                    f"[cyan]Multi-model calibrator ({suffix}):[/cyan] updated  "
+                    f"(n={n_resolved})"
+                )
+            else:
+                matured_col = f"matured_{suffix}"
+                n_resolved = int(
+                    ledger.get(matured_col, pd.Series(False, index=ledger.index))
+                    .fillna(False).astype(bool).sum()
+                ) if matured_col in ledger.columns else 0
+                console.print(
+                    f"[dim]Multi-model calibrator ({suffix}): cold-start "
+                    f"({n_resolved} / 500 resolved predictions)[/dim]"
+                )
+
+        if calibration_dict:
+            joblib.dump(calibration_dict, _CALIBRATION_PATH)
+            console.print(f"[cyan]Calibration models saved:[/cyan] {len(calibration_dict)} horizons → {_CALIBRATION_PATH.name}")
 
     except Exception as exc:
         logger.warning("--calibrate step failed (%s) — continuing", exc)
+
+
+# ---------------------------------------------------------------------------
+# Daily IC timeseries + model alerts
+# ---------------------------------------------------------------------------
+
+def _update_ic_timeseries(
+    ledger: pd.DataFrame,
+    today: pd.Timestamp,
+    model_ids: list[str],
+) -> pd.DataFrame:
+    """Compute cross-sectional Spearman IC for each (model, horizon) pair and
+    append new rows to live_ic_timeseries.parquet.
+
+    Only computes IC for cohorts whose realized returns have been filled in
+    (matured == True).  Returns the updated timeseries DataFrame.
+    """
+    try:
+        existing = pd.read_parquet(_IC_TIMESERIES_PATH) if _IC_TIMESERIES_PATH.exists() else pd.DataFrame()
+    except Exception:
+        existing = pd.DataFrame()
+
+    new_rows: list[dict] = []
+
+    for _, _, suffix in _HORIZONS:
+        ret_col     = f"realized_return_{suffix}"
+        matured_col = f"matured_{suffix}"
+        if ret_col not in ledger.columns or matured_col not in ledger.columns:
+            continue
+
+        mature = ledger[ledger[matured_col].fillna(False).astype(bool)].copy()
+        if mature.empty:
+            continue
+
+        for model_id in model_ids:
+            raw_col = f"raw_{model_id}"
+            if raw_col not in mature.columns:
+                continue
+
+            for scored_date, grp in mature.groupby("scored_date"):
+                # Skip if we already have this row
+                if not existing.empty and len(existing[
+                    (existing["date"] == today) &
+                    (existing["prediction_date"] == scored_date) &
+                    (existing["model_id"] == model_id) &
+                    (existing["horizon"] == suffix)
+                ]) > 0:
+                    continue
+
+                valid = grp[[raw_col, ret_col]].dropna()
+                if len(valid) < 30:
+                    continue
+                try:
+                    ic, _ = spearmanr(valid[raw_col], valid[ret_col])
+                except Exception:
+                    continue
+                if np.isnan(ic):
+                    continue
+
+                hit_rate = float(
+                    ((valid[raw_col] > valid[raw_col].median()) ==
+                     (valid[ret_col] > 0)).mean()
+                )
+                new_rows.append({
+                    "date":            today,
+                    "prediction_date": pd.Timestamp(scored_date),
+                    "model_id":        model_id,
+                    "horizon":         suffix,
+                    "ic":              round(float(ic), 4),
+                    "hit_rate":        round(hit_rate, 4),
+                    "n_tickers":       len(valid),
+                })
+
+    if not new_rows:
+        return existing
+
+    updated = pd.concat([existing, pd.DataFrame(new_rows)], ignore_index=True)
+    _IC_TIMESERIES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    updated.to_parquet(_IC_TIMESERIES_PATH, index=False)
+    console.print(f"[dim]IC timeseries updated: {len(new_rows)} new rows → {_IC_TIMESERIES_PATH}[/dim]")
+    return updated
+
+
+def _check_and_save_alerts(ic_ts: pd.DataFrame, active_model_ids: list[str]) -> None:
+    """Check rolling IC thresholds per model and write model_health.json.
+
+    model_health.json consolidates alerts + per-model IC summaries in one place,
+    replacing the old per-model live_ic_*.json files and model_alerts.json.
+    """
+    alerts: list[dict] = []
+    model_health: dict = {}
+    today_str = str(date.today())
+
+    for model_id in active_model_ids:
+        mdf = ic_ts[ic_ts["model_id"] == model_id] if not ic_ts.empty else pd.DataFrame()
+        health_entry: dict = {"horizons": {}}
+        status = "warming_up"
+
+        for _, _, suffix in _HORIZONS:
+            h_df = mdf[mdf["horizon"] == suffix]["ic"] if not mdf.empty else pd.Series(dtype=float)
+            if len(h_df) < 3:
+                continue
+            ic_vals   = h_df.tolist()
+            rolling   = float(h_df.tail(10).mean())
+            ic_mean   = float(h_df.mean())
+            ic_std    = float(h_df.std()) if len(h_df) > 1 else 0.0
+            health_entry["horizons"][suffix] = {
+                "ic_mean":    round(ic_mean, 4),
+                "ic_std":     round(ic_std, 4),
+                "rolling_10": round(rolling, 4),
+                "n":          len(h_df),
+                "status": (
+                    "healthy"   if rolling >= 0.03 else
+                    "degrading" if rolling >= 0.02 else
+                    "retrain"
+                ),
+            }
+
+            if rolling < 0.0:
+                alerts.append({
+                    "level": "CRITICAL", "model_id": model_id,
+                    "message": f"{suffix} rolling IC = {rolling:.4f} (negative — model is harmful)",
+                    "date": today_str,
+                })
+                status = "critical"
+            elif suffix == "63d" and rolling < 0.02 and status != "critical":
+                alerts.append({
+                    "level": "WARNING", "model_id": model_id,
+                    "message": f"63d rolling IC = {rolling:.4f} (below 0.02 threshold)",
+                    "date": today_str,
+                })
+                if status == "warming_up":
+                    status = "warning"
+            elif status == "warming_up" and len(h_df) >= 5:
+                status = "healthy"
+
+        health_entry["status"] = status
+        model_health[model_id] = health_entry
+
+    payload = {
+        "last_updated": today_str,
+        "alerts":       alerts,
+        "models":       model_health,
+    }
+    _MODEL_HEALTH_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(_MODEL_HEALTH_PATH, "w") as f:
+        json.dump(payload, f, indent=2)
+
+    if alerts:
+        for a in alerts:
+            lvl_color = "red" if a["level"] == "CRITICAL" else "yellow"
+            console.print(f"[{lvl_color}]{a['level']}: {a['message']}[/{lvl_color}]")
+    else:
+        console.print(f"[dim]Model alerts: all clear[/dim]")
+
+
+# ---------------------------------------------------------------------------
+# Residual correction (Part 2)
+# ---------------------------------------------------------------------------
+
+# Basic context features always available from the ledger
+_CORRECTION_FEATURES_BASIC = [
+    "raw_score", "sector_code", "market_return_21d", "vix_at_prediction", "momentum_bucket",
+]
+# Richer features available when calibration_daily.parquet is joined in
+_CORRECTION_FEATURES_RICH = _CORRECTION_FEATURES_BASIC + [
+    "rsi", "momentum_12_1", "price_to_sma200", "volatility_20d",
+    "bollinger_pct_b", "vix_level",
+]
+_CORRECTION_FEATURES = _CORRECTION_FEATURES_BASIC  # default; overridden at fit time
+
+
+def _fit_residual_correction(
+    ledger: pd.DataFrame,
+    model_id: str,
+    horizon_suffix: str,
+    calib_ctx: "pd.DataFrame | None" = None,
+    lookback_pairs: int = 3000,
+):
+    """Fit a Ridge correction model on recent (prediction, actual) residuals.
+
+    When ``calib_ctx`` is provided (calibration_daily.parquet), joins richer
+    features (RSI, momentum, SMA ratio, etc.) for a more powerful correction.
+    Falls back to basic ledger context columns if not available.
+
+    Returns the fitted Ridge model, or None if not enough resolved data.
+    """
+    try:
+        from sklearn.linear_model import Ridge
+    except ImportError:
+        return None
+
+    raw_col     = f"raw_{model_id}"
+    ret_col     = f"realized_return_{horizon_suffix}"
+    matured_col = f"matured_{horizon_suffix}"
+
+    if raw_col not in ledger.columns or ret_col not in ledger.columns:
+        return None
+    if matured_col not in ledger.columns:
+        return None
+
+    resolved = ledger[
+        ledger[matured_col].fillna(False).astype(bool) &
+        ledger[raw_col].notna() &
+        ledger[ret_col].notna()
+    ].sort_values("scored_date", ascending=False).head(lookback_pairs).copy()
+
+    if len(resolved) < 200:
+        return None
+
+    # Join rich features from calibration_daily when available
+    if calib_ctx is not None:
+        resolved = resolved.merge(
+            calib_ctx[["ticker", "scored_date"] + [
+                c for c in _CORRECTION_FEATURES_RICH
+                if c not in _CORRECTION_FEATURES_BASIC and c in calib_ctx.columns
+            ]],
+            on=["ticker", "scored_date"],
+            how="left",
+        )
+        features = [f for f in _CORRECTION_FEATURES_RICH if f in resolved.columns or f in _CORRECTION_FEATURES_BASIC]
+    else:
+        features = _CORRECTION_FEATURES_BASIC
+
+    resolved["raw_score"] = resolved[raw_col].values
+    for col in features:
+        if col not in resolved.columns:
+            resolved[col] = 0.0
+
+    # Downweight backfill rows (0.3) vs live rows (1.0)
+    sample_weight = np.where(
+        resolved.get("is_backfill", pd.Series(False, index=resolved.index)).fillna(False),
+        0.3, 1.0
+    )
+
+    X = resolved[features].fillna(0).values.astype(float)
+    y = (resolved[ret_col] - resolved[raw_col]).values  # residual
+
+    try:
+        mdl = Ridge(alpha=10.0)
+        mdl.fit(X, y, sample_weight=sample_weight)
+        return mdl
+    except Exception as exc:
+        logger.warning("Residual correction fit failed for %s %s: %s", model_id, horizon_suffix, exc)
+        return None
+
+
+def _apply_correction(
+    raw: np.ndarray,
+    df_score: pd.DataFrame,
+    correction_model,
+    ctx: dict,
+) -> np.ndarray:
+    """Apply residual correction to today's raw scores array.
+
+    Builds the full rich feature set (matching what the model was trained on):
+    basic ledger context + RSI, momentum, SMA200, volatility, bollinger, VIX.
+    Falls back to 0 for any feature not available in df_score.
+    """
+    if correction_model is None:
+        return raw
+    try:
+        feat_df = pd.DataFrame({"raw_score": raw})
+        # Basic context features
+        feat_df["sector_code"] = (
+            df_score["Sector"].map(_SECTOR_CODES).fillna(0).values
+            if "Sector" in df_score.columns else 0
+        )
+        feat_df["market_return_21d"] = ctx.get("market_return_21d", 0.0)
+        feat_df["vix_at_prediction"] = ctx.get("vix_at_prediction", 20.0)
+        if "Momentum12_1" in df_score.columns:
+            mom = pd.to_numeric(df_score["Momentum12_1"], errors="coerce")
+            feat_df["momentum_bucket"] = pd.qcut(mom.rank(method="first"), q=5, labels=False).fillna(2).values
+        else:
+            feat_df["momentum_bucket"] = 2
+
+        # Rich features from today's spread CSV (PascalCase → values)
+        def _spread_col(pascal, default):
+            return pd.to_numeric(df_score[pascal], errors="coerce").fillna(default).values \
+                if pascal in df_score.columns else default
+
+        feat_df["rsi"]             = _spread_col("RSI", 50.0)
+        feat_df["momentum_12_1"]   = _spread_col("Momentum12_1", 0.0)
+        feat_df["price_to_sma200"] = _spread_col("PriceToSMA200Pct", 1.0)
+        feat_df["volatility_20d"]  = _spread_col("AnnualizedVol", 0.02)
+        feat_df["bollinger_pct_b"] = _spread_col("BollingerPctB", 0.5)
+
+        # Use whichever features the stored model was trained on
+        n_expected = correction_model.n_features_in_
+        available_features = _CORRECTION_FEATURES_RICH
+        features_to_use = available_features[:n_expected]
+
+        # Ensure all required columns exist
+        for col in features_to_use:
+            if col not in feat_df.columns:
+                feat_df[col] = 0.0
+
+        X = feat_df[features_to_use].fillna(0).values.astype(float)
+        corrections = correction_model.predict(X)
+        corrections = np.clip(corrections, -0.1, 0.1)
+        return raw + corrections
+    except Exception as exc:
+        logger.warning("Correction apply failed: %s", exc)
+        return raw
+
+
+# ---------------------------------------------------------------------------
+# Learned calibration model (Part 3) — replaces hedge + isotonic
+# ---------------------------------------------------------------------------
+
+def _build_calib_features(row: pd.Series, model_ids: list[str]) -> dict:
+    """Build the feature vector for the cross-model calibration logistic regression."""
+    scores = {mid: row.get(f"raw_{mid}", np.nan) for mid in model_ids}
+    available = {mid: s for mid, s in scores.items() if not np.isnan(s)}
+
+    feat: dict = {}
+    for mid in model_ids:
+        s = scores[mid]
+        feat[f"score_{mid}"] = s if not np.isnan(s) else 0.5
+        feat[f"has_{mid}"]   = float(not np.isnan(s))
+
+    # Pairwise agreement / spread between first two models (if available)
+    mids = list(available.keys())
+    if len(mids) >= 2:
+        a, b = mids[0], mids[1]
+        feat["agreement_top2"]  = available[a] * available[b]
+        feat["spread_top2"]     = abs(available[a] - available[b])
+    else:
+        feat["agreement_top2"]  = list(available.values())[0] * 0.5 if available else 0.25
+        feat["spread_top2"]     = 0.0
+
+    def _fval(row, key, default):
+        """Safe float extraction — treats None and NaN as missing."""
+        v = row.get(key)
+        if v is None:
+            return default
+        try:
+            f = float(v)
+            return default if f != f else f   # NaN check: NaN != NaN
+        except (TypeError, ValueError):
+            return default
+
+    feat["market_return_21d"] = _fval(row, "market_return_21d", 0.0)
+    feat["vix_at_prediction"] = _fval(row, "vix_at_prediction", 20.0)
+    feat["sector_code"]       = _fval(row, "sector_code", 0.0)
+    return feat
+
+
+def _fit_calibration_model(
+    ledger: pd.DataFrame,
+    horizon_suffix: str,
+    active_model_ids: list[str],
+    calib_ctx: "pd.DataFrame | None" = None,
+    min_samples: int = 500,
+    rolling_window: int = 5000,
+):
+    """Fit a LogisticRegression calibration model on resolved predictions.
+
+    When ``calib_ctx`` is provided (calibration_daily.parquet), joins richer
+    stock-level features (RSI, momentum, SMA ratio, etc.) for better regime-
+    conditional calibration.  Backfill rows are downweighted (0.3) so the model
+    activates immediately from historical data but shifts toward live signal.
+
+    Returns None during cold-start (< min_samples resolved rows).
+    """
+    try:
+        from sklearn.linear_model import LogisticRegression
+    except ImportError:
+        return None
+
+    ret_col     = f"realized_return_{horizon_suffix}"
+    matured_col = f"matured_{horizon_suffix}"
+
+    if ret_col not in ledger.columns or matured_col not in ledger.columns:
+        return None
+
+    resolved = ledger[
+        ledger[matured_col].fillna(False).astype(bool) &
+        ledger[ret_col].notna()
+    ].sort_values("scored_date", ascending=False).head(rolling_window).copy()
+
+    if len(resolved) < min_samples:
+        return None
+
+    # Require at least one model score column
+    raw_cols = [f"raw_{mid}" for mid in active_model_ids if f"raw_{mid}" in resolved.columns]
+    if not raw_cols:
+        return None
+
+    resolved = resolved.dropna(subset=raw_cols, how="all")
+    if len(resolved) < min_samples:
+        return None
+
+    # Join rich features from calibration_daily when available
+    _RICH_CALIB_COLS = ["rsi", "momentum_12_1", "price_to_sma200", "volatility_20d",
+                        "bollinger_pct_b", "vix_level"]
+    if calib_ctx is not None:
+        ctx_cols = [c for c in _RICH_CALIB_COLS if c in calib_ctx.columns]
+        if ctx_cols:
+            resolved = resolved.merge(
+                calib_ctx[["ticker", "scored_date"] + ctx_cols],
+                on=["ticker", "scored_date"],
+                how="left",
+            )
+
+    feature_rows = resolved.apply(lambda r: _build_calib_features(r, active_model_ids), axis=1)
+    X = pd.DataFrame(feature_rows.tolist()).fillna(0).values.astype(float)
+    y = (resolved[ret_col] > 0).astype(int).values
+
+    # Downweight backfill rows (selection-bias risk) while still using them for cold-start
+    sample_weight = np.where(
+        resolved.get("is_backfill", pd.Series(False, index=resolved.index)).fillna(False),
+        0.3, 1.0
+    )
+
+    try:
+        mdl = LogisticRegression(C=1.0, max_iter=1000, class_weight="balanced")
+        mdl.fit(X, y, sample_weight=sample_weight)
+        return mdl
+    except Exception as exc:
+        logger.warning("Calibration model fit failed for horizon %s: %s", horizon_suffix, exc)
+        return None
+
+
+def _apply_calibration_model(
+    df_score: pd.DataFrame,
+    raw_scores: dict,
+    cal_model,
+    active_model_ids: list[str],
+    ctx: dict,
+) -> np.ndarray | None:
+    """Apply learned calibration model to today's scored stocks.
+
+    Returns probability array P(positive return) or None if model unavailable.
+    """
+    if cal_model is None:
+        return None
+    try:
+        feat_rows = []
+        for i in range(len(df_score)):
+            row = {f"raw_{mid}": raw_scores[mid][i] if mid in raw_scores else np.nan
+                   for mid in active_model_ids}
+            row["market_return_21d"] = ctx.get("market_return_21d", 0.0)
+            row["vix_at_prediction"] = ctx.get("vix_at_prediction", 20.0)
+            if "Sector" in df_score.columns:
+                row["sector_code"] = _SECTOR_CODES.get(df_score["Sector"].iloc[i], 0)
+            else:
+                row["sector_code"] = 0
+            feat_rows.append(_build_calib_features(pd.Series(row), active_model_ids))
+
+        X = pd.DataFrame(feat_rows).fillna(0).values.astype(float)
+        return cal_model.predict_proba(X)[:, 1]
+    except Exception as exc:
+        logger.warning("Calibration apply failed: %s", exc)
+        return None
 
 
 def _load_config(models_dir: Path) -> dict:
@@ -488,14 +968,20 @@ def _write_ticker_index(
     each scored ticker.  Stored at: {output_dir}/ticker_index.json
     """
     # Friendly field names for per-model scores in the JSON.
-    # v7 models are the current champions; older entries kept for back-compat.
     MODEL_FIELD_MAP = {
-        "lgbm_breakout_v7":      "mlScore_breakout",
-        "lgbm_composite_v7":     "mlScore_composite",
-        # legacy
-        "lgbm_breakout_v5":      "mlScore_breakout",
-        "lgbm_composite_v6":     "mlScore_composite",
-        "st_sector_relative_v1": "mlScore_st",
+        # current champions / candidates
+        "lgbm_breakout_v10":          "mlScore_breakout",
+        "lgbm_composite_v10":         "mlScore_composite",
+        "lgbm_breakout_medium_v1":    "mlScore_breakout_medium",
+        "lgbm_composite_medium_v1":   "mlScore_composite_medium",
+        "lstm_clip_v1":               "mlScore_lstm",
+        "lstm_clip_v3":               "mlScore_lstm",
+        # legacy (retired but kept for back-compat if old model files present)
+        "lgbm_breakout_v7":           "mlScore_breakout",
+        "lgbm_composite_v7":          "mlScore_composite",
+        "lgbm_breakout_v5":           "mlScore_breakout",
+        "lgbm_composite_v6":          "mlScore_composite",
+        "st_sector_relative_v1":      "mlScore_st",
     }
 
     def _f(val, default=None):
@@ -646,6 +1132,15 @@ def score(data_dir, models_dir, score_only, run_calibrate):
 
     df3m = pd.read_csv(source_path, index_col=0)
 
+    # Update the rolling 63-day feature window used for LSTM inference + rich calibration
+    if not score_only:
+        try:
+            from morningalpha.ml.backfill import update_calibration_daily
+            n_rows = update_calibration_daily(df3m, pd.Timestamp(date.today()), _CALIB_DAILY_PATH)
+            console.print(f"[dim]calibration_daily updated: {n_rows:,} rows[/dim]")
+        except Exception as exc:
+            logger.warning("calibration_daily update failed (%s) — continuing", exc)
+
     # Backfill MarketCap from fundamentals.csv if the spread CSV has it empty
     # (happens when spread CSVs predate the fundamentals-merge fix in access.py).
     fund_path = data_path / "fundamentals.csv"
@@ -783,15 +1278,13 @@ def score(data_dir, models_dir, score_only, run_calibrate):
         logger.warning("MLScoreDelta computation failed (%s) — delta will be absent", exc)
 
     # -----------------------------------------------------------------------
-    # Part 4: Apply calibrated signals
-    # Load per-model calibrators (if available) → P(positive return) → signal label
-    # Gracefully skips if no calibrators exist yet (early weeks of deployment).
+    # Part 4: Apply residual corrections + learned calibration
     # -----------------------------------------------------------------------
     _SIGNAL_THRESHOLDS = [
-        (0.65, "STRONG BUY"),
+        (0.70, "STRONG BUY"),
         (0.55, "BUY"),
         (0.45, "HOLD"),
-        (0.35, "SELL"),
+        (0.30, "SELL"),
         (float("-inf"), "STRONG SELL"),
     ]
 
@@ -801,31 +1294,66 @@ def score(data_dir, models_dir, score_only, run_calibrate):
                 return label
         return "STRONG SELL"
 
-    import pickle as _pkl
-    _calib_dir = Path("data/factors")
-    calibrated_probs: dict[str, np.ndarray] = {}
+    try:
+        import joblib as _joblib
+    except ImportError:
+        _joblib = None
 
+    # Fetch today's market context once (used by correction + calibration)
+    market_ctx = _fetch_market_context(pd.Timestamp(date.today()))
+
+    # Load correction and calibration dicts once (avoids repeated file I/O per model)
+    _correction_dict: dict = {}
+    if _joblib is not None and _CORRECTION_PATH.exists():
+        try:
+            _correction_dict = _joblib.load(_CORRECTION_PATH)
+        except Exception as exc:
+            logger.warning("Could not load correction_models.joblib (%s)", exc)
+
+    _calibration_dict: dict = {}
+    if _joblib is not None and _CALIBRATION_PATH.exists():
+        try:
+            _calibration_dict = _joblib.load(_CALIBRATION_PATH)
+        except Exception as exc:
+            logger.warning("Could not load calibration_models.joblib (%s)", exc)
+
+    # Step 4a: Apply per-model residual corrections (Part 2)
+    # Try 63d correction first (most relevant to primary signal), fall back to shorter horizons.
+    corrected_scores: dict[str, np.ndarray] = {}
     for model_id, raw in raw_scores.items():
-        cal_path = _calib_dir / f"calibrator_{model_id}.pkl"
-        if not cal_path.exists():
+        corrected = raw
+        for _, _, suffix in reversed(_HORIZONS):   # 63d first
+            key = f"{model_id}_{suffix}"
+            if key in _correction_dict:
+                corrected = _apply_correction(corrected, df_score, _correction_dict[key], market_ctx)
+                break  # use the longest available horizon's correction model
+        corrected_scores[model_id] = corrected
+
+    # Step 4b: Try multi-model calibration model (Part 3)
+    # Uses the primary scoring horizon (63d) to generate calibrated probabilities.
+    # Falls back to per-model isotonic → hedge weights during cold-start.
+    active_ids = list(raw_scores.keys())
+    consensus_prob: np.ndarray | None = None
+
+    for _, _, suffix in reversed(_HORIZONS):   # 63d first
+        if suffix not in _calibration_dict:
             continue
         try:
-            with open(cal_path, "rb") as f:
-                cal = _pkl.load(f)
-            probs = cal.predict(raw).astype(float)
-            calibrated_probs[model_id] = probs
-            df_score[f"CalibProb_{model_id}"] = probs.round(3)
+            cal_multi = _calibration_dict[suffix]
+            # Build feature matrix from corrected scores
+            tmp_scores = {mid: corrected_scores[mid] for mid in active_ids if mid in corrected_scores}
+            consensus_prob = _apply_calibration_model(df_score, tmp_scores, cal_multi, active_ids, market_ctx)
+            if consensus_prob is not None:
+                console.print(f"[dim]Multi-model calibration active ({suffix})[/dim]")
+            break
         except Exception as exc:
-            logger.warning("Calibrator load/apply failed for %s: %s", model_id, exc)
+            logger.warning("Multi-model calibration load failed: %s", exc)
 
-    if calibrated_probs:
-        # Consensus calibrated probability — same ensemble weights as raw scores
-        avail_w = {mid: model_weights.get(mid, 1.0) for mid in calibrated_probs}
-        total_w = sum(avail_w.values())
-        avail_w = {mid: w / total_w for mid, w in avail_w.items()}
-        consensus_prob = sum(avail_w[mid] * probs for mid, probs in calibrated_probs.items())
-        df_score["CalibratedProb"]   = consensus_prob.round(3)
-        df_score["CalibratedSignal"] = [_prob_to_signal(p) for p in consensus_prob]
+    calibrated_probs: dict[str, np.ndarray] = {}
+
+    if consensus_prob is not None:
+        df_score["CalibratedProb"]   = np.round(consensus_prob, 3)
+        df_score["CalibratedSignal"] = [_prob_to_signal(float(p)) for p in consensus_prob]
         dist = {s: int((df_score["CalibratedSignal"] == s).sum())
                 for s in ["STRONG BUY", "BUY", "HOLD", "SELL", "STRONG SELL"]}
         dist_str = "  ".join(f"{s}={n}" for s, n in dist.items())
@@ -861,7 +1389,7 @@ def score(data_dir, models_dir, score_only, run_calibrate):
         # Drop any stale score/signal columns before merging fresh values
         stale = [c for c in df.columns
                  if c.startswith("MLScore") or c.startswith("CalibProb_")
-                 or c in ("CalibratedProb", "CalibratedSignal")]
+                 or c in ("CalibratedProb", "CalibratedSignal", "AboveSMA200")]
         if stale:
             df = df.drop(columns=stale)
 
@@ -896,6 +1424,6 @@ def score(data_dir, models_dir, score_only, run_calibrate):
     _write_ticker_index(df_score, active_models, raw_scores, data_path)
 
     if run_calibrate and not score_only:
-        _run_calibration(list(raw_scores.keys()))
+        _run_calibration(list(raw_scores.keys()), active_model_ids=list(raw_scores.keys()))
 
     console.print("\n[bold green]✓ ML scoring complete[/bold green]")

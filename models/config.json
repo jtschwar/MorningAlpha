@@ -1,17 +1,41 @@
 {
-  "champion": "lgbm_breakout_v7",
+  "champion": "lgbm_breakout_v10",
   "models": [
+    {
+      "id": "lgbm_breakout_v10",
+      "type": "lgbm",
+      "description": "LGBM — raw return rank target, walk-forward CV (folds through fold 95), train_cutoff 2025-12-07. WFCV IC 0.3185, hit rate ~61%. Champion.",
+      "status": "champion"
+    },
+    {
+      "id": "lgbm_composite_v10",
+      "type": "lgbm",
+      "description": "LGBM — quality-adjusted composite rank target, walk-forward CV (folds through fold 95), train_cutoff 2025-12-07. WFCV IC 0.2159. Candidate.",
+      "status": "candidate"
+    },
+    {
+      "id": "lgbm_breakout_medium_v1",
+      "type": "lgbm",
+      "description": "LGBM — raw return rank target, 21d horizon, walk-forward CV (folds through fold 97), train_cutoff 2026-02-10. Medium-term signal. Candidate.",
+      "status": "candidate"
+    },
+    {
+      "id": "lgbm_composite_medium_v1",
+      "type": "lgbm",
+      "description": "LGBM — composite rank target, 21d horizon, walk-forward CV (folds through fold 97), train_cutoff 2026-02-10. Medium-term signal. Candidate.",
+      "status": "candidate"
+    },
     {
       "id": "lgbm_breakout_v7",
       "type": "lgbm",
-      "description": "LGBM — raw return rank target, 7y dataset, walk-forward CV. Mean WFCV IC 0.146, test IC 0.314, hit rate 61.2%. Champion.",
-      "status": "champion"
+      "description": "LGBM — raw return rank target, 7y dataset, walk-forward CV. Mean WFCV IC 0.146, test IC 0.314, hit rate 61.2%. Retired in favour of v10.",
+      "status": "retired"
     },
     {
       "id": "lgbm_composite_v7",
       "type": "lgbm",
-      "description": "LGBM — quality-adjusted composite rank target, 7y dataset, walk-forward CV. Mean WFCV IC 0.150, test IC 0.240, hit rate 58.2%. Candidate.",
-      "status": "candidate"
+      "description": "LGBM — quality-adjusted composite rank target, 7y dataset, walk-forward CV. Mean WFCV IC 0.150, test IC 0.240, hit rate 58.2%. Retired in favour of v10.",
+      "status": "retired"
     },
     {
       "id": "lgbm_breakout_v5",
