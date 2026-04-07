@@ -1005,9 +1005,9 @@ def _snap_universal_dates_to_ohlcv(
         pos = idx.get_loc(t)
         if pos < MIN_HISTORY_DAYS - 1:
             continue
-        # Labels need max_horizon future bars — _compute_labels will return None
-        # if unavailable, but skip early here to avoid the call overhead.
-        if pos + max_horizon >= len(idx):
+        # Need at least 1 future bar for forward_1d; longer horizons compute
+        # whatever is available and leave NaN for unresolved targets.
+        if pos + 1 >= len(idx):
             continue
         result.append(t)
     return result
@@ -1128,10 +1128,6 @@ def _compute_labels(
     except KeyError:
         return None
 
-    max_h = max(horizons)
-    if idx_pos + max_h >= len(prices):
-        return None
-
     price_t = prices.iloc[idx_pos]
     if price_t == 0 or pd.isna(price_t):
         return None
@@ -1147,6 +1143,15 @@ def _compute_labels(
         labels["forward_1d"] = np.nan
 
     for h in horizons:
+        if idx_pos + h >= len(prices):
+            # Future window not yet available — leave as NaN for all derived labels
+            labels[f"forward_{h}d"] = np.nan
+            labels[f"forward_{h}d_max_drawdown"] = np.nan
+            labels[f"adj_forward_{h}d"] = np.nan
+            labels[f"forward_{h}d_sharpe"] = np.nan
+            labels[f"forward_{h}d_consistency"] = np.nan
+            continue
+
         price_h = prices.iloc[idx_pos + h]
         labels[f"forward_{h}d"] = float((price_h / price_t) - 1)
 

@@ -108,6 +108,7 @@ class LSTMDateRangeDataset(Dataset):
 
         self._xs:        List[np.ndarray]          = []
         self._ys:        List[np.ndarray]          = []
+        self._masks:     List[np.ndarray]          = []
         self._end_dates: List[np.datetime64]       = []  # for EMA weighting
 
         for _ticker, grp in sub.groupby("ticker"):
@@ -142,10 +143,15 @@ class LSTMDateRangeDataset(Dataset):
                 end = start + lookback
                 x = X[start:end]
                 y = Y[end - 1]
-                if np.any(np.isnan(x)) or np.any(np.isnan(y)):
+                if np.any(np.isnan(x)):
                     continue
+                target_mask = ~np.isnan(y)
+                if not target_mask.any():
+                    continue
+                y = np.where(target_mask, y, 0.0)
                 self._xs.append(x)
                 self._ys.append(y)
+                self._masks.append(target_mask)
                 self._end_dates.append(dates[end - 1])
 
         self._end_dates_arr = np.array(self._end_dates, dtype="datetime64[D]")
@@ -153,10 +159,11 @@ class LSTMDateRangeDataset(Dataset):
     def __len__(self) -> int:
         return len(self._xs)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         return (
             torch.from_numpy(self._xs[idx]),
             torch.from_numpy(self._ys[idx]),
+            torch.from_numpy(self._masks[idx]),
         )
 
 

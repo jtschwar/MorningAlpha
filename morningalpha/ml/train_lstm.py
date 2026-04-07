@@ -154,6 +154,7 @@ class LSTMSequenceDataset(Dataset):
 
         self._xs: List[np.ndarray] = []
         self._ys: List[np.ndarray] = []
+        self._masks: List[np.ndarray] = []
 
         n_tickers = 0
         for ticker, grp in split_df.groupby("ticker"):
@@ -195,11 +196,17 @@ class LSTMSequenceDataset(Dataset):
                 x = X[start:end]       # [lookback, F]
                 y = Y[end - 1]         # label at last step of window
 
-                if np.any(np.isnan(x)) or np.any(np.isnan(y)):
+                if np.any(np.isnan(x)):
                     continue
+                # Allow partial targets — mask tracks which horizons are available
+                target_mask = ~np.isnan(y)
+                if not target_mask.any():
+                    continue
+                y = np.where(target_mask, y, 0.0)  # zero-fill NaN (masked out in loss)
 
                 self._xs.append(x)
                 self._ys.append(y)
+                self._masks.append(target_mask)
                 valid_windows += 1
 
             if valid_windows > 0:
@@ -214,10 +221,11 @@ class LSTMSequenceDataset(Dataset):
     def __len__(self) -> int:
         return len(self._xs)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         return (
             torch.from_numpy(self._xs[idx]),
             torch.from_numpy(self._ys[idx]),
+            torch.from_numpy(self._masks[idx]),
         )
 
 
@@ -244,23 +252,54 @@ def _rank_ic(pred: np.ndarray, actual: np.ndarray) -> float:
     return float(spearmanr(pred[mask], actual[mask]).correlation)
 
 
+class MaskedHuberLoss(nn.Module):
+    """Drop-in for nn.HuberLoss that accepts an optional bool mask tensor."""
+    def __init__(self, delta: float = 0.05):
+        super().__init__()
+        self.delta = delta
+
+    def forward(self, pred: torch.Tensor, target: torch.Tensor,
+                mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        return _masked_huber(pred, target, mask, self.delta)
+
+
+def _masked_huber(pred: torch.Tensor, target: torch.Tensor,
+                   mask: Optional[torch.Tensor], delta: float = 0.05) -> torch.Tensor:
+    """Huber loss that ignores positions where mask is False (unresolved targets)."""
+    err = target - pred
+    loss = torch.where(err.abs() <= delta,
+                       0.5 * err ** 2,
+                       delta * (err.abs() - 0.5 * delta))
+    if mask is not None:
+        m = mask.float()
+        denom = m.sum()
+        if denom == 0:
+            return loss.mean()
+        return (loss * m).sum() / denom
+    return loss.mean()
+
+
 class ComboLoss(nn.Module):
     """Weighted sum of Huber losses on rank and clip output halves.
 
     pred / target shape: [B, 2*n_horizons]
     First half  → rank predictions vs rank targets
     Second half → clip predictions vs clip targets
+    mask (optional): [B, 2*n_horizons] bool — False where target is unresolved
     """
     def __init__(self, n_horizons: int, rank_weight: float = 0.5, delta: float = 0.05):
         super().__init__()
         self.n = n_horizons
         self.rank_w = rank_weight
         self.clip_w = 1.0 - rank_weight
-        self.huber = nn.HuberLoss(delta=delta)
+        self.delta = delta
 
-    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        rank_loss = self.huber(pred[:, :self.n],  target[:, :self.n])
-        clip_loss = self.huber(pred[:, self.n:],  target[:, self.n:])
+    def forward(self, pred: torch.Tensor, target: torch.Tensor,
+                mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        rank_mask = mask[:, :self.n] if mask is not None else None
+        clip_mask = mask[:, self.n:] if mask is not None else None
+        rank_loss = _masked_huber(pred[:, :self.n], target[:, :self.n], rank_mask, self.delta)
+        clip_loss = _masked_huber(pred[:, self.n:], target[:, self.n:], clip_mask, self.delta)
         return self.rank_w * rank_loss + self.clip_w * clip_loss
 
 
@@ -279,10 +318,12 @@ def _evaluate(
     all_targets: List[np.ndarray] = []
 
     with torch.no_grad():
-        for x, y in loader:
+        for batch in loader:
+            x, y, mask = batch if len(batch) == 3 else (*batch, None)
             x, y = x.to(device), y.to(device)
+            mask = mask.to(device) if mask is not None else None
             pred = model(x)
-            total_loss += criterion(pred, y).item() * len(x)
+            total_loss += criterion(pred, y, mask).item() * len(x)
             all_preds.append(pred.cpu().numpy())
             all_targets.append(y.cpu().numpy())
 
@@ -324,7 +365,7 @@ def _run_training_loop(
 ) -> Tuple[Optional[dict], float, List[dict]]:
     """Train with early stopping. Returns (best_state_dict, best_val_loss, history)."""
     if criterion is None:
-        criterion = nn.HuberLoss(delta=0.05)
+        criterion = MaskedHuberLoss(delta=0.05)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=lr * 0.01)
@@ -347,11 +388,13 @@ def _run_training_loop(
         for epoch in range(1, epochs + 1):
             model.train()
             train_loss = 0.0
-            for x, y in train_loader:
+            for batch in train_loader:
+                x, y, mask = batch if len(batch) == 3 else (*batch, None)
                 x, y = x.to(device), y.to(device)
+                mask = mask.to(device) if mask is not None else None
                 optimizer.zero_grad()
                 pred = model(x)
-                loss = criterion(pred, y)
+                loss = criterion(pred, y, mask)
                 loss.backward()
                 nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
@@ -546,7 +589,7 @@ def train_lstm(
     device = _select_device()
     criterion: nn.Module = (
         ComboLoss(n_horizons=len(horizon_days), rank_weight=0.5)
-        if is_combo_mode else nn.HuberLoss(delta=0.05)
+        if is_combo_mode else MaskedHuberLoss(delta=0.05)
     )
 
     ds_range_kwargs = dict(lookback=lookback, stride=stride, target_mode=target_mode)
