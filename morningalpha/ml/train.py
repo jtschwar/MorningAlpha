@@ -500,6 +500,8 @@ def walk_forward_cv(
     first_fold = (n_folds - max_folds + 1) if (max_folds and n_folds > max_folds) else 1
     fold_results = []
 
+    MIN_RESOLUTION = 0.50  # skip fold if < 50% of val or test targets are non-null
+
     for fold_n in range(first_fold, n_folds + 1):
         fold_test = df[df["test_fold"] == fold_n]
         if len(fold_test) < 10:
@@ -519,6 +521,26 @@ def walk_forward_cv(
             fold_tr  = fold_train_all
             fold_val = fold_train_all.tail(max(10, len(fold_train_all) // 10))
 
+        # Skip folds where test or val targets are insufficiently resolved.
+        # Overlapping folds near the present land in the null zone — training
+        # them wastes compute and produces misleading val loss / NaN test IC.
+        test_res = fold_test[target].notna().mean()
+        val_res  = fold_val[target].notna().mean()
+        if test_res < MIN_RESOLUTION:
+            console.print(
+                f"  Fold {fold_n:>3}  "
+                f"{str(fold_test_start.date()):>12} → {str(fold_test['date'].max().date()):<12}  "
+                f"SKIPPED — test resolution {test_res:.0%} < {MIN_RESOLUTION:.0%}"
+            )
+            continue
+        if val_res < MIN_RESOLUTION:
+            console.print(
+                f"  Fold {fold_n:>3}  "
+                f"{str(fold_test_start.date()):>12} → {str(fold_test['date'].max().date()):<12}  "
+                f"SKIPPED — val resolution {val_res:.0%} < {MIN_RESOLUTION:.0%}"
+            )
+            continue
+
         X_tr, y_tr, _, _ = _xy(fold_tr,   feat_cols, target)
         X_va, y_va, _, _ = _xy(fold_val,  feat_cols, target)
         X_te, y_te, _, _ = _xy(fold_test, feat_cols, target)
@@ -530,13 +552,15 @@ def walk_forward_cv(
         hr = hit_rate(model.predict(X_te), y_te)
 
         fold_results.append({
-            "fold":       fold_n,
-            "test_start": fold_test_start.date(),
-            "test_end":   fold_test["date"].max().date(),
-            "n_train":    len(fold_tr),
-            "n_test":     len(fold_test),
-            "ic":         round(ic, 4),
-            "hit_rate":   round(hr, 4),
+            "fold":           fold_n,
+            "test_start":     fold_test_start.date(),
+            "test_end":       fold_test["date"].max().date(),
+            "val_start":      fold_val["date"].min().date(),
+            "val_end":        fold_val["date"].max().date(),
+            "n_train":        len(fold_tr),
+            "n_test":         len(fold_test),
+            "ic":             round(ic, 4),
+            "hit_rate":       round(hr, 4),
         })
 
         console.print(

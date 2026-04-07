@@ -427,6 +427,38 @@ def _run_training_loop(
 
 
 # ---------------------------------------------------------------------------
+# Walk-forward fine-tuning helpers
+# ---------------------------------------------------------------------------
+
+def _compute_wf_anchors(
+    dataset_start: pd.Timestamp,
+    dataset_end: pd.Timestamp,
+    anchor_spacing_days: int = 63,
+    min_train_days: int = 252,
+    val_days: int = 90,
+    embargo_days: int = 10,
+) -> List[pd.Timestamp]:
+    """Return quarterly anchor dates for walk-forward fine-tuning.
+
+    Each anchor defines one fine-tuning step:
+      train = dataset_start → (anchor - val_days - 2*embargo_days)
+      val   = (anchor - val_days - embargo_days) → (anchor - embargo_days)
+
+    The final anchor is always dataset_end so the model is trained through present.
+    """
+    # Earliest viable anchor: enough history for initial training + val window
+    min_anchor = dataset_start + pd.Timedelta(days=min_train_days + val_days + 2 * embargo_days)
+    anchors: List[pd.Timestamp] = []
+    current = min_anchor
+    while current < dataset_end:
+        anchors.append(current)
+        current += pd.Timedelta(days=anchor_spacing_days)
+    if not anchors or anchors[-1] < dataset_end:
+        anchors.append(dataset_end)
+    return anchors
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -472,6 +504,13 @@ def _run_training_loop(
               help="Number of WFCV folds (walk-forward mode only).")
 @click.option("--ema-halflife", "ema_halflife", default=180, show_default=True,
               help="EMA sample weighting half-life in days (0 = uniform). Ablation best: 180.")
+@click.option("--wf-finetune/--no-wf-finetune", "wf_finetune", default=False, show_default=True,
+              help="Walk-forward fine-tuning for final model: sequentially warm-start through quarterly anchors "
+                   "up to dataset_end. More compute but ensures model has seen the most recent regime.")
+@click.option("--anchor-spacing", "anchor_spacing", default=63, show_default=True,
+              help="Trading days between walk-forward fine-tuning anchors (~quarterly).")
+@click.option("--finetune-lr-decay", "finetune_lr_decay", default=0.5, show_default=True,
+              help="LR multiplier applied at each anchor step during walk-forward fine-tuning.")
 def train_lstm(
     dataset_path: str,
     output: str,
@@ -491,6 +530,9 @@ def train_lstm(
     n_folds: int,
     ema_halflife: int,
     patience: int,
+    wf_finetune: bool,
+    anchor_spacing: int,
+    finetune_lr_decay: float,
 ) -> None:
     """Train the StockPriceLSTM on the unified daily dataset.
 
@@ -669,14 +711,110 @@ def train_lstm(
                     wf_table.add_row(f"Mean IC-{h}d", f"{np.mean(vals):+.4f}  (std {np.std(vals):.4f})")
             console.print(wf_table)
 
-        # Final model: full expanding window (start → last fold train_end) with EMA
-        last_fold = folds[-1]
-        console.print(f"\n[bold cyan]Final model — full window → {str(last_fold['train_end'])[:10]}[/bold cyan]")
-        train_ds = LSTMDateRangeDataset(df, feat_cols, df["date"].min(), last_fold["train_end"], **ds_range_kwargs)
-        val_ds   = LSTMDateRangeDataset(df, feat_cols, last_fold["val_start"], last_fold["val_end"], **ds_range_kwargs)
-        console.print(f"  train={len(train_ds):,}  val={len(val_ds):,}")
+        dataset_end   = df["date"].max()
+        embargo_td    = pd.Timedelta(days=10)
+        val_td        = pd.Timedelta(days=90)
 
-        sampler = make_ema_sampler(train_ds, halflife)
+        if wf_finetune:
+            # Walk-forward fine-tuning: sequentially warm-start through quarterly
+            # anchors up to dataset_end so the final model has seen the full regime.
+            anchors = _compute_wf_anchors(
+                df["date"].min(), dataset_end,
+                anchor_spacing_days=anchor_spacing,
+            )
+            console.print(
+                f"\n[bold cyan]Walk-forward fine-tuning — {len(anchors)} anchors  "
+                f"({str(anchors[0])[:10]} → {str(anchors[-1])[:10]})[/bold cyan]"
+            )
+
+            model     = _make_model()
+            cur_lr    = lr
+            wf_state: Optional[dict] = None
+
+            for i, anchor in enumerate(anchors):
+                is_final_anchor = (i == len(anchors) - 1)
+
+                # val window: 90 days ending (anchor - embargo)
+                anc_val_end   = anchor   - embargo_td
+                anc_val_start = anc_val_end - val_td
+                # train window: start → val_start - embargo (no target overlap)
+                anc_train_end = anc_val_start - embargo_td
+
+                tr_ds = LSTMDateRangeDataset(
+                    df, feat_cols, df["date"].min(), anc_train_end, **ds_range_kwargs
+                )
+                va_ds = LSTMDateRangeDataset(
+                    df, feat_cols, anc_val_start, anc_val_end, **ds_range_kwargs
+                )
+
+                if len(tr_ds) == 0 or len(va_ds) == 0:
+                    console.print(f"  [yellow]Anchor {i+1} empty — skipping[/yellow]")
+                    continue
+
+                # Warm-start from previous checkpoint (or fresh for anchor 0)
+                if wf_state is not None:
+                    model.load_state_dict(wf_state)
+
+                console.print(
+                    f"\n[bold]Anchor {i+1}/{len(anchors)}[/bold]  "
+                    f"train → {str(anc_train_end)[:10]}  "
+                    f"val {str(anc_val_start)[:10]} → {str(anc_val_end)[:10]}  "
+                    f"lr={cur_lr:.2e}"
+                )
+                console.print(f"  train={len(tr_ds):,}  val={len(va_ds):,}")
+
+                sampler    = make_ema_sampler(tr_ds, halflife)
+                tr_loader  = _make_loader(tr_ds, shuffle=True, sampler=sampler)
+                va_loader  = _make_loader(va_ds, shuffle=False)
+
+                wf_state, anchor_val_loss, anchor_history = _run_training_loop(
+                    model, tr_loader, va_loader, epochs, cur_lr, device,
+                    patience=patience, criterion=criterion,
+                    label=f"Anchor {i+1}/{len(anchors)}",
+                    is_combo_mode=is_combo_mode,
+                )
+                history.extend(anchor_history)
+                if wf_state:
+                    best_val_loss = min(best_val_loss, anchor_val_loss)
+
+                # Decay LR for next anchor (avoid catastrophic forgetting)
+                cur_lr *= finetune_lr_decay
+
+            # Final anchor: extend training through dataset_end with masked loss.
+            # Uses the most recent 90d as val for early stopping.
+            if wf_state:
+                model.load_state_dict(wf_state)
+            final_val_end   = dataset_end
+            final_val_start = dataset_end - val_td
+            final_train_end = final_val_start - embargo_td
+
+            console.print(
+                f"\n[bold cyan]Final anchor — train through present  "
+                f"val {str(final_val_start)[:10]} → {str(final_val_end)[:10]}[/bold cyan]"
+            )
+            train_ds = LSTMDateRangeDataset(
+                df, feat_cols, df["date"].min(), final_train_end, **ds_range_kwargs
+            )
+            val_ds = LSTMDateRangeDataset(
+                df, feat_cols, final_val_start, final_val_end, **ds_range_kwargs
+            )
+
+        else:
+            # Simple: train on full window up to 90 days before end, val on last 90 days.
+            val_cutoff = dataset_end - val_td
+            console.print(
+                f"\n[bold cyan]Final model — full window → {str(dataset_end)[:10]}  "
+                f"(val from {str(val_cutoff)[:10]})[/bold cyan]"
+            )
+            train_ds = LSTMDateRangeDataset(
+                df, feat_cols, df["date"].min(), val_cutoff, **ds_range_kwargs
+            )
+            val_ds = LSTMDateRangeDataset(
+                df, feat_cols, val_cutoff, dataset_end, **ds_range_kwargs
+            )
+
+        console.print(f"  train={len(train_ds):,}  val={len(val_ds):,}")
+        sampler      = make_ema_sampler(train_ds, halflife)
         train_loader = _make_loader(train_ds, shuffle=True,  sampler=sampler)
         val_loader   = _make_loader(val_ds,   shuffle=False)
         test_loader  = None  # val_end is the end of the dataset in WFCV mode
@@ -705,13 +843,17 @@ def train_lstm(
         test_loader  = _make_loader(test_ds,  shuffle=False)
 
     # --- Train final / only model ---
-    model = _make_model()
+    # In wf_finetune mode the model is already warm from the anchor loop above;
+    # otherwise initialise fresh here.
+    if not (use_wfcv and wf_finetune):
+        model = _make_model()
     n_params = sum(p.numel() for p in model.parameters())
     console.print(f"\n[bold]StockPriceLSTM[/bold]: {n_params:,} parameters  horizons={horizon_days}")
-    console.print(f"[bold cyan]Training final model for up to {epochs} epochs...[/bold cyan]")
+    final_lr = (lr * finetune_lr_decay) if (use_wfcv and wf_finetune) else lr
+    console.print(f"[bold cyan]Training final model for up to {epochs} epochs...  lr={final_lr:.2e}[/bold cyan]")
 
     best_state, best_val_loss, history = _run_training_loop(
-        model, train_loader, val_loader, epochs, lr, device,
+        model, train_loader, val_loader, epochs, final_lr, device,
         patience=patience, criterion=criterion, label="Final model",
         is_combo_mode=is_combo_mode,
     )
