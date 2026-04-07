@@ -189,8 +189,21 @@ def load_splits_walk_forward(
 
     last_fold_rows = df[df["test_fold"] == n_folds]
     test_start = last_fold_rows["date"].min()
-    test_end   = last_fold_rows["date"].max()
-    train_end  = test_start - pd.Timedelta(days=embargo_days)
+
+    # Cap test_end at last date with a resolved target (not NaN).
+    # Rows near present have NaN for long horizons (e.g. forward_63d) because
+    # the future hasn't happened yet; including them produces NaN test IC.
+    resolved = last_fold_rows[last_fold_rows[target].notna()]
+    if resolved.empty:
+        # Fall back through earlier folds until we find resolved targets
+        for fold_k in range(n_folds - 1, 0, -1):
+            fold_rows = df[df["test_fold"] == fold_k]
+            resolved = fold_rows[fold_rows[target].notna()]
+            if not resolved.empty:
+                test_start = fold_rows["date"].min()
+                break
+    test_end  = resolved["date"].max() if not resolved.empty else last_fold_rows["date"].max()
+    train_end = test_start - pd.Timedelta(days=embargo_days)
     val_start  = train_end  - pd.Timedelta(days=90)
 
     split_dates = {
