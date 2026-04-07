@@ -187,31 +187,31 @@ def load_splits_walk_forward(
     if n_folds == 0:
         raise ValueError("No walk-forward folds in dataset.")
 
-    last_fold_rows = df[df["test_fold"] == n_folds]
-    test_start = last_fold_rows["date"].min()
+    # Walk back from the last fold to find the most recent one whose test rows
+    # (after weekly downsampling) have resolved targets.  Folds overlap by
+    # design (step=1 month, window=3 months), so the last fold's downsampled
+    # rows often fall entirely in the null zone for long horizons.
+    test_fold_k = n_folds
+    for fold_k in range(n_folds, 0, -1):
+        fold_rows = df[df["test_fold"] == fold_k]
+        if fold_rows[target].notna().any():
+            test_fold_k = fold_k
+            break
 
-    # Cap test_end at last date with a resolved target (not NaN).
-    # Rows near present have NaN for long horizons (e.g. forward_63d) because
-    # the future hasn't happened yet; including them produces NaN test IC.
-    resolved = last_fold_rows[last_fold_rows[target].notna()]
-    if resolved.empty:
-        # Fall back through earlier folds until we find resolved targets
-        for fold_k in range(n_folds - 1, 0, -1):
-            fold_rows = df[df["test_fold"] == fold_k]
-            resolved = fold_rows[fold_rows[target].notna()]
-            if not resolved.empty:
-                test_start = fold_rows["date"].min()
-                break
-    test_end  = resolved["date"].max() if not resolved.empty else last_fold_rows["date"].max()
-    train_end = test_start - pd.Timedelta(days=embargo_days)
+    fold_rows  = df[df["test_fold"] == test_fold_k]
+    resolved   = fold_rows[fold_rows[target].notna()]
+    test_start = fold_rows["date"].min()
+    test_end   = resolved["date"].max()
+    train_end  = test_start - pd.Timedelta(days=embargo_days)
     val_start  = train_end  - pd.Timedelta(days=90)
 
     split_dates = {
-        "train_end":  train_end,
-        "val_start":  val_start,
-        "test_start": test_start,
-        "test_end":   test_end,
-        "n_folds":    n_folds,
+        "train_end":   train_end,
+        "val_start":   val_start,
+        "test_start":  test_start,
+        "test_end":    test_end,
+        "n_folds":     n_folds,
+        "test_fold_k": test_fold_k,   # actual fold used for test set
     }
     return df, feat_cols, split_dates
 
@@ -601,7 +601,10 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
         df_tr_final = df_full[df_full["date"] <  split_dates["val_start"]]
         df_va_final = df_full[(df_full["date"] >= split_dates["val_start"]) &
                               (df_full["date"] <  split_dates["train_end"])]
-        df_te_final = df_full[df_full["test_fold"] == split_dates["n_folds"]]
+        df_te_final = df_full[
+            (df_full["test_fold"] == split_dates["test_fold_k"]) &
+            (df_full["date"] <= split_dates["test_end"])
+        ]
         X_tr, y_tr, d_tr, df_tr = _xy(df_tr_final, feat_cols, target)
         X_va, y_va, d_va, df_va = _xy(df_va_final, feat_cols, target)
         X_te, y_te, d_te, df_te = _xy(df_te_final, feat_cols, target)
