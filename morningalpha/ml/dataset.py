@@ -1751,7 +1751,27 @@ def dataset(lookback, output, tickers_from, horizons, snapshot_freq, no_overlap,
             f"  Last fold:  {fold_boundaries[-1][0].date()} → {fold_boundaries[-1][1].date()}"
         )
 
-    # --- Preprocessing (fit on train only) ---
+    # --- Merge raw new rows with existing dataset before preprocessing ---
+    # This ensures rank-normalization is cross-sectional over the FULL universe
+    # per date, not just the new rows in isolation (which caused constant feature
+    # values when extending — all new rows got the same rank → same normalized value).
+    if extend and existing_df is not None:
+        # Align columns — new rows may lack cols added in later dataset versions
+        for col in existing_df.columns:
+            if col not in df.columns:
+                df[col] = np.nan
+        if "is_anchor" not in existing_df.columns:
+            existing_df["is_anchor"] = True
+
+        # Strip preprocessing from existing rows so we re-apply consistently.
+        # existing_df columns match df after alignment.
+        df = df[existing_df.columns]
+        n_new = len(df)
+        df = pd.concat([existing_df, df], ignore_index=True)
+        df = df.sort_values(["date", "ticker"]).reset_index(drop=True)
+        console.print(f"[dim]Merged (pre-preprocessing): {len(existing_df):,} existing + {n_new:,} new rows[/dim]")
+
+    # --- Preprocessing (fit on train only, applied to full combined dataset) ---
     df, scaler_params = _apply_preprocessing(df)
 
     # --- Encode categoricals ---
@@ -1762,33 +1782,6 @@ def dataset(lookback, output, tickers_from, horizons, snapshot_freq, no_overlap,
     with open(scaler_path, "w") as f:
         json.dump(scaler_params, f, indent=2)
     console.print(f"Scaler params saved to {scaler_path}")
-
-    # --- Merge with existing dataset if extending ---
-    if extend and existing_df is not None:
-        # Apply saved winsorization bounds to new rows (not re-fit from training)
-        scaler_path = Path("data/training/scaler_params.json")
-        if scaler_path.exists():
-            with open(scaler_path) as f:
-                saved_params = json.load(f)
-            from morningalpha.ml.features import FLOAT_FEATURES as _FF, MARKET_CONTEXT_COLUMNS as _MCC
-            for col in [c for c in _FF + _MCC if c in df.columns and c in saved_params]:
-                lo = saved_params[col]["lower"]
-                hi = saved_params[col]["upper"]
-                df[col] = df[col].clip(lo, hi)
-            console.print("[dim]Winsorization applied using saved scaler_params.json[/dim]")
-
-        # Align columns — new rows may lack cols added in later dataset versions
-        for col in existing_df.columns:
-            if col not in df.columns:
-                df[col] = np.nan
-        # Old datasets pre-dating is_anchor should treat all their rows as anchors
-        if "is_anchor" not in existing_df.columns:
-            existing_df["is_anchor"] = True
-        df = df[existing_df.columns]
-
-        df = pd.concat([existing_df, df], ignore_index=True)
-        df = df.sort_values(["date", "ticker"]).reset_index(drop=True)
-        console.print(f"[dim]Merged: {len(existing_df):,} existing + {len(df) - len(existing_df):,} new rows[/dim]")
 
     # --- Save parquet ---
     df.to_parquet(output_path, index=False)
