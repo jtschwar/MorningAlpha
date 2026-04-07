@@ -232,4 +232,3 @@ morningalpha/web/.env.*.local
 # Generated/cache files — change every run, not meaningful to track
 data/factors/mlscore_cache.parquet
 data/factors/vix_inference.parquet
-data/latest/_generated.json
