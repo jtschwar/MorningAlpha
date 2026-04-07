@@ -88,17 +88,35 @@ def _load_model_and_config(model_id: str) -> Tuple[object, dict]:
 
 
 def _load_test_data(config: dict) -> pd.DataFrame:
-    """Load test split from the training dataset."""
+    """Load evaluation data from the training dataset.
+
+    For walk-forward trained models, uses only data after the training cutoff
+    (stored in feature_config as train_cutoff) to avoid evaluating on in-sample
+    data.  Falls back to the static split == 'test' column otherwise.
+    """
     if not DATASET_PATH.exists():
         raise FileNotFoundError(f"Dataset not found: {DATASET_PATH}")
 
     df = pd.read_parquet(DATASET_PATH)
-    test = df[df["split"] == "test"].copy()
-    console.print(
-        f"Test split: [bold]{len(test):,}[/bold] rows  "
-        f"[bold]{test['date'].nunique()}[/bold] dates  "
-        f"[bold]{test['ticker'].nunique():,}[/bold] tickers"
-    )
+    df["date"] = pd.to_datetime(df["date"])
+
+    train_cutoff = config.get("train_cutoff")
+    if train_cutoff:
+        cutoff = pd.Timestamp(train_cutoff)
+        test = df[df["date"] > cutoff].copy()
+        console.print(
+            f"Test split: [bold]{len(test):,}[/bold] rows  "
+            f"[bold]{test['date'].nunique()}[/bold] dates  "
+            f"[bold]{test['ticker'].nunique():,}[/bold] tickers  "
+            f"[dim](post train_cutoff: {train_cutoff})[/dim]"
+        )
+    else:
+        test = df[df["split"] == "test"].copy()
+        console.print(
+            f"Test split: [bold]{len(test):,}[/bold] rows  "
+            f"[bold]{test['date'].nunique()}[/bold] dates  "
+            f"[bold]{test['ticker'].nunique():,}[/bold] tickers"
+        )
     return test
 
 

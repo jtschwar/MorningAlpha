@@ -784,6 +784,9 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
             "best_params": best_params,
             "results": lgbm_results,
             "persistence_ic": persist_ic,
+            "train_cutoff": str(split_dates["train_end"].date()) if use_walk_forward else None,
+            "test_start":   str(split_dates["test_start"].date()) if use_walk_forward else None,
+            "test_end":     str(split_dates["test_end"].date()) if use_walk_forward else None,
         }
         # Save per-model config (primary) and shared fallback
         feat_config_path = MODEL_DIR / f"{name}_feature_config.json"
