@@ -500,7 +500,7 @@ def walk_forward_cv(
     first_fold = (n_folds - max_folds + 1) if (max_folds and n_folds > max_folds) else 1
     fold_results = []
 
-    MIN_RESOLUTION = 0.50  # skip fold if < 50% of val or test targets are non-null
+    MIN_RESOLUTION = 0.10  # skip fold if < 10% of val or test targets are non-null
 
     for fold_n in range(first_fold, n_folds + 1):
         fold_test = df[df["test_fold"] == fold_n]

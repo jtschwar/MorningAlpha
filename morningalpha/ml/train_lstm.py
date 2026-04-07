@@ -728,7 +728,10 @@ def train_lstm(
             )
 
             model     = _make_model()
-            cur_lr    = lr
+            # Use a fixed reduced LR for all anchor steps — do NOT compound the
+            # decay per anchor.  With 50+ anchors, 0.5x/step → lr ≈ 1e-19 by
+            # the end, which is effectively zero and kills learning.
+            cur_lr    = lr * finetune_lr_decay
             wf_state: Optional[dict] = None
 
             for i, anchor in enumerate(anchors):
@@ -777,8 +780,7 @@ def train_lstm(
                 if wf_state:
                     best_val_loss = min(best_val_loss, anchor_val_loss)
 
-                # Decay LR for next anchor (avoid catastrophic forgetting)
-                cur_lr *= finetune_lr_decay
+                # LR is fixed across all anchors (set once above as lr * finetune_lr_decay)
 
             # Final anchor: extend training through dataset_end with masked loss.
             # Uses the most recent 90d as val for early stopping.

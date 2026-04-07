@@ -194,9 +194,9 @@ def _build_ls_portfolio(df: pd.DataFrame, fwd_col: str, horizon: int) -> pd.Data
     The realized return column is winsorized at 1st/99th percentile to remove data errors.
     """
     periods_per_year = 252 / horizon
+    df = df.dropna(subset=[fwd_col]).copy()   # skip dates where realized return not yet available
     lo = df[fwd_col].quantile(0.01)
     hi = df[fwd_col].quantile(0.99)
-    df = df.copy()
     df["fwd"] = df[fwd_col].clip(lo, hi)
 
     # Stride snapshot dates by horizon to ensure non-overlapping return windows
@@ -258,16 +258,18 @@ def _top_decile_quality(df: pd.DataFrame, fwd_col: str, horizon: int) -> dict:
     - How does top-decile average return compare to the bottom decile and the universe?
     """
     periods_per_year = 252 / horizon
+    df = df.dropna(subset=[fwd_col]).copy()   # skip dates where realized return not yet available
     lo = df[fwd_col].quantile(0.01)
     hi = df[fwd_col].quantile(0.99)
-    df = df.copy()
     df["fwd"] = df[fwd_col].clip(lo, hi)
 
     top_rets, bottom_rets, all_rets = [], [], []
     for date, grp in df.groupby("date"):
         if len(grp) < 20:
             continue
-        grp = grp.sort_values("pred_score")
+        grp = grp.dropna(subset=["fwd"]).sort_values("pred_score")
+        if len(grp) < 20:
+            continue
         n = len(grp)
         n_decile = max(1, n // 10)
         top_rets.append(float(grp["fwd"].iloc[-n_decile:].mean()))
@@ -275,7 +277,10 @@ def _top_decile_quality(df: pd.DataFrame, fwd_col: str, horizon: int) -> dict:
         all_rets.append(float(grp["fwd"].mean()))
 
     def _stats(rets):
-        a = np.array(rets)
+        a = np.array(rets, dtype=float)
+        a = a[~np.isnan(a)]   # drop any surviving NaN before stats
+        if len(a) == 0:
+            return {"ann_return": float("nan"), "sharpe": float("nan"), "consistency": float("nan")}
         mean_r = float(np.mean(a))
         std_r = float(np.std(a, ddof=1)) if len(a) > 1 else float("nan")
         sharpe = (mean_r / std_r) * np.sqrt(periods_per_year) if std_r and std_r > 0 else float("nan")
