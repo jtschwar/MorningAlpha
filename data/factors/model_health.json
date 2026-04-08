@@ -1,28 +1,28 @@
 {
-  "last_updated": "2026-04-07",
+  "last_updated": "2026-04-08",
   "alerts": [],
   "models": {
     "lgbm_breakout_v10": {
       "horizons": {
         "5d": {
           "ic_mean": 0.0749,
-          "ic_std": 0.0726,
+          "ic_std": 0.0724,
           "rolling_10": 0.0552,
-          "n": 71,
+          "n": 142,
           "status": "healthy"
         },
         "21d": {
           "ic_mean": 0.1509,
-          "ic_std": 0.0668,
+          "ic_std": 0.0665,
           "rolling_10": 0.1557,
-          "n": 55,
+          "n": 110,
           "status": "healthy"
         },
         "63d": {
           "ic_mean": 0.3197,
-          "ic_std": 0.0244,
+          "ic_std": 0.0239,
           "rolling_10": 0.3208,
-          "n": 13,
+          "n": 26,
           "status": "healthy"
         }
       },
@@ -32,23 +32,23 @@
       "horizons": {
         "5d": {
           "ic_mean": 0.0455,
-          "ic_std": 0.0904,
+          "ic_std": 0.0901,
           "rolling_10": 0.0145,
-          "n": 71,
+          "n": 142,
           "status": "retrain"
         },
         "21d": {
           "ic_mean": 0.111,
-          "ic_std": 0.0445,
+          "ic_std": 0.0443,
           "rolling_10": 0.094,
-          "n": 55,
+          "n": 110,
           "status": "healthy"
         },
         "63d": {
           "ic_mean": 0.1937,
-          "ic_std": 0.0577,
+          "ic_std": 0.0566,
           "rolling_10": 0.1919,
-          "n": 13,
+          "n": 26,
           "status": "healthy"
         }
       },
@@ -58,16 +58,16 @@
       "horizons": {
         "5d": {
           "ic_mean": 0.0609,
-          "ic_std": 0.061,
+          "ic_std": 0.0604,
           "rolling_10": 0.1189,
-          "n": 27,
+          "n": 54,
           "status": "healthy"
         },
         "21d": {
           "ic_mean": 0.1286,
-          "ic_std": 0.0442,
+          "ic_std": 0.0431,
           "rolling_10": 0.1268,
-          "n": 11,
+          "n": 22,
           "status": "healthy"
         }
       },
@@ -77,16 +77,16 @@
       "horizons": {
         "5d": {
           "ic_mean": 0.0615,
-          "ic_std": 0.0532,
+          "ic_std": 0.0527,
           "rolling_10": 0.1061,
-          "n": 27,
+          "n": 54,
           "status": "healthy"
         },
         "21d": {
           "ic_mean": 0.1331,
-          "ic_std": 0.0407,
+          "ic_std": 0.0397,
           "rolling_10": 0.1316,
-          "n": 11,
+          "n": 22,
           "status": "healthy"
         }
       },
