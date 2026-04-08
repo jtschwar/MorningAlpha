@@ -4,11 +4,11 @@
   "window_weeks": 12,
   "eta": 0.5,
   "weights": {
-    "lgbm_breakout_v10": 0.5169205385468187,
-    "lgbm_composite_v10": 0.24942908867170602,
-    "lgbm_breakout_medium_v1": 0.07788345759382509,
-    "lgbm_composite_medium_v1": 0.07788345759382509,
-    "lstm_clip_v1": 0.07788345759382509
+    "lgbm_breakout_v10": 0.5691311254650256,
+    "lgbm_composite_v10": 0.2432145400519236,
+    "lgbm_breakout_medium_v1": 0.06255144482768356,
+    "lgbm_composite_medium_v1": 0.06255144482768356,
+    "lstm_clip_v1": 0.06255144482768356
   },
   "ic_history": [
     {
