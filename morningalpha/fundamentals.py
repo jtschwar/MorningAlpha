@@ -145,6 +145,18 @@ def fetch_ticker_fundamentals(ticker: str) -> Optional[Dict[str, Any]]:
 
         result.update(_extract_financial_statements(t))
 
+        # 5-year high — computed from price history, not info dict.
+        # Used to detect stocks far below their peak ("falling knife" filter).
+        # Stored as raw high price; ratio vs current price computed at feature time.
+        try:
+            hist = t.history(period="5y", auto_adjust=True)
+            if hist is not None and not hist.empty and "High" in hist.columns:
+                result["high_5yr"] = float(hist["High"].max())
+            else:
+                result["high_5yr"] = None
+        except Exception:
+            result["high_5yr"] = None
+
         non_null = sum(1 for k, v in result.items()
                        if k not in ("ticker", "fetched_at") and v is not None)
         if non_null == 0:
@@ -343,6 +355,20 @@ def _compile_derived_features(df: pd.DataFrame) -> pd.DataFrame:
 
     if "sector" in df.columns:
         df["sector_encoded"] = df["sector"].apply(_encode_sector)
+
+    # 5-year high proximity — (current_price - 5yr_high) / 5yr_high.
+    # Range: [-1, 0] where 0 = at peak, -0.96 = 96% below peak.
+    # Stocks like API ($3.68 vs $100 ATH) get -0.963; momentum stocks near ATH get ~0.
+    df["price_vs_5yr_high"] = None
+    if price_col and "high_5yr" in df.columns:
+        mask = (
+            df[price_col].notna() & (df[price_col] != 0)
+            & df["high_5yr"].notna() & (df["high_5yr"] != 0)
+        )
+        if mask.any():
+            price = df.loc[mask, price_col].astype(float)
+            high = df.loc[mask, "high_5yr"].astype(float)
+            df.loc[mask, "price_vs_5yr_high"] = (price - high) / high
 
     return df
 

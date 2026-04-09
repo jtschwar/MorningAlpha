@@ -857,6 +857,15 @@ def _compute_extended_technicals(subset: pd.DataFrame) -> dict:
     except Exception:
         result["price_vs_52wk_high"] = np.nan
 
+    # 5-year high proximity — captures multi-year declines that 52wk misses.
+    # e.g. a stock at $4 with 52wk high of $8 looks -50%; against 5yr high of $100 it's -96%.
+    # Range: [-1, 0], where 0 = at peak and -0.96 = 96% below peak (falling knife filter).
+    try:
+        high_5yr = float(prices.iloc[-1260:].max()) if n >= 1260 else float(prices.max())
+        result["price_vs_5yr_high"] = ((price_t - high_5yr) / high_5yr) if high_5yr > 0 else np.nan
+    except Exception:
+        result["price_vs_5yr_high"] = np.nan
+
     # % of last 21 trading days that were positive — momentum quality
     try:
         daily_rets = prices.pct_change().dropna()

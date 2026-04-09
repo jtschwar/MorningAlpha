@@ -47,6 +47,7 @@ TECHNICAL_FEATURE_COLUMNS: List[str] = [
     "price_to_sma50",
     "price_to_sma200",
     "price_vs_52wk_high",   # % below 52-week high; 0 = at high, negative = below
+    "price_vs_5yr_high",    # % below 5-year high; -0.96 = 96% below peak (falling knife filter)
     # Tier 2 extended: long-horizon momentum (academic factors)
     "momentum_12_1",         # Jegadeesh-Titman: return from month -12 to -1 (skip last month)
     "momentum_intermediate", # Novy-Marx: return from month -12 to -7 (intermediate horizon)
