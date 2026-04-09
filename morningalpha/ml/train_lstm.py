@@ -511,6 +511,9 @@ def _compute_wf_anchors(
               help="Trading days between walk-forward fine-tuning anchors (~quarterly).")
 @click.option("--finetune-lr-decay", "finetune_lr_decay", default=0.5, show_default=True,
               help="LR multiplier applied at each anchor step during walk-forward fine-tuning.")
+@click.option("--market-excess/--no-market-excess", "market_excess", default=False, show_default=True,
+              help="Train on market-excess rank targets (forward_Xd_market_excess_rank) instead of "
+                   "absolute return targets. Requires --target-mode rank. Use to fix value/crash-regime bias.")
 def train_lstm(
     dataset_path: str,
     output: str,
@@ -533,6 +536,7 @@ def train_lstm(
     wf_finetune: bool,
     anchor_spacing: int,
     finetune_lr_decay: float,
+    market_excess: bool,
 ) -> None:
     """Train the StockPriceLSTM on the unified daily dataset.
 
@@ -543,7 +547,25 @@ def train_lstm(
       alpha ml train lstm --no-walk-forward --name simple_v1  # simple split, faster
       alpha ml train lstm --spike-threshold 0.5 --name spike_cls_v1
       alpha ml train lstm --epochs 100 --hidden 256
+      alpha ml train lstm --market-excess --target-mode rank --name excess_rank_v1  # market-excess targets
     """
+    # --- Market-excess target override ---
+    # Swaps both TARGET_COLS and RANK_TARGET_COLS to use forward_Xd_market_excess_rank.
+    # Only rank versions exist in the dataset; rank mode is required.
+    global TARGET_COLS, RANK_TARGET_COLS
+    if market_excess:
+        if target_mode not in ("rank", "combo"):
+            console.print(
+                f"[yellow]--market-excess requires --target-mode rank (got '{target_mode}'). "
+                "Switching to rank mode.[/yellow]"
+            )
+            target_mode = "rank"
+        TARGET_COLS = [f"forward_{h}d_market_excess_rank" for h in LSTM_HORIZONS]
+        RANK_TARGET_COLS = [f"forward_{h}d_market_excess_rank" for h in LSTM_HORIZONS]
+        console.print(
+            f"[bold yellow]Market-excess mode: targets = {RANK_TARGET_COLS}[/bold yellow]"
+        )
+
     is_spike_mode = spike_threshold > 0.0
     is_combo_mode = target_mode == "combo" and not is_spike_mode
     use_wfcv = walk_forward and not is_spike_mode  # WFCV not applicable to spike classifier
