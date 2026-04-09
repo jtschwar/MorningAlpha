@@ -1331,11 +1331,7 @@ def score(data_dir, models_dir, score_only, run_calibrate):
 
     # Step 4b: Try multi-model calibration model (Part 3)
     # Uses the primary scoring horizon (63d) to generate calibrated probabilities.
-    # LGBM-only for calibration: LSTM excluded until inference workflow is confirmed
-    # stable in GitHub Actions (checkpoint not yet committed).
-    lgbm_ids = [m["id"] for m in active_models if m.get("type", "lgbm") == "lgbm"
-                and m["id"] in raw_scores]
-    active_ids = lgbm_ids if lgbm_ids else list(raw_scores.keys())
+    active_ids = list(raw_scores.keys())
     consensus_prob: np.ndarray | None = None
 
     for _, _, suffix in reversed(_HORIZONS):   # 63d first
@@ -1427,8 +1423,6 @@ def score(data_dir, models_dir, score_only, run_calibrate):
     _write_ticker_index(df_score, active_models, raw_scores, data_path)
 
     if run_calibrate and not score_only:
-        lgbm_model_ids = [m["id"] for m in active_models if m.get("type", "lgbm") == "lgbm"
-                          and m["id"] in raw_scores]
-        _run_calibration(list(raw_scores.keys()), active_model_ids=lgbm_model_ids or list(raw_scores.keys()))
+        _run_calibration(list(raw_scores.keys()), active_model_ids=list(raw_scores.keys()))
 
     console.print("\n[bold green]✓ ML scoring complete[/bold green]")

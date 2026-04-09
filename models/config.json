@@ -50,10 +50,16 @@
       "status": "retired"
     },
     {
+      "id": "lstm_clip_v3",
+      "type": "lstm",
+      "description": "LSTM h256-L2 — clip target, walk-forward CV (6 folds, EMA 180d) + 53-anchor finetune, dataset through 2026-03-26. Mean WFCV IC-63d 0.1343. Candidate.",
+      "status": "candidate"
+    },
+    {
       "id": "lstm_clip_v1",
       "type": "lstm",
-      "description": "LSTM h256-L2 — clip target, walk-forward CV (6 folds, EMA 180d). Mean WFCV IC-63d 0.197, IC-21d 0.147. Candidate.",
-      "status": "candidate"
+      "description": "LSTM h256-L2 — clip target, walk-forward CV (6 folds, EMA 180d). Mean WFCV IC-63d 0.197, IC-21d 0.147. Retired in favour of v3.",
+      "status": "retired"
     },
     {
       "id": "st_sector_relative_v1",
