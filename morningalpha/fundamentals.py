@@ -491,6 +491,14 @@ def fundamentals_cmd(tickers_from, output, batch_size, pause, ticker_pause, refr
 
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Coerce numeric columns to float before saving — yfinance occasionally returns
+    # mixed types (float + None + stray strings) which pyarrow cannot serialize.
+    skip_cols = {"ticker", "fetched_at", "sector", "industry"}
+    for col in df.columns:
+        if col not in skip_cols:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
     df.to_parquet(output_path, index=False)
     console.print(f"[bold green]Saved {len(df)} rows → {output_path}[/bold green]")
 
