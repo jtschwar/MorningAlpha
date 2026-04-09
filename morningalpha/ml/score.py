@@ -405,6 +405,27 @@ def _run_calibration(model_ids: list, active_model_ids: list | None = None) -> N
             console.print(f"[cyan]Correction models saved:[/cyan] {len(correction_dict)} models → {_CORRECTION_PATH.name}")
 
         # --- Part 3: Cross-model calibration model → single calibration_models.joblib ---
+        # Enrich ledger with SPY forward returns for relative-return target computation.
+        # market_return_21d is already stored at prediction time; 5d and 63d are fetched here.
+        try:
+            import yfinance as _yf
+            _spy = _yf.download("SPY", start="2025-01-01",
+                                end=(today + pd.Timedelta(days=100)).strftime("%Y-%m-%d"),
+                                progress=False)["Close"].squeeze()
+            _spy.index = pd.to_datetime(_spy.index)
+            _unique_dates = sorted(ledger["scored_date"].unique())
+            for _h in [5, 63]:
+                col = f"market_return_{_h}d"
+                if col not in ledger.columns:
+                    def _spy_ret(d, h=_h):
+                        d = pd.Timestamp(d)
+                        after = _spy.index[_spy.index > d]
+                        if len(after) < h: return float("nan")
+                        return float(_spy[after[min(h, len(after)-1)]] / _spy[after[0]] - 1)
+                    ledger[col] = ledger["scored_date"].map({d: _spy_ret(d) for d in _unique_dates})
+        except Exception as _exc:
+            logger.warning("SPY forward return enrichment failed (%s) — using absolute targets", _exc)
+
         calibration_dict: dict = {}
         if _CALIBRATION_PATH.exists():
             try:
@@ -783,9 +804,12 @@ def _build_calib_features(row: pd.Series, model_ids: list[str]) -> dict:
         except (TypeError, ValueError):
             return default
 
-    feat["market_return_21d"] = _fval(row, "market_return_21d", 0.0)
-    feat["vix_at_prediction"] = _fval(row, "vix_at_prediction", 20.0)
-    feat["sector_code"]       = _fval(row, "sector_code", 0.0)
+    # Sector only — market context (VIX, market_return) excluded intentionally.
+    # Those features dominate the logistic regression in extreme regimes, collapsing
+    # all predictions to SELL in high-VIX environments.  The calibration model should
+    # focus on relative stock quality (which scores outperform peers), not absolute
+    # regime level (which is already encoded in the raw model scores themselves).
+    feat["sector_code"] = _fval(row, "sector_code", 0.0)
     return feat
 
 
@@ -848,7 +872,15 @@ def _fit_calibration_model(
 
     feature_rows = resolved.apply(lambda r: _build_calib_features(r, active_model_ids), axis=1)
     X = pd.DataFrame(feature_rows.tolist()).fillna(0).values.astype(float)
-    y = (resolved[ret_col] > 0).astype(int).values
+
+    # Target: outperform market (relative return) rather than absolute return > 0.
+    # This keeps the signal meaningful regardless of bear/bull regime — approximately
+    # half of stocks outperform the market on any given horizon by definition.
+    mkt_col = f"market_return_{horizon_suffix}"
+    if mkt_col in resolved.columns and resolved[mkt_col].notna().mean() > 0.5:
+        y = (resolved[ret_col] > resolved[mkt_col]).astype(int).values
+    else:
+        y = (resolved[ret_col] > 0).astype(int).values
 
     # Downweight backfill rows (selection-bias risk) while still using them for cold-start
     sample_weight = np.where(
@@ -1367,9 +1399,8 @@ def score(data_dir, models_dir, score_only, run_calibrate):
     # -----------------------------------------------------------------------
     delta_col  = ["MLScoreDelta"] if "MLScoreDelta" in df_score.columns else []
     calib_cols = (
-        ["CalibratedProb", "CalibratedSignal"]
+        (["CalibratedProb", "CalibratedSignal"] if "CalibratedProb" in df_score.columns else [])
         + [f"CalibProb_{mid}" for mid in calibrated_probs]
-        if calibrated_probs else []
     )
     sma200_col = ["AboveSMA200"] if "AboveSMA200" in df_score.columns else []
     score_cols = ["MLScore"] + delta_col + sma200_col + [f"MLScore_{m['id']}" for m in active_models if m["id"] in raw_scores] + calib_cols
