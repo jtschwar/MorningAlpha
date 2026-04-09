@@ -614,6 +614,21 @@ def train_lstm(
         )
         df["forward_1d"] = df.get("forward_5d", np.nan)
 
+    # --- Market-excess column backfill ---
+    # forward_1d_market_excess_rank does not exist in the dataset (SPY 1d excess is noise).
+    # For any missing excess rank columns, fall back to the absolute rank equivalent.
+    if market_excess:
+        for col in RANK_TARGET_COLS:
+            if col not in df.columns:
+                h = col.replace("forward_", "").replace("_market_excess_rank", "")
+                fallback = f"forward_{h}_rank"
+                if fallback in df.columns:
+                    console.print(f"  [yellow]{col} missing — using {fallback} as fallback[/yellow]")
+                    df[col] = df[fallback]
+                else:
+                    console.print(f"  [yellow]{col} missing — filling NaN (masked in loss)[/yellow]")
+                    df[col] = np.nan
+
     # --- Feature columns ---
     feat_cols = [c for c in FEATURE_COLUMNS if c in df.columns]
 
