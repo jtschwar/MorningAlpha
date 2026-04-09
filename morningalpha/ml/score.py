@@ -63,7 +63,9 @@ def _load_model_weights(active_model_ids: list) -> dict:
         with open(_WEIGHTS_PATH) as f:
             data = json.load(f)
         stored = data.get("weights", {})
-        weights = {m: float(stored.get(m, 1.0)) for m in active_model_ids}
+        known = [float(stored[m]) for m in active_model_ids if m in stored]
+        default_w = min(known) if known else 1.0 / len(active_model_ids)
+        weights = {m: float(stored.get(m, default_w)) for m in active_model_ids}
         total = sum(weights.values())
         return {m: w / total for m, w in weights.items()} if total > 0 else equal
     except Exception as exc:

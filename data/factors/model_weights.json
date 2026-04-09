@@ -4,11 +4,11 @@
   "window_weeks": 12,
   "eta": 0.5,
   "weights": {
-    "lgbm_breakout_v10": 0.5939036282333546,
-    "lgbm_composite_v10": 0.23884718010169836,
-    "lgbm_breakout_medium_v1": 0.05574973055498228,
-    "lgbm_composite_medium_v1": 0.05574973055498228,
-    "lstm_clip_v1": 0.05574973055498228
+    "lgbm_breakout_v10": 0.661973137090306,
+    "lgbm_composite_v10": 0.22188366656480674,
+    "lgbm_breakout_medium_v1": 0.038714398781629085,
+    "lgbm_composite_medium_v1": 0.038714398781629085,
+    "lstm_clip_v3": 0.038714398781629085
   },
   "ic_history": [
     {
@@ -60,19 +60,19 @@
       "lgbm_composite_v10": 0.19399351418464517
     },
     {
-      "week_end": "2026-04-07",
+      "week_end": "2026-04-08",
       "horizon": "63d",
       "lgbm_breakout_v10": 0.31544593159127116,
       "lgbm_composite_v10": 0.19399351418464517
     },
     {
-      "week_end": "2026-04-07",
+      "week_end": "2026-04-08",
       "horizon": "63d",
       "lgbm_breakout_v10": 0.31544593159127116,
       "lgbm_composite_v10": 0.19399351418464517
     },
     {
-      "week_end": "2026-04-07",
+      "week_end": "2026-04-08",
       "horizon": "63d",
       "lgbm_breakout_v10": 0.31544593159127116,
       "lgbm_composite_v10": 0.19399351418464517
