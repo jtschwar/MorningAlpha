@@ -159,6 +159,7 @@ SPREAD_TO_ML: dict[str, str] = {
     "PriceToSMA50Pct":     "price_to_sma50",
     "PriceToSMA200Pct":    "price_to_sma200",
     "PriceVs52wkHighPct":  "price_vs_52wk_high",
+    "PriceVs5yrHighPct":   "price_vs_5yr_high",
     # Long-horizon momentum
     "Momentum12_1":        "momentum_12_1",
     "MomentumIntermediate":"momentum_intermediate",

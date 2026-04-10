@@ -93,6 +93,7 @@ def compute_all_indicators(ohlcv_df: pd.DataFrame) -> dict:
             "OBV",
             "RelativeVolume", "VolumeROC",
             "PriceVs52wkHighPct",
+            "PriceVs5yrHighPct",
             "PctDaysPositive21d",
             "Momentum12_1",
             "MomentumIntermediate",
@@ -159,6 +160,15 @@ def compute_all_indicators(ohlcv_df: pd.DataFrame) -> dict:
         result["PriceVs52wkHighPct"] = (last_close - high_52wk) / high_52wk * 100 if high_52wk > 0 else np.nan
     except Exception:
         result["PriceVs52wkHighPct"] = np.nan
+
+    # PriceVs5yrHighPct — fraction below 5-year high (0 = at peak, -0.96 = 96% below peak).
+    # Stored as a fraction (not ×100) to match the training dataset convention in dataset.py.
+    # Falls back to full available history for tickers with < 5 years of data.
+    try:
+        high_5yr = close.iloc[-1260:].max() if n >= 1260 else close.max()
+        result["PriceVs5yrHighPct"] = (last_close - high_5yr) / high_5yr if high_5yr > 0 else np.nan
+    except Exception:
+        result["PriceVs5yrHighPct"] = np.nan
 
     # PctDaysPositive21d — % of last 21 trading days that closed up
     try:
