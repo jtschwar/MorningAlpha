@@ -892,6 +892,60 @@ def _compute_extended_technicals(subset: pd.DataFrame) -> dict:
     except Exception:
         result["volume_trend_confirmation"] = np.nan
 
+    # --- Phase 1 momentum structure features ---
+
+    # moving_average_alignment — ordinal 0-3 (Price>SMA20>SMA50>SMA200)
+    try:
+        sma20_v = float(prices.rolling(20).mean().iloc[-1]) if n >= 20 else np.nan
+        sma50_v = float(prices.rolling(50).mean().iloc[-1]) if n >= 50 else np.nan
+        sma200_v = float(prices.rolling(200).mean().iloc[-1]) if n >= 200 else np.nan
+        align = 0
+        if not np.isnan(sma20_v) and price_t > sma20_v:
+            align = 1
+            if not np.isnan(sma50_v) and sma20_v > sma50_v:
+                align = 2
+                if not np.isnan(sma200_v) and sma50_v > sma200_v:
+                    align = 3
+        result["moving_average_alignment"] = float(align)
+    except Exception:
+        result["moving_average_alignment"] = np.nan
+
+    # days_consecutive_above_sma20 — how many consecutive days price has closed above SMA20
+    try:
+        if n >= 20:
+            sma20_series = prices.rolling(20).mean()
+            above = (prices > sma20_series).values
+            count = 0
+            for i in range(len(above) - 1, -1, -1):
+                if above[i]:
+                    count += 1
+                else:
+                    break
+            result["days_consecutive_above_sma20"] = float(count)
+        else:
+            result["days_consecutive_above_sma20"] = np.nan
+    except Exception:
+        result["days_consecutive_above_sma20"] = np.nan
+
+    # up_down_volume_ratio_63d — up-day vol / down-day vol over 63 trading days
+    try:
+        if "Volume" in subset.columns and n >= 64:
+            vol_series = subset["Volume"].reindex(prices.index).dropna()
+            daily_rets = prices.pct_change().dropna()
+            common_idx = daily_rets.index.intersection(vol_series.index)
+            if len(common_idx) >= 63:
+                dr = daily_rets.loc[common_idx].iloc[-63:]
+                vl = vol_series.loc[common_idx].iloc[-63:]
+                up_vol = vl[dr.values > 0].sum()
+                dn_vol = vl[dr.values <= 0].sum()
+                result["up_down_volume_ratio_63d"] = float(up_vol / dn_vol) if dn_vol > 0 else 2.0
+            else:
+                result["up_down_volume_ratio_63d"] = np.nan
+        else:
+            result["up_down_volume_ratio_63d"] = np.nan
+    except Exception:
+        result["up_down_volume_ratio_63d"] = np.nan
+
     # --- Long-horizon momentum (academic factors) ---
     # momentum_12_1: Jegadeesh-Titman — return from month -12 to -1 (skip last month)
     # momentum_intermediate: Novy-Marx — return from month -12 to -7 (most predictive window)
@@ -1658,6 +1712,17 @@ def dataset(lookback, output, tickers_from, horizons, snapshot_freq, no_overlap,
         )
     else:
         df["rs_rating"] = np.nan
+
+    # rs_rating_delta_21d — change in rs_rating over 21 trading days per ticker.
+    # A stock rising from 40th to 80th percentile RS in 21 days is a stronger signal
+    # than one sitting at 80th percentile. Requires sorting by ticker+date first.
+    if "rs_rating" in df.columns:
+        df = df.sort_values(["ticker", "date"]).reset_index(drop=True)
+        df["rs_rating_delta_21d"] = (
+            df.groupby("ticker")["rs_rating"].shift(21).rsub(df["rs_rating"])
+        )
+    else:
+        df["rs_rating_delta_21d"] = np.nan
 
     # --- Rank-normalize labels cross-sectionally per date ---
     # forward_{h}d_rank is the primary training target; raw forward_{h}d is kept for evaluation.

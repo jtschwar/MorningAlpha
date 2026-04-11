@@ -8,20 +8,14 @@ from typing import List
 # ---------------------------------------------------------------------------
 
 TECHNICAL_FEATURE_COLUMNS: List[str] = [
-    # Original 15
-    "return_pct",
-    "sharpe_ratio",
+    # Core metrics (pruned: removed return_pct, sharpe_ratio, volume_trend, quality_score,
+    # momentum_accel, entry_score, exchange — all had SHAP ≈ 0 across 10d/21d/63d horizons)
     "sortino_ratio",
     "max_drawdown",
     "consistency_score",
-    "volume_trend",
-    "quality_score",
     "rsi",
-    "momentum_accel",
     "volume_surge",
-    "entry_score",
     "market_cap_cat",
-    "exchange",
     # Tier 1: already returned by calculate_all_metrics, now wired up
     "volatility_20d",
     "volatility_ratio",
@@ -33,9 +27,9 @@ TECHNICAL_FEATURE_COLUMNS: List[str] = [
     "rsi_7",
     "rsi_21",
     "macd",
-    "macd_signal",
+    # macd_signal removed — zero SHAP, redundant with macd_hist
     "macd_hist",
-    "bollinger_pct_b",
+    # bollinger_pct_b removed — zero SHAP
     "bollinger_bandwidth",
     "stoch_k",
     "stoch_d",
@@ -55,7 +49,12 @@ TECHNICAL_FEATURE_COLUMNS: List[str] = [
     "log_momentum_12_1",     # log(1 + momentum_12_1) — compresses extreme values (2000%+) to prevent winsorization from flattening the signal
     "info_discreteness",     # Discrete vs. continuous information arrival (Da & Warachka 2011)
     "rs_rating",             # Universe-wide percentile rank of momentum_12_1 (0–1, IBD-style RS)
+    "rs_rating_delta_21d",   # Change in rs_rating over 21 trading days — rising RS = gaining relative strength
     "volume_trend_confirmation", # Up-day vol / down-day vol over last 21 days — confirms trend with volume
+    # New: momentum structure features (Phase 1 additions)
+    "moving_average_alignment",    # Ordinal 0–3: Price>SMA20>SMA50>SMA200 (trend health score)
+    "days_consecutive_above_sma20", # How many consecutive days price has held above SMA20
+    "up_down_volume_ratio_63d",    # Up-day vol / down-day vol over 63 days (institutional accumulation)
     # Tier 3: cross-sectional alpha features
     "sector_return_rank",    # percentile rank of return_pct within sector (0–1) — cross-sectional alpha vs peers
     "return_pct_x_regime",   # return_pct × spy_momentum_regime — regime-conditional momentum.
@@ -113,7 +112,7 @@ FUNDAMENTAL_FEATURE_NAMES: List[str] = [
     "book_to_market_vs_sector",   # book_to_market minus sector median — value relative to peers
     "earnings_yield_quality",  # earnings_yield × ROE — value + quality composite
     "sector",
-    "has_fundamentals",
+    # has_fundamentals removed — constant column (always True after NaN filtering), SHAP = 0
 ]
 
 # ---------------------------------------------------------------------------
@@ -209,6 +208,11 @@ SPREAD_TO_ML: dict[str, str] = {
     "HasFundamentals":     "has_fundamentals",
     "LogMomentum12_1":     "log_momentum_12_1",
     "RSRating":            "rs_rating",
+    "RSRatingDelta21d":    "rs_rating_delta_21d",
+    # Phase 1 momentum structure features
+    "MovingAvgAlignment":       "moving_average_alignment",
+    "DaysAboveSMA20":           "days_consecutive_above_sma20",
+    "UpDnVolumeRatio63d":       "up_down_volume_ratio_63d",
 }
 
 # Reverse mapping: ML feature names → spread CSV names
@@ -242,9 +246,7 @@ FEATURE_COLUMNS: List[str] = (
 # Categorical features — ordinal encoded as int8, not rank-normalized
 CATEGORICAL_FEATURES: List[str] = [
     "market_cap_cat",
-    "exchange",
     "sector",
-    "has_fundamentals",
 ]
 
 # Continuous float features — winsorized AND cross-sectionally rank-normalized.

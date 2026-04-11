@@ -429,24 +429,29 @@ _CALIB_DAILY_COLS = ["date", "ticker"] + FEATURE_COLUMNS
 # inference.py and NOT written to the spread CSV — they are absent here.
 # Dataset seeding will include them since dataset.parquet has the full feature set.
 _SPREAD_FEATURE_COLS = [
-    # Core metrics
-    "sharpe_ratio", "sortino_ratio", "max_drawdown", "consistency_score",
-    "volume_trend", "quality_score", "rsi", "momentum_accel", "volume_surge",
-    "entry_score", "volatility_20d", "volatility_ratio", "avg_drawdown",
+    # Core metrics (sharpe_ratio, volume_trend, quality_score, momentum_accel,
+    # entry_score removed — SHAP ≈ 0 across all horizons)
+    "sortino_ratio", "max_drawdown", "consistency_score",
+    "rsi", "volume_surge",
+    "volatility_20d", "volatility_ratio", "avg_drawdown",
     "volume_consistency", "distance_from_high", "pct_days_positive_21d",
-    # Tier 2 technicals
-    "rsi_7", "rsi_21", "macd", "macd_signal", "macd_hist",
-    "bollinger_pct_b", "bollinger_bandwidth", "stoch_k", "stoch_d",
+    # Tier 2 technicals (macd_signal, bollinger_pct_b removed — SHAP ≈ 0)
+    "rsi_7", "rsi_21", "macd", "macd_hist",
+    "bollinger_bandwidth", "stoch_k", "stoch_d",
     "roc_5", "roc_10", "roc_21", "atr_14",
     "price_to_sma20", "price_to_sma50", "price_to_sma200",
-    "price_vs_52wk_high", "momentum_12_1", "momentum_intermediate",
-    "momentum_accel_long",
+    "price_vs_52wk_high", "price_vs_5yr_high",
+    "momentum_12_1", "momentum_intermediate", "momentum_accel_long",
+    # Phase 1 momentum structure features
+    "moving_average_alignment", "days_consecutive_above_sma20", "up_down_volume_ratio_63d",
     # Fundamentals present in spread CSV
     "roe", "debt_to_equity", "revenue_growth", "profit_margin",
     "current_ratio", "short_pct_float",
     # Note: sector and exchange are excluded — both are strings in the spread CSV
     # but integer-encoded in dataset.parquet, causing parquet concat failures.
     # Sector context is captured via sector_code in the predictions ledger.
+    # Note: rs_rating_delta_21d is NOT here — it requires 21 days of historical
+    # rs_rating values and is computed at dataset build time from sorted snapshots.
 ]
 
 

@@ -99,6 +99,9 @@ def compute_all_indicators(ohlcv_df: pd.DataFrame) -> dict:
             "MomentumIntermediate",
             "MomentumAccelLong",
             "VolumeUpDnRatio",
+            "MovingAvgAlignment",
+            "DaysAboveSMA20",
+            "UpDnVolumeRatio63d",
         ]
         return {k: np.nan for k in nan_keys}
 
@@ -191,6 +194,56 @@ def compute_all_indicators(ohlcv_df: pd.DataFrame) -> dict:
             result["VolumeUpDnRatio"] = np.nan
     except Exception:
         result["VolumeUpDnRatio"] = np.nan
+
+    # MovingAvgAlignment — ordinal 0-3 trend health (Price > SMA20 > SMA50 > SMA200)
+    # 3 = full bull trend, 0 = broken/below all MAs. Encodes the ordering relationship
+    # between MAs that price_to_sma* ratios cannot capture.
+    try:
+        sma20_v = result.get("SMA20", np.nan)
+        sma50_v = result.get("SMA50", np.nan)
+        sma200_v = result.get("SMA200", np.nan)
+        align = 0
+        if not pd.isna(sma20_v) and last_close > sma20_v:
+            align = 1
+            if not pd.isna(sma50_v) and sma20_v > sma50_v:
+                align = 2
+                if not pd.isna(sma200_v) and sma50_v > sma200_v:
+                    align = 3
+        result["MovingAvgAlignment"] = float(align)
+    except Exception:
+        result["MovingAvgAlignment"] = np.nan
+
+    # DaysAboveSMA20 — consecutive trading days price has closed above 20-day SMA.
+    # A 45-day run is a different regime than a 2-day cross, even if price_to_sma20 looks the same.
+    try:
+        if n >= 20:
+            sma20_series = close.rolling(20).mean()
+            above = (close > sma20_series).values
+            count = 0
+            for i in range(len(above) - 1, -1, -1):
+                if above[i]:
+                    count += 1
+                else:
+                    break
+            result["DaysAboveSMA20"] = float(count)
+        else:
+            result["DaysAboveSMA20"] = np.nan
+    except Exception:
+        result["DaysAboveSMA20"] = np.nan
+
+    # UpDnVolumeRatio63d — up-day vol / down-day vol over trailing 63 trading days.
+    # 63d window captures institutional accumulation patterns that the 21d version misses.
+    try:
+        if n >= 64 and len(volume) >= 64:
+            rets_63 = close.pct_change().dropna().iloc[-63:]
+            vol_63 = volume.iloc[-len(rets_63):]
+            up_vol = vol_63[rets_63.values > 0].sum()
+            dn_vol = vol_63[rets_63.values <= 0].sum()
+            result["UpDnVolumeRatio63d"] = float(up_vol / dn_vol) if dn_vol > 0 else 2.0
+        else:
+            result["UpDnVolumeRatio63d"] = np.nan
+    except Exception:
+        result["UpDnVolumeRatio63d"] = np.nan
 
     # Long-horizon momentum (academic factors — require 252 days of history)
     # Momentum12_1: Jegadeesh-Titman — return from month -12 to -1 (skip last month)
