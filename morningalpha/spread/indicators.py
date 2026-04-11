@@ -102,6 +102,16 @@ def compute_all_indicators(ohlcv_df: pd.DataFrame) -> dict:
             "MovingAvgAlignment",
             "DaysAboveSMA20",
             "UpDnVolumeRatio63d",
+            "ROC63",
+            "VolCompression5d63d",
+            "ConsolidationTightness10d",
+            "MaxSingleDayReturn21d",
+            "GapUpMagnitude10d",
+            "TrendLinearity63d",
+            "DaysSince52wkHigh",
+            "NormMomentum5d", "NormMomentum21d", "NormMomentum63d",
+            "MomentumAccel5_21", "MomentumAccel21_63",
+            "VolumeConfirmedMomentum",
         ]
         return {k: np.nan for k in nan_keys}
 
@@ -244,6 +254,110 @@ def compute_all_indicators(ohlcv_df: pd.DataFrame) -> dict:
             result["UpDnVolumeRatio63d"] = np.nan
     except Exception:
         result["UpDnVolumeRatio63d"] = np.nan
+
+    # ROC63 — 63-day rate of change (needed for norm_momentum_63d, momentum_accel_21_63)
+    try:
+        result["ROC63"] = (close.iloc[-1] - close.iloc[-64]) / close.iloc[-64] * 100 if n >= 64 else np.nan
+    except Exception:
+        result["ROC63"] = np.nan
+
+    # VolCompression5d63d — 5d vol / 63d vol; < 0.5 signals a volatility squeeze
+    try:
+        log_rets = np.log(close / close.shift(1)).dropna()
+        _v5  = float(log_rets.iloc[-5:].std()  * np.sqrt(252)) if len(log_rets) >= 5  else np.nan
+        _v63 = float(log_rets.iloc[-63:].std() * np.sqrt(252)) if len(log_rets) >= 63 else np.nan
+        result["VolCompression5d63d"] = (_v5 / _v63) if (not pd.isna(_v63) and _v63 > 0) else np.nan
+    except Exception:
+        result["VolCompression5d63d"] = np.nan
+
+    # ConsolidationTightness10d — (10d high - 10d low) / close; lower = tighter base
+    try:
+        if n >= 10 and len(high) >= 10 and len(low) >= 10:
+            common_idx = close.index
+            h10 = high.reindex(common_idx).iloc[-10:].max()
+            l10 = low.reindex(common_idx).iloc[-10:].min()
+            result["ConsolidationTightness10d"] = float((h10 - l10) / last_close) if last_close > 0 else np.nan
+        else:
+            result["ConsolidationTightness10d"] = np.nan
+    except Exception:
+        result["ConsolidationTightness10d"] = np.nan
+
+    # MaxSingleDayReturn21d — largest single-day % gain in trailing 21 days (catalyst detector)
+    try:
+        daily_rets = close.pct_change().dropna()
+        result["MaxSingleDayReturn21d"] = float(daily_rets.iloc[-21:].max()) if len(daily_rets) >= 21 else np.nan
+    except Exception:
+        result["MaxSingleDayReturn21d"] = np.nan
+
+    # GapUpMagnitude10d — largest gap-up (open above prior day's high) in trailing 10 days
+    try:
+        open_prices = ohlcv_df["Open"].dropna()
+        if len(open_prices) >= 11 and len(high) >= 11:
+            common_idx = close.index
+            open_aligned = open_prices.reindex(common_idx)
+            high_aligned = high.reindex(common_idx)
+            gaps = (open_aligned - high_aligned.shift(1)) / high_aligned.shift(1)
+            result["GapUpMagnitude10d"] = float(gaps.iloc[-10:].max())
+        else:
+            result["GapUpMagnitude10d"] = np.nan
+    except Exception:
+        result["GapUpMagnitude10d"] = np.nan
+
+    # TrendLinearity63d — R² of 63-day linear price trend; near 1 = smooth institutional accumulation
+    try:
+        if n >= 63:
+            window = close.iloc[-63:].values.astype(np.float64)
+            t = np.arange(63, dtype=np.float64)
+            r = np.corrcoef(window, t)[0, 1]
+            result["TrendLinearity63d"] = float(r ** 2) if not np.isnan(r) else np.nan
+        else:
+            result["TrendLinearity63d"] = np.nan
+    except Exception:
+        result["TrendLinearity63d"] = np.nan
+
+    # DaysSince52wkHigh — trading days since 52-week high, normalized by 252
+    try:
+        window_c = close.iloc[-252:] if n >= 252 else close
+        argmax_pos = int(window_c.values.argmax())
+        result["DaysSince52wkHigh"] = float(len(window_c) - 1 - argmax_pos) / 252.0
+    except Exception:
+        result["DaysSince52wkHigh"] = np.nan
+
+    # Derived momentum features — computed from already-computed indicators above
+    _roc5  = result.get("ROC5",  np.nan)
+    _roc21 = result.get("ROC21", np.nan)
+    _roc63 = result.get("ROC63", np.nan)
+    _vol20 = result.get("AnnualizedVol", np.nan)
+
+    # NormMomentum*d — return / volatility (risk-adjusted momentum, cross-sectionally comparable)
+    result["NormMomentum5d"]  = (_roc5  / _vol20) if (not pd.isna(_vol20) and _vol20 > 0) else np.nan
+    result["NormMomentum21d"] = (_roc21 / _vol20) if (not pd.isna(_vol20) and _vol20 > 0) else np.nan
+    result["NormMomentum63d"] = (_roc63 / _vol20) if (not pd.isna(_vol20) and _vol20 > 0) else np.nan
+
+    # MomentumAccel5_21 / 21_63 — short/medium ratio; > 1 = accelerating momentum
+    def _accel(num, denom):
+        if pd.isna(num) or pd.isna(denom) or abs(denom) < 0.01:
+            return np.nan
+        return float(np.clip(num / denom, -5.0, 5.0))
+
+    result["MomentumAccel5_21"]  = _accel(_roc5,  _roc21)
+    result["MomentumAccel21_63"] = _accel(_roc21, _roc63)
+
+    # VolumeConfirmedMomentum — roc_21 × volume_surge (only counts if volume is elevated)
+    try:
+        if n >= 21 and len(volume) >= 21:
+            avg_5d  = float(volume.iloc[-5:].mean())
+            avg_20d = float(volume.iloc[-20:].mean())
+            vol_surge_local = (avg_5d / avg_20d * 100) if avg_20d > 0 else np.nan
+            result["VolumeConfirmedMomentum"] = (
+                float(_roc21 * vol_surge_local)
+                if (not pd.isna(_roc21) and not pd.isna(vol_surge_local))
+                else np.nan
+            )
+        else:
+            result["VolumeConfirmedMomentum"] = np.nan
+    except Exception:
+        result["VolumeConfirmedMomentum"] = np.nan
 
     # Long-horizon momentum (academic factors — require 252 days of history)
     # Momentum12_1: Jegadeesh-Titman — return from month -12 to -1 (skip last month)

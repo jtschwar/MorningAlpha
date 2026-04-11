@@ -51,10 +51,25 @@ TECHNICAL_FEATURE_COLUMNS: List[str] = [
     "rs_rating",             # Universe-wide percentile rank of momentum_12_1 (0–1, IBD-style RS)
     "rs_rating_delta_21d",   # Change in rs_rating over 21 trading days — rising RS = gaining relative strength
     "volume_trend_confirmation", # Up-day vol / down-day vol over last 21 days — confirms trend with volume
-    # New: momentum structure features (Phase 1 additions)
+    # New: momentum structure features (Phase 1)
     "moving_average_alignment",    # Ordinal 0–3: Price>SMA20>SMA50>SMA200 (trend health score)
     "days_consecutive_above_sma20", # How many consecutive days price has held above SMA20
     "up_down_volume_ratio_63d",    # Up-day vol / down-day vol over 63 days (institutional accumulation)
+    # New: pre-breakout compression & catalyst detection (Phase 2)
+    "roc_63",                      # 63-day rate of change
+    "vol_compression_5d_63d",      # 5d vol / 63d vol — drops < 0.5 in a volatility squeeze
+    "consolidation_tightness_10d", # (10d high - 10d low) / close — tighter = more explosive potential
+    "max_single_day_return_21d",   # Largest single-day gain in 21 days — catalyst event detector
+    "gap_up_magnitude_10d",        # Largest gap-up (open > prior high) in 10 days
+    "trend_linearity_63d",         # R² of 63d linear price trend — smooth vs. choppy
+    "days_since_52wk_high",        # Days since 52-week high, /252 — near 0 = active breakout
+    # New: normalized & accelerating momentum (Phase 2)
+    "norm_momentum_5d",            # roc_5 / vol_20d — risk-adjusted 5d return
+    "norm_momentum_21d",           # roc_21 / vol_20d — risk-adjusted 21d return
+    "norm_momentum_63d",           # roc_63 / vol_20d — risk-adjusted 63d return
+    "momentum_accel_5_21",         # roc_5 / roc_21 — short vs. medium acceleration (clipped ±5)
+    "momentum_accel_21_63",        # roc_21 / roc_63 — medium vs. long acceleration (clipped ±5)
+    "volume_confirmed_momentum",   # roc_21 × volume_surge — momentum with institutional footprint
     # Tier 3: cross-sectional alpha features
     "sector_return_rank",    # percentile rank of return_pct within sector (0–1) — cross-sectional alpha vs peers
     "return_pct_x_regime",   # return_pct × spy_momentum_regime — regime-conditional momentum.
@@ -213,6 +228,21 @@ SPREAD_TO_ML: dict[str, str] = {
     "MovingAvgAlignment":       "moving_average_alignment",
     "DaysAboveSMA20":           "days_consecutive_above_sma20",
     "UpDnVolumeRatio63d":       "up_down_volume_ratio_63d",
+    # Phase 2 pre-breakout compression & catalyst features
+    "ROC63":                    "roc_63",
+    "VolCompression5d63d":      "vol_compression_5d_63d",
+    "ConsolidationTightness10d":"consolidation_tightness_10d",
+    "MaxSingleDayReturn21d":    "max_single_day_return_21d",
+    "GapUpMagnitude10d":        "gap_up_magnitude_10d",
+    "TrendLinearity63d":        "trend_linearity_63d",
+    "DaysSince52wkHigh":        "days_since_52wk_high",
+    # Phase 2 normalized & accelerating momentum
+    "NormMomentum5d":           "norm_momentum_5d",
+    "NormMomentum21d":          "norm_momentum_21d",
+    "NormMomentum63d":          "norm_momentum_63d",
+    "MomentumAccel5_21":        "momentum_accel_5_21",
+    "MomentumAccel21_63":       "momentum_accel_21_63",
+    "VolumeConfirmedMomentum":  "volume_confirmed_momentum",
 }
 
 # Reverse mapping: ML feature names → spread CSV names

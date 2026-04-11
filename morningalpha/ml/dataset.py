@@ -826,6 +826,7 @@ def _compute_extended_technicals(subset: pd.DataFrame) -> dict:
     result["roc_5"] = _roc(5)
     result["roc_10"] = _roc(10)
     result["roc_21"] = _roc(21)
+    result["roc_63"] = _roc(63)
 
     # --- ATR-14 (normalized by close) ---
     if has_hl and n >= 15:
@@ -945,6 +946,78 @@ def _compute_extended_technicals(subset: pd.DataFrame) -> dict:
             result["up_down_volume_ratio_63d"] = np.nan
     except Exception:
         result["up_down_volume_ratio_63d"] = np.nan
+
+    # --- Phase 2 momentum signal features ---
+
+    # vol_compression_5d_63d — ratio of 5-day to 63-day realized volatility.
+    # Drops below 0.5 when a stock is in a volatility squeeze before a breakout.
+    try:
+        log_rets = np.log(prices / prices.shift(1)).dropna()
+        vol_5d = float(log_rets.iloc[-5:].std() * np.sqrt(252)) if len(log_rets) >= 5 else np.nan
+        vol_63d = float(log_rets.iloc[-63:].std() * np.sqrt(252)) if len(log_rets) >= 63 else np.nan
+        result["vol_compression_5d_63d"] = (vol_5d / vol_63d) if (not np.isnan(vol_63d) and vol_63d > 0) else np.nan
+    except Exception:
+        result["vol_compression_5d_63d"] = np.nan
+
+    # consolidation_tightness_10d — (10d high - 10d low) / close.
+    # Lower = tighter base = potential for explosive expansion.
+    try:
+        if has_hl and n >= 10:
+            high_s = subset["High"].reindex(prices.index)
+            low_s = subset["Low"].reindex(prices.index)
+            h10 = float(high_s.iloc[-10:].max())
+            l10 = float(low_s.iloc[-10:].min())
+            result["consolidation_tightness_10d"] = (h10 - l10) / price_t if price_t > 0 else np.nan
+        else:
+            result["consolidation_tightness_10d"] = np.nan
+    except Exception:
+        result["consolidation_tightness_10d"] = np.nan
+
+    # max_single_day_return_21d — largest single-day % gain over trailing 21 days.
+    # Captures catalyst events (earnings beats, news) that kick off multi-week runs.
+    try:
+        daily_rets = prices.pct_change().dropna()
+        result["max_single_day_return_21d"] = float(daily_rets.iloc[-21:].max()) if len(daily_rets) >= 21 else np.nan
+    except Exception:
+        result["max_single_day_return_21d"] = np.nan
+
+    # gap_up_magnitude_10d — largest gap-up (open above prior high) in trailing 10 days.
+    # Gap-ups on volume are the institutional footprint of a catalyst event.
+    try:
+        has_open = "Open" in subset.columns
+        if has_open and has_hl and n >= 11:
+            open_s = subset["Open"].reindex(prices.index)
+            high_s_gap = subset["High"].reindex(prices.index)
+            gaps = (open_s - high_s_gap.shift(1)) / high_s_gap.shift(1)
+            result["gap_up_magnitude_10d"] = float(gaps.iloc[-10:].max())
+        else:
+            result["gap_up_magnitude_10d"] = np.nan
+    except Exception:
+        result["gap_up_magnitude_10d"] = np.nan
+
+    # trend_linearity_63d — R² of a linear fit to the last 63 days of prices.
+    # Near 1.0 = smooth institutional accumulation; near 0 = erratic/choppy.
+    try:
+        if n >= 63:
+            window = prices.iloc[-63:].values.astype(np.float64)
+            t = np.arange(63, dtype=np.float64)
+            corr_mat = np.corrcoef(window, t)
+            r = corr_mat[0, 1]
+            result["trend_linearity_63d"] = float(r ** 2) if not np.isnan(r) else np.nan
+        else:
+            result["trend_linearity_63d"] = np.nan
+    except Exception:
+        result["trend_linearity_63d"] = np.nan
+
+    # days_since_52wk_high — trading days since the 52-week rolling high was last set.
+    # Normalized by 252. Near 0 = actively breaking out; near 1 = year-long decline.
+    try:
+        window_prices = prices.iloc[-252:] if n >= 252 else prices
+        argmax_pos = int(window_prices.values.argmax())
+        days_since = len(window_prices) - 1 - argmax_pos
+        result["days_since_52wk_high"] = float(days_since) / 252.0
+    except Exception:
+        result["days_since_52wk_high"] = np.nan
 
     # --- Long-horizon momentum (academic factors) ---
     # momentum_12_1: Jegadeesh-Titman — return from month -12 to -1 (skip last month)
@@ -1149,6 +1222,34 @@ def _compute_features_at_date(
     extended = _compute_extended_technicals(subset)
     for k, v in extended.items():
         technical[k] = np.float32(v)
+
+    # --- Derived momentum features (need both extended + metrics values) ---
+    _roc5  = float(technical.get("roc_5",  np.nan))
+    _roc21 = float(technical.get("roc_21", np.nan))
+    _roc63 = float(technical.get("roc_63", np.nan))
+    _vol20 = float(technical.get("volatility_20d", np.nan))
+    _vsurge = float(technical.get("volume_surge", np.nan))
+
+    # norm_momentum_*d — return / volatility (short-horizon Sharpe, cross-sectionally comparable)
+    technical["norm_momentum_5d"]  = np.float32(_roc5  / _vol20 if _vol20 > 0 else np.nan)
+    technical["norm_momentum_21d"] = np.float32(_roc21 / _vol20 if _vol20 > 0 else np.nan)
+    technical["norm_momentum_63d"] = np.float32(_roc63 / _vol20 if _vol20 > 0 else np.nan)
+
+    # momentum_accel_5_21 / _21_63 — short/medium ratio; > 1 = acceleration.
+    # Mask near-zero denominators (< 0.01%) to avoid sign-flip noise.
+    def _accel(num: float, denom: float) -> float:
+        if np.isnan(num) or np.isnan(denom) or abs(denom) < 0.01:
+            return np.nan
+        return float(np.clip(num / denom, -5.0, 5.0))
+
+    technical["momentum_accel_5_21"]  = np.float32(_accel(_roc5,  _roc21))
+    technical["momentum_accel_21_63"] = np.float32(_accel(_roc21, _roc63))
+
+    # volume_confirmed_momentum — momentum that matters has volume behind it.
+    if not (np.isnan(_roc21) or np.isnan(_vsurge)):
+        technical["volume_confirmed_momentum"] = np.float32(_roc21 * _vsurge)
+    else:
+        technical["volume_confirmed_momentum"] = np.float32(np.nan)
 
     # --- Fundamental features ---
     # Priority: JSON cache → CSV lookup → null

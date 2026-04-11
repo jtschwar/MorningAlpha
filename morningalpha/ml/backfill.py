@@ -444,6 +444,13 @@ _SPREAD_FEATURE_COLS = [
     "momentum_12_1", "momentum_intermediate", "momentum_accel_long",
     # Phase 1 momentum structure features
     "moving_average_alignment", "days_consecutive_above_sma20", "up_down_volume_ratio_63d",
+    # Phase 2 pre-breakout compression & catalyst features
+    "roc_63", "vol_compression_5d_63d", "consolidation_tightness_10d",
+    "max_single_day_return_21d", "gap_up_magnitude_10d", "trend_linearity_63d",
+    "days_since_52wk_high",
+    # Phase 2 normalized & accelerating momentum
+    "norm_momentum_5d", "norm_momentum_21d", "norm_momentum_63d",
+    "momentum_accel_5_21", "momentum_accel_21_63", "volume_confirmed_momentum",
     # Fundamentals present in spread CSV
     "roe", "debt_to_equity", "revenue_growth", "profit_margin",
     "current_ratio", "short_pct_float",
