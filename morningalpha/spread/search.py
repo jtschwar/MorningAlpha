@@ -402,6 +402,7 @@ def fetch_returns_with_metrics(
             volume_cols = data.xs("Volume", axis=1, level=1, drop_level=False)
             high_cols = data.xs("High", axis=1, level=1, drop_level=False) if "High" in data.columns.get_level_values(1) else None
             low_cols = data.xs("Low", axis=1, level=1, drop_level=False) if "Low" in data.columns.get_level_values(1) else None
+            open_cols = data.xs("Open", axis=1, level=1, drop_level=False) if "Open" in data.columns.get_level_values(1) else None
 
             for t in batch:
                 try:
@@ -440,6 +441,7 @@ def fetch_returns_with_metrics(
                     try:
                         ohlcv = pd.DataFrame({
                             'Close': prices,
+                            'Open': open_cols[(t, "Open")] if open_cols is not None else pd.Series(np.nan, index=prices.index),
                             'High': high_cols[(t, "High")] if high_cols is not None else pd.Series(np.nan, index=prices.index),
                             'Low': low_cols[(t, "Low")] if low_cols is not None else pd.Series(np.nan, index=prices.index),
                             'Volume': volumes,
@@ -506,6 +508,7 @@ def fetch_returns_with_metrics(
                 try:
                     ohlcv = pd.DataFrame({
                         'Close': prices,
+                        'Open': data.get("Open", pd.Series(np.nan, index=prices.index)),
                         'High': data.get("High", pd.Series(np.nan, index=prices.index)),
                         'Low': data.get("Low", pd.Series(np.nan, index=prices.index)),
                         'Volume': volumes,

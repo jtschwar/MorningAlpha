@@ -14,6 +14,61 @@ from scipy.stats import spearmanr
 
 from morningalpha.ml.features import FEATURE_COLUMNS, FLOAT_FEATURES
 
+# ---------------------------------------------------------------------------
+# Experiment helpers — feature sets, monotone constraints, objective prep
+# ---------------------------------------------------------------------------
+
+# Value/fundamental features to drop in momentum-only experiments.
+# These taught the model that cheap stocks outperform — wrong lesson during
+# the Feb-Mar 2026 tariff crash which contaminated recent training labels.
+_VALUE_FEATURES = frozenset({
+    "earnings_yield", "book_to_market", "sales_to_price", "roe",
+    "debt_to_equity", "revenue_growth", "profit_margin", "current_ratio",
+    "short_pct_float", "earnings_yield_vs_sector", "book_to_market_vs_sector",
+    "earnings_yield_quality", "value_x_momentum",
+})
+
+# Monotone constraint signs: +1 = higher is better, -1 = lower is better.
+# Applied only when --monotone-constraints flag is set.
+_MONOTONE_POSITIVE = frozenset({
+    "moving_average_alignment", "rs_rating", "rs_rating_delta_21d",
+    "norm_momentum_5d", "norm_momentum_21d", "norm_momentum_63d",
+    "momentum_accel_5_21", "momentum_accel_21_63",
+    "days_consecutive_above_sma20", "up_down_volume_ratio_63d",
+    "momentum_12_1", "log_momentum_12_1",
+})
+_MONOTONE_NEGATIVE = frozenset({
+    "days_since_52wk_high", "price_vs_5yr_high", "price_vs_52wk_high",
+})
+
+# Threshold for "explosive" breakout: top 10% by cross-sectional market-excess rank.
+_EXPLOSIVE_THRESHOLD = 0.8
+
+
+def _build_monotone_constraints(feat_cols: List[str]) -> List[int]:
+    """Return a LightGBM monotone_constraints list aligned with feat_cols."""
+    return [
+        1 if f in _MONOTONE_POSITIVE else (-1 if f in _MONOTONE_NEGATIVE else 0)
+        for f in feat_cols
+    ]
+
+
+def _make_relevance_labels(y: np.ndarray, n_bins: int = 4) -> np.ndarray:
+    """Convert continuous rank targets [-1,1] → integer relevance labels [0..n_bins-1].
+
+    Used for LambdaRank objective. qcut creates equal-frequency bins, so each
+    query date contributes equally to the NDCG gradient.
+    """
+    s = pd.Series(y)
+    try:
+        labels = pd.qcut(s, n_bins, labels=False, duplicates="drop").fillna(0).astype(int)
+    except Exception:
+        labels = pd.cut(
+            s, bins=[-1.001, -0.5, 0.0, 0.5, 1.001],
+            labels=[0, 1, 2, 3], include_lowest=True,
+        ).fillna(1).astype(int)
+    return labels.values
+
 logger = logging.getLogger(__name__)
 console = Console()
 
@@ -474,6 +529,8 @@ def walk_forward_cv(
     feat_cols: List[str],
     best_params: dict,
     target: str = "forward_63d_composite_rank",
+    objective: str = "regression",
+    monotone_constraints_list: Optional[List[int]] = None,
     embargo_days: int = 10,
     lookback_years: float = 5.0,
 ) -> pd.DataFrame:
@@ -485,6 +542,15 @@ def walk_forward_cv(
       - Val   : last 90 calendar days of that window (early stopping)
       - Test  : rows tagged test_fold == N
 
+    objective : "regression" (default), "lambdarank", or "binary".
+      - lambdarank: converts target to integer relevance labels, uses LGBMRanker
+      - binary: converts target >= 0.8 → top-10% label, uses LGBMClassifier
+      In all cases, WFCV IC is computed as Spearman rank IC between predicted
+      scores and the original *continuous* target (forward_63d_market_excess_rank).
+
+    monotone_constraints_list : if provided, added to LightGBM params to
+      prevent anti-momentum splits.
+
     lookback_years : evaluate this many years of recent folds (default 5.0).
                      Converted to max_folds via years * 12 since fold_step=1mo.
                      Use 0 to evaluate all folds.
@@ -492,8 +558,11 @@ def walk_forward_cv(
     Returns a DataFrame with per-fold IC, hit rate, n_train, n_test.
     """
     from morningalpha.ml.baselines import LightGBMModel
+    import lightgbm as lgb
 
     lgbm_params = {"n_estimators": 1000, "verbose": -1, **best_params}
+    if monotone_constraints_list is not None:
+        lgbm_params["monotone_constraints"] = monotone_constraints_list
     n_folds = int(df["test_fold"].max())
 
     max_folds = round(lookback_years * 12) if lookback_years > 0 else None
@@ -545,11 +614,51 @@ def walk_forward_cv(
         X_va, y_va, _, _ = _xy(fold_val,  feat_cols, target)
         X_te, y_te, _, _ = _xy(fold_test, feat_cols, target)
 
-        model = LightGBMModel(params=lgbm_params)
-        model.fit(X_tr, y_tr, X_va, y_va)
+        if objective == "regression":
+            model = LightGBMModel(params=lgbm_params)
+            model.fit(X_tr, y_tr, X_va, y_va)
+            preds = model.predict(X_te)
 
-        ic = rank_ic(model.predict(X_te), y_te)
-        hr = hit_rate(model.predict(X_te), y_te)
+        elif objective == "lambdarank":
+            # Sort by date so query groups are contiguous
+            tr_s = fold_tr.sort_values("date")
+            va_s = fold_val.sort_values("date")
+            te_s = fold_test.sort_values("date")
+            X_tr_s = tr_s[feat_cols].fillna(0).astype(np.float32)
+            X_va_s = va_s[feat_cols].fillna(0).astype(np.float32)
+            X_te_s = te_s[feat_cols].fillna(0).astype(np.float32)
+            y_tr_int = _make_relevance_labels(tr_s[target].fillna(0).values)
+            y_va_int = _make_relevance_labels(va_s[target].fillna(0).values)
+            y_te     = te_s[target].fillna(0).values.astype(np.float32)  # continuous for IC
+            group_tr = tr_s.groupby("date", sort=True).size().values
+            group_va = va_s.groupby("date", sort=True).size().values
+            ltr_params = {**lgbm_params, "objective": "lambdarank", "metric": "ndcg",
+                          "ndcg_eval_at": [5, 10]}
+            ranker = lgb.LGBMRanker(**ltr_params)
+            ranker.fit(
+                X_tr_s, y_tr_int, group=group_tr,
+                eval_set=[(X_va_s, y_va_int)], eval_group=[group_va],
+                callbacks=[lgb.early_stopping(50, verbose=False), lgb.log_evaluation(100)],
+            )
+            preds = ranker.predict(X_te_s)
+
+        elif objective == "binary":
+            y_tr_bin = (y_tr >= _EXPLOSIVE_THRESHOLD).astype(np.float32)
+            y_va_bin = (y_va >= _EXPLOSIVE_THRESHOLD).astype(np.float32)
+            bin_params = {**lgbm_params, "objective": "binary", "metric": "auc"}
+            clf = lgb.LGBMClassifier(**bin_params)
+            clf.fit(
+                X_tr, y_tr_bin,
+                eval_set=[(X_va, y_va_bin)],
+                callbacks=[lgb.early_stopping(50, verbose=False), lgb.log_evaluation(100)],
+            )
+            preds = clf.predict_proba(X_te)[:, 1]
+
+        else:
+            raise ValueError(f"Unknown objective: {objective!r}")
+
+        ic = rank_ic(preds, y_te)
+        hr = hit_rate(preds, y_te)
 
         fold_results.append({
             "fold":           fold_n,
@@ -582,7 +691,7 @@ def walk_forward_cv(
 @click.option("--target", default="forward_63d_composite_rank", show_default=True, help="Target label column. forward_63d_composite_rank (default) blends return/Sharpe/consistency/drawdown to predict quality-adjusted growth. forward_10d_rank for pure short-term return ranking. forward_63d_market_excess_rank for raw excess-return ranking.")
 @click.option("--name", default=None, help="Model checkpoint name (default: {model_type}_v1).")
 @click.option("--output", default=None, help="Path to save checkpoint (default: ~/.morningalpha/models/{name}.pkl).")
-@click.option("--n-trials", "n_trials", default=30, show_default=True, help="Optuna hyperparameter search trials (lgbm only).")
+@click.option("--n-trials", "n_trials", default=30, show_default=True, help="Optuna hyperparameter search trials (lgbm only). Use 0 to skip tuning and run default params.")
 @click.option("--finetune", is_flag=True, default=False, help="Warm-start from existing checkpoint.")
 @click.option("--checkpoint", default=None, help="Source checkpoint path for fine-tuning.")
 @click.option("--no-plots", "no_plots", is_flag=True, default=False, help="Skip diagnostic plot generation.")
@@ -594,7 +703,22 @@ def walk_forward_cv(
               help="Skip walk-forward CV and train on static splits only (faster, less rigorous).")
 @click.option("--wfcv-years", "wfcv_years", default=5.0, show_default=True,
               help="Years of recent history to evaluate in walk-forward CV (default 5.0 ≈ 60 folds). Use 0 for all folds.")
-def train(dataset, model_type, target, name, output, n_trials, finetune, checkpoint, no_plots, exclude_features, momentum_universe, no_walk_forward, wfcv_years):
+@click.option("--objective", default="regression",
+              type=click.Choice(["regression", "lambdarank", "binary"]), show_default=True,
+              help="Training objective. 'regression': rank target (default). 'lambdarank': LTR with NDCG@K, "
+                   "converts target to 4-level relevance labels. 'binary': explosive breakout classifier "
+                   "(top-10%% cross-sectional excess return). All objectives report Spearman rank IC for comparison.")
+@click.option("--feature-set", "feature_set", default="full",
+              type=click.Choice(["full", "momentum"]), show_default=True,
+              help="Feature set. 'full': all features (default). 'momentum': drop the 13 value/fundamental "
+                   "features (earnings_yield, book_to_market, etc.) that bias the model toward value stocks.")
+@click.option("--monotone-constraints", "monotone_constraints", is_flag=True, default=False,
+              help="Apply monotone constraints to prevent anti-momentum tree splits. "
+                   "Positive: moving_average_alignment, rs_rating, norm_momentum_*, momentum_accel_*, etc. "
+                   "Negative: days_since_52wk_high, price_vs_5yr_high, price_vs_52wk_high.")
+def train(dataset, model_type, target, name, output, n_trials, finetune, checkpoint, no_plots,
+          exclude_features, momentum_universe, no_walk_forward, wfcv_years,
+          objective, feature_set, monotone_constraints):
     """Train a model on the labeled dataset.
 
     \b
@@ -646,9 +770,23 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
         X_te = X_te[feat_cols]
         console.print(f"[yellow]Excluding {len(excluded)} features: {', '.join(sorted(excluded))}[/yellow]")
 
+    # --feature-set momentum: drop all 13 value/fundamental features.
+    # Cleaner than --momentum-universe (no row filter), just feature ablation.
+    if feature_set == "momentum":
+        n_before = len(feat_cols)
+        feat_cols = [f for f in feat_cols if f not in _VALUE_FEATURES]
+        dropped = n_before - len(feat_cols)
+        X_tr = X_tr[feat_cols]; X_va = X_va[feat_cols]; X_te = X_te[feat_cols]
+        if use_walk_forward and df_full is not None:
+            pass  # df_full kept as-is; walk_forward_cv filters feat_cols per fold
+        console.print(
+            f"[cyan]Feature set = momentum: dropped {dropped} value features "
+            f"→ {len(feat_cols)} features remaining[/cyan]"
+        )
+
     # Momentum-universe mode: filter to confirmed uptrends + drop pure value features
     if momentum_universe:
-        _VALUE_FEATURES = {
+        _MOM_VALUE_FEATURES = {
             "earnings_yield", "book_to_market", "sales_to_price",
             "earnings_yield_vs_sector", "book_to_market_vs_sector",
             "earnings_yield_quality", "debt_to_equity", "current_ratio",
@@ -674,9 +812,21 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
             f"(kept stocks with 10% < momentum_12_1 < 5000% and price above SMA200)[/cyan]"
         )
         # Drop value features — they penalise growth stocks
-        feat_cols = [f for f in feat_cols if f not in _VALUE_FEATURES]
+        feat_cols = [f for f in feat_cols if f not in _MOM_VALUE_FEATURES]
         X_tr = X_tr[feat_cols]; X_va = X_va[feat_cols]; X_te = X_te[feat_cols]
-        console.print(f"[cyan]Dropped {len(_VALUE_FEATURES)} value features — using {len(feat_cols)} momentum features[/cyan]")
+        console.print(f"[cyan]Dropped {len(_MOM_VALUE_FEATURES)} value features — using {len(feat_cols)} momentum features[/cyan]")
+
+    # Compute monotone constraint list after feature set is finalized
+    monotone_constraints_list = None
+    if monotone_constraints:
+        monotone_constraints_list = _build_monotone_constraints(feat_cols)
+        n_constrained = sum(1 for c in monotone_constraints_list if c != 0)
+        pos = sum(1 for c in monotone_constraints_list if c == 1)
+        neg = sum(1 for c in monotone_constraints_list if c == -1)
+        console.print(
+            f"[cyan]Monotone constraints: {n_constrained} features constrained "
+            f"(+{pos} positive, -{neg} negative)[/cyan]"
+        )
 
     # Load finetune checkpoint if requested
     finetune_model = None
@@ -701,8 +851,16 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
 
     # --- LightGBM ---
     if model_type == "lgbm":
-        console.print("\n[bold cyan]--- LightGBM: Hyperparameter Tuning ---[/bold cyan]")
-        best_params = tune_lgbm(X_tr, y_tr, d_tr, X_va, y_va, n_trials=n_trials, finetune_model=finetune_model)
+        console.print(f"\n[bold cyan]--- LightGBM: Hyperparameter Tuning (objective={objective}) ---[/bold cyan]")
+        # Optuna only supports regression objective; skip for lambdarank / binary.
+        if objective == "regression" and n_trials > 0:
+            best_params = tune_lgbm(X_tr, y_tr, d_tr, X_va, y_va, n_trials=n_trials, finetune_model=finetune_model)
+        else:
+            if n_trials > 0:
+                console.print(f"[yellow]Optuna skipped for objective='{objective}' — using default LightGBM params[/yellow]")
+            else:
+                console.print("[yellow]n_trials=0 — using default LightGBM params (no Optuna)[/yellow]")
+            best_params = {}
 
         # Persist best params so wfcv / future runs can reuse them
         params_path = MODEL_DIR / f"{name}_params.json"
@@ -712,9 +870,13 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
 
         # --- Walk-forward CV across all historical folds ---
         if use_walk_forward:
-            console.print(f"\n[bold cyan]--- Walk-Forward CV ({split_dates['n_folds']} folds) ---[/bold cyan]")
-            wf_results = walk_forward_cv(df_full, feat_cols, best_params, target=target,
-                                         lookback_years=wfcv_years)
+            console.print(f"\n[bold cyan]--- Walk-Forward CV ({split_dates['n_folds']} folds, objective={objective}) ---[/bold cyan]")
+            wf_results = walk_forward_cv(
+                df_full, feat_cols, best_params, target=target,
+                objective=objective,
+                monotone_constraints_list=monotone_constraints_list,
+                lookback_years=wfcv_years,
+            )
 
             if len(wf_results) > 0:
                 mean_ic   = wf_results["ic"].mean()
@@ -738,73 +900,87 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
                 console.print(f"Per-fold results → {wf_csv}")
 
         # --- Final model on largest expanding window ---
+        # lambdarank/binary: WFCV is the primary result; final model save is
+        # regression-only until inference pipeline supports those objectives.
         console.print("\n[bold cyan]--- Final Model (expanding window) ---[/bold cyan]")
-        final_model, lgbm_results = train_lgbm(X_tr, y_tr, X_va, y_va, X_te, y_te, best_params, finetune_model)
+        if objective == "regression":
+            final_params = {**best_params}
+            if monotone_constraints_list is not None:
+                final_params["monotone_constraints"] = monotone_constraints_list
+            final_model, lgbm_results = train_lgbm(
+                X_tr, y_tr, X_va, y_va, X_te, y_te, final_params, finetune_model
+            )
 
-        # Summary table
-        table = Table(title="Final Model Results", show_header=True)
-        table.add_column("Split")
-        table.add_column("Rank IC", justify="right")
-        table.add_column("Hit Rate", justify="right")
-        table.add_row("Train", f"{lgbm_results['train_ic']:.4f}", f"{lgbm_results['train_hit']:.1%}")
-        table.add_row("Val",   f"{lgbm_results['val_ic']:.4f}",   f"{lgbm_results['val_hit']:.1%}")
-        table.add_row("Test",  f"{lgbm_results['test_ic']:.4f}",  f"{lgbm_results['test_hit']:.1%}")
-        console.print(table)
+            # Summary table
+            table = Table(title="Final Model Results", show_header=True)
+            table.add_column("Split")
+            table.add_column("Rank IC", justify="right")
+            table.add_column("Hit Rate", justify="right")
+            table.add_row("Train", f"{lgbm_results['train_ic']:.4f}", f"{lgbm_results['train_hit']:.1%}")
+            table.add_row("Val",   f"{lgbm_results['val_ic']:.4f}",   f"{lgbm_results['val_hit']:.1%}")
+            table.add_row("Test",  f"{lgbm_results['test_ic']:.4f}",  f"{lgbm_results['test_hit']:.1%}")
+            console.print(table)
 
-        if lgbm_results["test_ic"] < 0.03:
-            console.print("[bold yellow]WARNING: test IC < 0.03 — check dataset and features.[/bold yellow]")
-        elif lgbm_results["test_ic"] >= 0.05:
-            console.print("[bold green]IC >= 0.05 — good signal.[/bold green]")
+            if lgbm_results["test_ic"] < 0.03:
+                console.print("[bold yellow]WARNING: test IC < 0.03 — check dataset and features.[/bold yellow]")
+            elif lgbm_results["test_ic"] >= 0.05:
+                console.print("[bold green]IC >= 0.05 — good signal.[/bold green]")
 
-        # SHAP top-15 summary
-        try:
-            sv = final_model.shap_values(X_te.iloc[:min(1000, len(X_te))])
-            mean_abs_shap = np.abs(sv).mean(axis=0)
-            shap_series = pd.Series(mean_abs_shap, index=feat_cols).sort_values(ascending=False)
-            shap_table = Table(title="SHAP Top 15 Features (mean |SHAP| on test set)", show_header=True)
-            shap_table.add_column("Rank", justify="right")
-            shap_table.add_column("Feature")
-            shap_table.add_column("Mean |SHAP|", justify="right")
-            for rank, (feat, val) in enumerate(shap_series.head(15).items(), 1):
-                shap_table.add_row(str(rank), feat, f"{val:.6f}")
-            console.print(shap_table)
-        except Exception as e:
-            console.print(f"[yellow]SHAP summary skipped: {e}[/yellow]")
+            # SHAP top-15 summary
+            try:
+                sv = final_model.shap_values(X_te.iloc[:min(1000, len(X_te))])
+                mean_abs_shap = np.abs(sv).mean(axis=0)
+                shap_series = pd.Series(mean_abs_shap, index=feat_cols).sort_values(ascending=False)
+                shap_table = Table(title="SHAP Top 15 Features (mean |SHAP| on test set)", show_header=True)
+                shap_table.add_column("Rank", justify="right")
+                shap_table.add_column("Feature")
+                shap_table.add_column("Mean |SHAP|", justify="right")
+                for rank, (feat, val) in enumerate(shap_series.head(15).items(), 1):
+                    shap_table.add_row(str(rank), feat, f"{val:.6f}")
+                console.print(shap_table)
+            except Exception as e:
+                console.print(f"[yellow]SHAP summary skipped: {e}[/yellow]")
 
-        # Save model
-        final_model.save(output)
-        console.print(f"\n[bold green]Model saved → {output}[/bold green]")
+            # Save model
+            final_model.save(output)
+            console.print(f"\n[bold green]Model saved → {output}[/bold green]")
 
-        # Save feature config
-        feat_config = {
-            "model_name": name,
-            "model_type": model_type,
-            "feature_columns": feat_cols,
-            "target": target,
-            "best_params": best_params,
-            "results": lgbm_results,
-            "persistence_ic": persist_ic,
-            "train_cutoff": str(split_dates["train_end"].date()) if use_walk_forward else None,
-            "test_start":   str(split_dates["test_start"].date()) if use_walk_forward else None,
-            "test_end":     str(split_dates["test_end"].date()) if use_walk_forward else None,
-        }
-        # Save per-model config (primary) and shared fallback
-        feat_config_path = MODEL_DIR / f"{name}_feature_config.json"
-        with open(feat_config_path, "w") as f:
-            json.dump(feat_config, f, indent=2, default=str)
-        shared_config_path = MODEL_DIR / "feature_config.json"
-        with open(shared_config_path, "w") as f:
-            json.dump(feat_config, f, indent=2, default=str)
-        console.print(f"Feature config saved → {feat_config_path}")
+            # Save feature config
+            feat_config = {
+                "model_name": name,
+                "model_type": model_type,
+                "objective": objective,
+                "feature_set": feature_set,
+                "monotone_constraints": monotone_constraints,
+                "feature_columns": feat_cols,
+                "target": target,
+                "best_params": best_params,
+                "results": lgbm_results,
+                "persistence_ic": persist_ic,
+                "train_cutoff": str(split_dates["train_end"].date()) if use_walk_forward else None,
+                "test_start":   str(split_dates["test_start"].date()) if use_walk_forward else None,
+                "test_end":     str(split_dates["test_end"].date()) if use_walk_forward else None,
+            }
+            feat_config_path = MODEL_DIR / f"{name}_feature_config.json"
+            with open(feat_config_path, "w") as f:
+                json.dump(feat_config, f, indent=2, default=str)
+            shared_config_path = MODEL_DIR / "feature_config.json"
+            with open(shared_config_path, "w") as f:
+                json.dump(feat_config, f, indent=2, default=str)
+            console.print(f"Feature config saved → {feat_config_path}")
 
-        # Upsert model into config.json
-        _upsert_model_config(MODEL_DIR, name, model_type, lgbm_results.get("test_ic"))
+            _upsert_model_config(MODEL_DIR, name, model_type, lgbm_results.get("test_ic"))
 
-        # Plots
-        if not no_plots:
-            plot_dir = Path("data/training/plots") / name
-            console.print(f"\n[bold]Generating plots → {plot_dir}/[/bold]")
-            generate_plots(final_model, X_tr, y_tr, X_va, y_va, X_te, y_te, feat_cols, plot_dir)
+            if not no_plots:
+                plot_dir = Path("data/training/plots") / name
+                console.print(f"\n[bold]Generating plots → {plot_dir}/[/bold]")
+                generate_plots(final_model, X_tr, y_tr, X_va, y_va, X_te, y_te, feat_cols, plot_dir)
+
+        else:
+            console.print(
+                f"[yellow]Final model checkpoint skipped for objective='{objective}'. "
+                f"WFCV IC is the primary result — see results/{name}_wfcv.csv[/yellow]"
+            )
 
     elif model_type == "ridge":
         ridge_model.save(output)
