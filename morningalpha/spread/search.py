@@ -436,6 +436,13 @@ def fetch_returns_with_metrics(
                     
                     # Calculate all metrics (use full available data for better accuracy)
                     metrics = calculate_all_metrics(prices, volumes, daily_returns)
+                    # Override drawdown metrics to match the selected period window —
+                    # using full history produces misleading values for stocks with
+                    # large historical drawdowns that have since recovered.
+                    period_dd = calculate_drawdown_metrics(period_prices)
+                    metrics['max_drawdown'] = period_dd['max_drawdown']
+                    metrics['avg_drawdown'] = period_dd['avg_drawdown']
+                    metrics['recovery_days'] = period_dd['recovery_days']
 
                     # Compute technical indicators from OHLCV data
                     try:

@@ -96,6 +96,7 @@ const COLUMN_DEFS: Record<string, ColDef> = {
   },
   'Max DD': {
     label: 'Max DD',
+    sortKey: 'maxDrawdown',
     helpSection: 'risk',
     render: s => (
       <td key="Max DD" className={`${styles.tdMono} ${s.MaxDrawdown != null && s.MaxDrawdown < -20 ? styles.neg : ''}`}>

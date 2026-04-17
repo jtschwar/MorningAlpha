@@ -10,6 +10,7 @@ export type SortKey =
   | 'marketCap'
   | 'entryScore'
   | 'momentumAccel'
+  | 'maxDrawdown'
 
 export type RiskLevel = 'low' | 'moderate' | 'high' | 'very-high' | 'unknown'
 

@@ -156,6 +156,7 @@ export default function Sidebar() {
           <option value="marketCap">Market Cap</option>
           <option value="entryScore">Entry Score</option>
           <option value="momentumAccel">Momentum</option>
+          <option value="maxDrawdown">Max Drawdown (mildest first)</option>
         </select>
 
         <button

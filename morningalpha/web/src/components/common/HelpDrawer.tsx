@@ -26,7 +26,7 @@ const SECTIONS: Section[] = [
       <div>
         <p><strong>Sharpe Ratio</strong> = (Return − Risk-free rate) / Std Dev of returns. Higher is better; &gt;1 is good, &gt;2 is excellent.</p>
         <p><strong>Sortino Ratio</strong> = Like Sharpe but only penalizes downside volatility.</p>
-        <p><strong>Max Drawdown</strong> = Largest peak-to-trough decline. E.g. −25% means the stock fell 25% from its peak before recovering.</p>
+        <p><strong>Max Drawdown</strong> = Largest peak-to-trough decline. E.g. −25% means the stock fell 25% from its peak before recovering. Displayed as a negative number — <span style={{color:'var(--pos,#4caf50)'}}>green</span> means a mild drawdown (&gt; −10%), <span style={{color:'var(--neg,#f44336)'}}>red</span> means a severe one (&lt; −30%).</p>
         <p><strong>Annualized Volatility</strong> = σ_daily × √252 × 100, expressed as a %. A 20% vol stock moves ~20% annually on average.</p>
       </div>
     ),
