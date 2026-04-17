@@ -28,7 +28,6 @@
   font-size: 0.82rem;
   line-height: 1.6;
   color: var(--text-secondary);
-  max-width: 820px;
   margin: 0;
   flex: 1;
 }

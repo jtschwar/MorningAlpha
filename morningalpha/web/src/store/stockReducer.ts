@@ -22,6 +22,7 @@ export type Action =
   | { type: 'SET_WINDOW_DATA'; period: WindowPeriod; data: Stock[]; metadata: Metadata }
   | { type: 'SET_PERIOD'; period: WindowPeriod }
   | { type: 'SET_DATA_SOURCE'; source: 'auto' | 'upload' }
+  | { type: 'SET_AUTO_LOAD_STATUS'; status: AppState['autoLoadStatus']; generatedAt?: AppState['generatedAt'] }
   | { type: 'SET_FILTER'; key: keyof FilterState; value: FilterState[keyof FilterState] }
   | { type: 'SET_FILTERS'; filters: Partial<FilterState> }
   | { type: 'RESET_FILTERS' }
@@ -40,6 +41,8 @@ export const initialState: AppState = {
   metadata: emptyMeta,
   activePeriod: '3m',
   dataSource: null,
+  autoLoadStatus: 'idle',
+  generatedAt: null,
   filters: DEFAULT_FILTERS,
   apiCache: new Map(),
   columnConfig: loadColumnConfig(),
@@ -62,6 +65,13 @@ export function stockReducer(state: AppState, action: Action): AppState {
 
     case 'SET_DATA_SOURCE':
       return { ...state, dataSource: action.source }
+
+    case 'SET_AUTO_LOAD_STATUS':
+      return {
+        ...state,
+        autoLoadStatus: action.status,
+        generatedAt: action.generatedAt !== undefined ? action.generatedAt : state.generatedAt,
+      }
 
     case 'SET_FILTER':
       return {

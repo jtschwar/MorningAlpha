@@ -129,21 +129,20 @@
   text-overflow: ellipsis;
 }
 
-.pos {
-  color: var(--color-pos);
-}
+/* Two-class selectors (0,2,0) beat .table td (0,1,1) */
+.table .pos  { color: var(--color-pos); }
+.table .amber { color: var(--accent-amber); }
+.table .neg  { color: var(--color-neg); }
+.table .muted { color: var(--text-muted); }
 
-.amber {
-  color: var(--accent-amber);
-}
+.table .rsiHot  { color: var(--color-neg); font-weight: 600; }
+.table .rsiCold { color: var(--color-pos); font-weight: 600; }
 
-.neg {
-  color: var(--color-neg);
-}
-
-.muted {
-  color: var(--text-muted);
-}
+/* Aliases for non-table contexts (signal badges, etc.) */
+.pos  { color: var(--color-pos); }
+.amber { color: var(--accent-amber); }
+.neg  { color: var(--color-neg); }
+.muted { color: var(--text-muted); }
 
 .signal {
   display: inline-block;
@@ -195,4 +194,35 @@
   color: var(--text-muted);
   font-family: 'IBM Plex Mono', monospace;
   font-size: 0.82rem;
+}
+
+.deltaHeader {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.periodSelect {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.68rem;
+  padding: 1px 2px;
+  cursor: pointer;
+  outline: none;
+}
+
+.periodSelect:hover {
+  border-color: var(--accent-blue);
+  color: var(--text-secondary);
+}
+
+.infoLeft {
+  text-align: left;
+  max-width: 150px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

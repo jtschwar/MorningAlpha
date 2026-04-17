@@ -148,6 +148,7 @@ export default function PortfolioPage() {
               onAdd={handleAddHolding}
             />
             <HoldingsTable
+              key={store.activePortfolioId ?? 'default'}
               holdings={holdings}
               tickerIndex={tickerIndex}
               onDelete={handleDeleteHolding}

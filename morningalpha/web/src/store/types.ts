@@ -157,6 +157,8 @@ export interface AppState {
   metadata: Record<WindowPeriod, Metadata | null>
   activePeriod: WindowPeriod
   dataSource: 'auto' | 'upload' | null
+  autoLoadStatus: 'idle' | 'loading' | 'loaded' | 'failed'
+  generatedAt: { date: string; time: string } | null
   filters: FilterState
   apiCache: Map<string, StockDetailData>
   columnConfig: ColumnConfig

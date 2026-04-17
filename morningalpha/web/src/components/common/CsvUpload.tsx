@@ -1,83 +1,36 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef } from 'react'
 import type { DragEvent } from 'react'
 import { useStock } from '../../store/StockContext'
 import { parseCSV } from '../../lib/csvParser'
 import type { WindowPeriod } from '../../store/types'
 import styles from './CsvUpload.module.css'
 
-const PERIOD_PATHS: { period: WindowPeriod; path: string }[] = [
-  { period: '3m', path: './data/latest/stocks_3m.csv' },
-  { period: '2w', path: './data/latest/stocks_2w.csv' },
-  { period: '1m', path: './data/latest/stocks_1m.csv' },
-  { period: '6m', path: './data/latest/stocks_6m.csv' },
-]
-
 export default function CsvUpload() {
-  const { dispatch } = useStock()
-  const [autoStatus, setAutoStatus] = useState<'idle' | 'loading' | 'loaded' | 'failed'>('idle')
-  const [generatedAt, setGeneratedAt] = useState<{ date: string; time: string } | null>(null)
-  const [dragging, setDragging] = useState(false)
+  const { state, dispatch } = useStock()
+  const { autoLoadStatus, generatedAt } = state
   const fileRef = useRef<HTMLInputElement>(null)
-
-  // Auto-load all 4 period CSVs from GitHub Pages on mount
-  useEffect(() => {
-    setAutoStatus('loading')
-
-    const loadPeriod = async ({ period, path }: { period: WindowPeriod; path: string }) => {
-      const res = await fetch(path)
-      if (!res.ok) throw new Error(`${res.status}`)
-      const text = await res.text()
-      const { data, metadata } = parseCSV(text)
-      dispatch({ type: 'SET_WINDOW_DATA', period, data, metadata })
-      dispatch({ type: 'SET_DATA_SOURCE', source: 'auto' })
-    }
-
-    loadPeriod(PERIOD_PATHS[0])
-      .then(async () => {
-        setAutoStatus('loaded')
-        try {
-          const res = await fetch('./data/latest/_generated.json')
-          if (res.ok) {
-            const { generated_at } = await res.json()
-            const d = new Date(generated_at)
-            setGeneratedAt({
-              date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-              time: d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-            })
-          }
-        } catch { /* no timestamp available */ }
-        // Load remaining periods in the background
-        for (const p of PERIOD_PATHS.slice(1)) {
-          loadPeriod(p).catch(() => {}) // silent — other windows may not exist
-        }
-      })
-      .catch(() => setAutoStatus('failed'))
-  }, [dispatch])
 
   function loadFile(file: File) {
     const reader = new FileReader()
     reader.onload = e => {
       const text = e.target?.result as string
       const { data, metadata } = parseCSV(text)
-      // Detect period from filename
       const match = file.name.match(/_(2w|1m|3m|6m)/i)
-      const period: WindowPeriod = match
-        ? (match[1].toLowerCase() as WindowPeriod)
-        : '3m'
+      const period: WindowPeriod = match ? (match[1].toLowerCase() as WindowPeriod) : '3m'
       dispatch({ type: 'SET_WINDOW_DATA', period, data, metadata })
       dispatch({ type: 'SET_DATA_SOURCE', source: 'upload' })
+      dispatch({ type: 'SET_AUTO_LOAD_STATUS', status: 'loaded', generatedAt: null })
     }
     reader.readAsText(file)
   }
 
   function onDrop(e: DragEvent<HTMLDivElement>) {
     e.preventDefault()
-    setDragging(false)
     const file = e.dataTransfer.files[0]
     if (file?.name.endsWith('.csv')) loadFile(file)
   }
 
-  if (autoStatus === 'loaded') {
+  if (autoLoadStatus === 'loaded') {
     return (
       <div className={styles.loaded}>
         <span className={styles.dot} />
@@ -100,10 +53,9 @@ export default function CsvUpload() {
 
   return (
     <div
-      className={`${styles.dropzone} ${dragging ? styles.dragging : ''}`}
+      className={styles.dropzone}
       onDrop={onDrop}
-      onDragOver={e => { e.preventDefault(); setDragging(true) }}
-      onDragLeave={() => setDragging(false)}
+      onDragOver={e => { e.preventDefault() }}
       onClick={() => fileRef.current?.click()}
     >
       <input
@@ -113,7 +65,7 @@ export default function CsvUpload() {
         style={{ display: 'none' }}
         onChange={e => e.target.files?.[0] && loadFile(e.target.files[0])}
       />
-      {autoStatus === 'loading' ? (
+      {autoLoadStatus === 'loading' ? (
         <span className={styles.hint}>Loading data...</span>
       ) : (
         <>

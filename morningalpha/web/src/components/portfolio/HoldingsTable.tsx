@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Holding } from '../../lib/portfolioStorage'
 import type { TickerEntry } from '../../hooks/useTickerIndex'
+import type { Stock } from '../../store/types'
+import { useStock } from '../../store/StockContext'
 import styles from './HoldingsTable.module.css'
 
-type TabId = 'holdings' | 'signals'
-type SortKey = 'ticker' | 'sector' | 'breakout' | 'mlScore' | 'investmentScore'
+type TabId = 'holdings' | 'signals' | 'info'
+type DeltaPeriod = '2w' | '1m' | '3m' | '6m'
 
 interface Props {
   holdings: Holding[]
@@ -17,13 +19,6 @@ function getEntry(ticker: string, index: TickerEntry[]): TickerEntry | undefined
   return index.find(t => t.ticker === ticker)
 }
 
-function signalProps(score: number | null): { text: string; cls: string } {
-  if (score === null) return { text: 'N/A', cls: styles.signalNA }
-  if (score >= 70) return { text: 'Bullish', cls: styles.signalBullish }
-  if (score >= 40) return { text: 'Neutral', cls: styles.signalNeutral }
-  return { text: 'Bearish', cls: styles.signalBearish }
-}
-
 function scoreClass(v: number | null): string {
   if (v === null) return styles.muted
   if (v >= 70) return styles.pos
@@ -31,58 +26,143 @@ function scoreClass(v: number | null): string {
   return styles.neg
 }
 
+function signalLabel(score: number | null): { text: string; cls: string } {
+  if (score === null) return { text: 'N/A', cls: styles.signalNA }
+  if (score >= 70) return { text: 'Bullish', cls: styles.signalBullish }
+  if (score >= 40) return { text: 'Neutral', cls: styles.signalNeutral }
+  return { text: 'Bearish', cls: styles.signalBearish }
+}
+
+function riskClass(level: string | undefined): string {
+  if (!level) return styles.muted
+  if (level === 'low') return styles.pos
+  if (level === 'moderate') return styles.amber
+  return styles.neg
+}
+
+function ddClass(dd: number | null): string {
+  if (dd == null) return styles.muted
+  if (dd > -10) return styles.pos
+  if (dd > -30) return styles.amber
+  return styles.neg
+}
+
+function rsiClass(rsi: number | null | undefined): string {
+  if (rsi == null) return styles.muted
+  if (rsi >= 70) return styles.rsiHot
+  if (rsi <= 30) return styles.rsiCold
+  return ''
+}
+
+function relVolClass(rv: number | null | undefined): string {
+  if (rv == null) return styles.muted
+  if (rv >= 2) return styles.pos
+  if (rv >= 1.5) return styles.amber
+  if (rv < 0.5) return styles.muted
+  return ''
+}
+
+function derivePrice(s: Stock): number | null {
+  if (s.SMA20 != null && s.PriceToSMA20Pct != null)
+    return s.SMA20 * (1 + s.PriceToSMA20Pct / 100)
+  if (s.SMA200 != null && s.PriceToSMA200Pct != null)
+    return s.SMA200 * (1 + s.PriceToSMA200Pct / 100)
+  return null
+}
+
+function fmtPrice(v: number | null): string {
+  return v != null ? `$${v.toFixed(2)}` : '—'
+}
+
+function fmtPct(v: number | null): string {
+  if (v == null) return '—'
+  return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`
+}
+
+function fmtMarketCap(v: number | null | undefined): string {
+  if (v == null) return '—'
+  if (v >= 1e12) return `$${(v / 1e12).toFixed(1)}T`
+  if (v >= 1e9) return `$${(v / 1e9).toFixed(1)}B`
+  if (v >= 1e6) return `$${(v / 1e6).toFixed(0)}M`
+  return `$${v.toFixed(0)}`
+}
+
+const PERIOD_LABELS: Record<DeltaPeriod, string> = {
+  '2w': '2W', '1m': '1M', '3m': '3M', '6m': '6M',
+}
+
 export default function HoldingsTable({ holdings, tickerIndex, onDelete }: Props) {
   const navigate = useNavigate()
+  const { state } = useStock()
   const [activeTab, setActiveTab] = useState<TabId>('holdings')
-  const [sortKey, setSortKey] = useState<SortKey>('ticker')
+  const [deltaPeriod, setDeltaPeriod] = useState<DeltaPeriod>('3m')
+  const [sortKey, setSortKey] = useState<string>('ticker')
   const [sortAsc, setSortAsc] = useState(true)
 
-  function handleSort(key: SortKey) {
+  // Build ticker → Stock lookup for the selected delta period
+  const stockMap = useMemo(() => {
+    const map: Record<string, Stock> = {}
+    const stocks = state.windowData[deltaPeriod] ?? state.windowData['3m'] ?? []
+    stocks.forEach(s => { map[s.Ticker] = s })
+    return map
+  }, [state.windowData, deltaPeriod])
+
+  function handleSort(key: string) {
     if (sortKey === key) setSortAsc(a => !a)
     else { setSortKey(key); setSortAsc(true) }
   }
 
-  const sorted = [...holdings].sort((a, b) => {
+  const sorted = useMemo(() => [...holdings].sort((a, b) => {
+    const ea = getEntry(a.ticker, tickerIndex)
+    const eb = getEntry(b.ticker, tickerIndex)
+    const sa = stockMap[a.ticker]
+    const sb = stockMap[b.ticker]
     let va: number | string = 0
     let vb: number | string = 0
     if (sortKey === 'ticker') { va = a.ticker; vb = b.ticker }
-    else if (sortKey === 'sector') {
-      va = getEntry(a.ticker, tickerIndex)?.sector ?? ''
-      vb = getEntry(b.ticker, tickerIndex)?.sector ?? ''
-    }
-    else if (sortKey === 'breakout') {
-      va = getEntry(a.ticker, tickerIndex)?.mlScore_breakout ?? -1
-      vb = getEntry(b.ticker, tickerIndex)?.mlScore_breakout ?? -1
-    }
-    else if (sortKey === 'mlScore') {
-      va = getEntry(a.ticker, tickerIndex)?.mlScore ?? -1
-      vb = getEntry(b.ticker, tickerIndex)?.mlScore ?? -1
-    }
-    else if (sortKey === 'investmentScore') {
-      va = getEntry(a.ticker, tickerIndex)?.investmentScore ?? -1
-      vb = getEntry(b.ticker, tickerIndex)?.investmentScore ?? -1
-    }
+    else if (sortKey === 'return') { va = sa?.ReturnPct ?? -999; vb = sb?.ReturnPct ?? -999 }
+    else if (sortKey === 'maxdd') { va = sa?.MaxDrawdown ?? -999; vb = sb?.MaxDrawdown ?? -999 }
+    else if (sortKey === 'rsi') { va = sa?.RSI ?? -1; vb = sb?.RSI ?? -1 }
+    else if (sortKey === 'mlScore') { va = ea?.mlScore ?? -1; vb = eb?.mlScore ?? -1 }
+    else if (sortKey === 'investmentScore') { va = ea?.investmentScore ?? -1; vb = eb?.investmentScore ?? -1 }
+    else if (sortKey === 'sharpe') { va = sa?.SharpeRatio ?? -999; vb = sb?.SharpeRatio ?? -999 }
+    else if (sortKey === 'quality') { va = sa?.QualityScore ?? -1; vb = sb?.QualityScore ?? -1 }
+    else if (sortKey === 'entry') { va = sa?.EntryScore ?? -1; vb = sb?.EntryScore ?? -1 }
     if (va < vb) return sortAsc ? -1 : 1
     if (va > vb) return sortAsc ? 1 : -1
     return 0
-  })
+  }), [holdings, tickerIndex, stockMap, sortKey, sortAsc])
 
-  const thProps = (key: SortKey, label: string) => ({
-    onClick: () => handleSort(key),
-    title: `Sort by ${label}`,
-    children: label + (sortKey === key ? (sortAsc ? ' ↑' : ' ↓') : ''),
-  })
+  function th(key: string, label: string, alignLeft = false) {
+    const active = sortKey === key
+    return (
+      <th
+        onClick={() => handleSort(key)}
+        style={alignLeft ? { textAlign: 'left' } : undefined}
+        title={`Sort by ${label}`}
+      >
+        {label}{active ? (sortAsc ? ' ↑' : ' ↓') : ''}
+      </th>
+    )
+  }
+
+  const tabs: { id: TabId; label: string }[] = [
+    { id: 'holdings', label: 'Holdings' },
+    { id: 'signals', label: 'Signals' },
+    { id: 'info', label: 'Info' },
+  ]
 
   if (holdings.length === 0) {
     return (
       <div className={styles.wrap}>
         <div className={styles.tabRow}>
-          <button className={`${styles.tab} ${styles.tabActive}`}>Holdings</button>
-          <button className={styles.tab}>Signals</button>
+          {tabs.map(t => (
+            <button key={t.id} className={`${styles.tab} ${t.id === 'holdings' ? styles.tabActive : ''}`}>
+              {t.label}
+            </button>
+          ))}
         </div>
-        <div className={styles.emptyState}>
-          No holdings yet. Add a ticker above.
-        </div>
+        <div className={styles.emptyState}>No holdings yet. Add a ticker above.</div>
       </div>
     )
   }
@@ -90,39 +170,54 @@ export default function HoldingsTable({ holdings, tickerIndex, onDelete }: Props
   return (
     <div className={styles.wrap}>
       <div className={styles.tabRow}>
-        <button
-          className={`${styles.tab} ${activeTab === 'holdings' ? styles.tabActive : ''}`}
-          onClick={() => setActiveTab('holdings')}
-        >
-          Holdings
-        </button>
-        <button
-          className={`${styles.tab} ${activeTab === 'signals' ? styles.tabActive : ''}`}
-          onClick={() => setActiveTab('signals')}
-        >
-          Signals
-        </button>
+        {tabs.map(t => (
+          <button
+            key={t.id}
+            className={`${styles.tab} ${activeTab === t.id ? styles.tabActive : ''}`}
+            onClick={() => setActiveTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       <div className={styles.tableWrap}>
+
+        {/* ── Holdings tab ───────────────────────────────────────────── */}
         {activeTab === 'holdings' && (
           <table className={styles.table}>
             <thead>
               <tr>
-                <th {...thProps('ticker', 'Ticker')} style={{ textAlign: 'left' }} />
-                <th {...thProps('sector', 'Sector')} style={{ textAlign: 'left' }} />
-                <th {...thProps('breakout', 'Breakout')} />
-                <th {...thProps('investmentScore', 'Score')} />
-                <th {...thProps('mlScore', 'ML Score')} />
-                <th>Signal</th>
+                {th('ticker', 'Ticker', true)}
+                <th>Price</th>
+                <th>
+                  <span className={styles.deltaHeader}>
+                    Delta
+                    <select
+                      className={styles.periodSelect}
+                      value={deltaPeriod}
+                      onChange={e => setDeltaPeriod(e.target.value as DeltaPeriod)}
+                      onClick={e => e.stopPropagation()}
+                    >
+                      {(Object.keys(PERIOD_LABELS) as DeltaPeriod[]).map(p => (
+                        <option key={p} value={p}>{PERIOD_LABELS[p]}</option>
+                      ))}
+                    </select>
+                  </span>
+                </th>
+                {th('maxdd', 'Max DD')}
+                {th('rsi', 'RSI')}
+                <th>Rel Vol</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {sorted.map(h => {
+                const s = stockMap[h.ticker]
                 const entry = getEntry(h.ticker, tickerIndex)
-                const score = entry?.mlScore ?? null
-                const { text, cls } = signalProps(score)
+                const price = s ? derivePrice(s) : null
+                const ret = s?.ReturnPct ?? null
+                const dd = s?.MaxDrawdown ?? null
                 return (
                   <tr key={h.id}>
                     <td>
@@ -135,21 +230,15 @@ export default function HoldingsTable({ holdings, tickerIndex, onDelete }: Props
                       </span>
                       {entry?.name && <span className={styles.name}>{entry.name}</span>}
                     </td>
-                    <td className={styles.sector}>{entry?.sector ?? '—'}</td>
-                    <td className={scoreClass(entry?.mlScore_breakout ?? null)}>
-                      {entry?.mlScore_breakout !== null && entry?.mlScore_breakout !== undefined
-                        ? Math.round(entry.mlScore_breakout) : '—'}
+                    <td>{fmtPrice(price)}</td>
+                    <td className={ret != null ? (ret >= 0 ? styles.pos : styles.neg) : styles.muted}>
+                      {fmtPct(ret)}
                     </td>
-                    <td className={scoreClass(entry?.investmentScore ?? null)}>
-                      {entry?.investmentScore !== null && entry?.investmentScore !== undefined
-                        ? entry.investmentScore.toFixed(1) : '—'}
+                    <td className={ddClass(dd)}>
+                      {dd != null ? `${dd.toFixed(1)}%` : '—'}
                     </td>
-                    <td className={scoreClass(score)}>
-                      {score !== null ? Math.round(score) : '—'}
-                    </td>
-                    <td>
-                      <span className={`${styles.signal} ${cls}`}>{text}</span>
-                    </td>
+                    <td className={rsiClass(s?.RSI)}>{s?.RSI != null ? s.RSI.toFixed(1) : '—'}</td>
+                    <td className={relVolClass(s?.RelativeVolume)}>{s?.RelativeVolume != null ? `${s.RelativeVolume.toFixed(2)}x` : '—'}</td>
                     <td>
                       <button
                         className={styles.deleteBtn}
@@ -167,50 +256,52 @@ export default function HoldingsTable({ holdings, tickerIndex, onDelete }: Props
           </table>
         )}
 
+        {/* ── Signals tab ───────────────────────────────────────────── */}
         {activeTab === 'signals' && (
           <table className={styles.table}>
             <thead>
               <tr>
-                <th style={{ textAlign: 'left' }}>Ticker</th>
-                <th>Consensus</th>
-                <th>Breakout</th>
-                <th>Composite</th>
-                <th>Set Transformer</th>
+                {th('ticker', 'Ticker', true)}
+                {th('mlScore', 'ML Score')}
+                {th('investmentScore', 'Trad. Score')}
+                {th('sharpe', 'Sharpe')}
+                {th('quality', 'Quality')}
+                {th('entry', 'Entry')}
                 <th>Signal</th>
+                <th>Risk</th>
               </tr>
             </thead>
             <tbody>
               {sorted.map(h => {
                 const entry = getEntry(h.ticker, tickerIndex)
-                const { text, cls } = signalProps(entry?.mlScore ?? null)
+                const s = stockMap[h.ticker]
+                const { text, cls } = signalLabel(entry?.mlScore ?? null)
                 return (
                   <tr key={h.id}>
                     <td>
                       <span
                         className={`${styles.ticker} ${styles.tickerLink}`}
                         onClick={() => navigate(`/stock/${h.ticker}`)}
-                        title={`View ${h.ticker} detail`}
                       >
                         {h.ticker}
                       </span>
                     </td>
                     <td className={scoreClass(entry?.mlScore ?? null)}>
-                      {entry?.mlScore !== null && entry?.mlScore !== undefined ? Math.round(entry.mlScore) : '—'}
+                      {entry?.mlScore != null ? Math.round(entry.mlScore) : '—'}
                     </td>
-                    <td className={scoreClass(entry?.mlScore_breakout ?? null)}>
-                      {entry?.mlScore_breakout !== null && entry?.mlScore_breakout !== undefined
-                        ? Math.round(entry.mlScore_breakout) : '—'}
+                    <td className={scoreClass(entry?.investmentScore ?? null)}>
+                      {entry?.investmentScore != null ? entry.investmentScore.toFixed(1) : '—'}
                     </td>
-                    <td className={scoreClass(entry?.mlScore_composite ?? null)}>
-                      {entry?.mlScore_composite !== null && entry?.mlScore_composite !== undefined
-                        ? Math.round(entry.mlScore_composite) : '—'}
+                    <td>{s?.SharpeRatio != null ? s.SharpeRatio.toFixed(2) : '—'}</td>
+                    <td className={scoreClass(s?.QualityScore ?? null)}>
+                      {s?.QualityScore != null ? Math.round(s.QualityScore) : '—'}
                     </td>
-                    <td className={scoreClass(entry?.mlScore_st ?? null)}>
-                      {entry?.mlScore_st !== null && entry?.mlScore_st !== undefined
-                        ? Math.round(entry.mlScore_st) : '—'}
+                    <td className={scoreClass(s?.EntryScore ?? null)}>
+                      {s?.EntryScore != null ? Math.round(s.EntryScore) : '—'}
                     </td>
-                    <td>
-                      <span className={`${styles.signal} ${cls}`}>{text}</span>
+                    <td><span className={`${styles.signal} ${cls}`}>{text}</span></td>
+                    <td className={riskClass(s?.riskLevel)}>
+                      {s?.riskLevel ?? '—'}
                     </td>
                   </tr>
                 )
@@ -218,6 +309,52 @@ export default function HoldingsTable({ holdings, tickerIndex, onDelete }: Props
             </tbody>
           </table>
         )}
+
+        {/* ── Info tab ──────────────────────────────────────────────── */}
+        {activeTab === 'info' && (
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                {th('ticker', 'Ticker', true)}
+                <th>Mkt Cap</th>
+                <th>P/E</th>
+                <th>Beta</th>
+                <th>Div Yield</th>
+                <th>Exchange</th>
+                <th style={{ textAlign: 'left' }}>Sector</th>
+                <th style={{ textAlign: 'left' }}>Industry</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map(h => {
+                const s = stockMap[h.ticker]
+                const f = s?.fundamentals
+                return (
+                  <tr key={h.id}>
+                    <td>
+                      <span
+                        className={`${styles.ticker} ${styles.tickerLink}`}
+                        onClick={() => navigate(`/stock/${h.ticker}`)}
+                      >
+                        {h.ticker}
+                      </span>
+                    </td>
+                    <td>{fmtMarketCap(s?.MarketCap)}</td>
+                    <td>{f?.pe != null ? f.pe.toFixed(1) : '—'}</td>
+                    <td>{f?.beta != null ? f.beta.toFixed(2) : '—'}</td>
+                    <td>{f?.divYield != null && f.divYield > 0
+                      ? `${(f.divYield * 100).toFixed(2)}%` : '—'}
+                    </td>
+                    <td>{s?.Exchange ?? '—'}</td>
+                    <td className={styles.infoLeft}>{f?.sector ?? '—'}</td>
+                    <td className={styles.infoLeft}>{f?.industry ?? '—'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+
       </div>
     </div>
   )

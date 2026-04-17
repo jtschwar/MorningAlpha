@@ -8,6 +8,7 @@ import BacktestPage from './pages/Backtest'
 import ForecastPage from './pages/Forecast'
 import PortfolioPage from './pages/Portfolio'
 import CommandPalette from './components/layout/CommandPalette'
+import DataLoader from './components/common/DataLoader'
 
 export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -26,6 +27,7 @@ export default function App() {
   return (
     <ThemeProvider>
       <StockProvider>
+        <DataLoader />
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/stock/:ticker" element={<StockDetail />} />

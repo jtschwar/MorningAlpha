@@ -21,13 +21,22 @@ function getEntry(ticker: string, index: TickerEntry[]): TickerEntry | undefined
 export default function PortfolioKPIStrip({ holdings, tickerIndex }: Props) {
   const holdingCount = holdings.length
 
-  // Simple average mlScore across holdings
+  // Average mlScore across holdings
   const scoredHoldings = holdings.filter(h => {
     const entry = getEntry(h.ticker, tickerIndex)
     return entry?.mlScore !== null && entry?.mlScore !== undefined
   })
   const mlHealth = scoredHoldings.length > 0
     ? scoredHoldings.reduce((sum, h) => sum + (getEntry(h.ticker, tickerIndex)?.mlScore ?? 0), 0) / scoredHoldings.length
+    : null
+
+  // Average traditional investmentScore across holdings
+  const tradScoredHoldings = holdings.filter(h => {
+    const entry = getEntry(h.ticker, tickerIndex)
+    return entry?.investmentScore !== null && entry?.investmentScore !== undefined
+  })
+  const tradHealth = tradScoredHoldings.length > 0
+    ? tradScoredHoldings.reduce((sum, h) => sum + (getEntry(h.ticker, tickerIndex)?.investmentScore ?? 0), 0) / tradScoredHoldings.length
     : null
 
   // Top signal
@@ -54,9 +63,11 @@ export default function PortfolioKPIStrip({ holdings, tickerIndex }: Props) {
       </div>
 
       <div className={styles.card}>
-        <span className={styles.label}>Total Value</span>
-        <span className={`${styles.value} ${styles.muted}`}>—</span>
-        <span className={`${styles.sub} ${styles.muted}`}>No price data</span>
+        <span className={styles.label}>Trad. Health</span>
+        <span className={`${styles.value} ${scoreClass(tradHealth)}`}>
+          {tradHealth !== null ? Math.round(tradHealth) : '—'}
+        </span>
+        <span className={`${styles.sub} ${styles.muted}`}>avg score</span>
       </div>
 
       <div className={styles.card}>
