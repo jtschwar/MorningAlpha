@@ -402,13 +402,19 @@ def _build_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
 def _predict_raw(model, X: pd.DataFrame) -> np.ndarray:
     """Run model.predict() and return raw scores as numpy array.
 
-    If the model was trained on a subset of FEATURE_COLUMNS (e.g. value features
-    were excluded for a momentum-only model), subset X to match.
+    Aligns X to the exact feature set the model was trained on.  Features the
+    model needs but are absent from X (e.g. pruned in a later FEATURE_COLUMNS
+    revision) are filled with 0 so older checkpoints continue to work.
     """
     try:
-        trained_features = model.model.feature_name_
-        if list(trained_features) != list(X.columns):
-            X = X[list(trained_features)]
+        trained_features = list(model.model.feature_name_)
+        if trained_features != list(X.columns):
+            missing = [f for f in trained_features if f not in X.columns]
+            if missing:
+                X = X.copy()
+                for f in missing:
+                    X[f] = 0.0
+            X = X[trained_features]
     except AttributeError:
         pass
     return model.predict(X)

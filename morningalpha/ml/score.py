@@ -219,6 +219,13 @@ def _append_predictions_ledger(df_score: pd.DataFrame, raw_scores: dict) -> None
         else:
             rows["momentum_bucket"] = np.int8(2)
 
+        for spread_col, ledger_col in [("NormMomentum21d", "norm_momentum_21d"),
+                                        ("NormMomentum63d", "norm_momentum_63d")]:
+            if spread_col in df_score.columns:
+                rows[ledger_col] = pd.to_numeric(df_score[spread_col], errors="coerce").values
+            else:
+                rows[ledger_col] = np.nan
+
         ctx = _fetch_market_context(today)
         rows["market_return_21d"]  = ctx["market_return_21d"]
         rows["vix_at_prediction"]  = ctx["vix_at_prediction"]
@@ -624,7 +631,8 @@ def _check_and_save_alerts(ic_ts: pd.DataFrame, active_model_ids: list[str]) -> 
 
 # Context features from the ledger used for residual correction
 _CORRECTION_FEATURES_BASIC = [
-    "raw_score", "sector_code", "market_return_21d", "vix_at_prediction", "momentum_bucket",
+    "raw_score", "sector_code", "market_return_21d", "vix_at_prediction",
+    "momentum_bucket", "norm_momentum_21d", "norm_momentum_63d",
 ]
 
 
@@ -711,6 +719,13 @@ def _apply_correction(
             feat_df["momentum_bucket"] = pd.qcut(mom.rank(method="first"), q=5, labels=False).fillna(2).values
         else:
             feat_df["momentum_bucket"] = 2
+
+        for spread_col, feat_col in [("NormMomentum21d", "norm_momentum_21d"),
+                                      ("NormMomentum63d", "norm_momentum_63d")]:
+            feat_df[feat_col] = (
+                pd.to_numeric(df_score[spread_col], errors="coerce").fillna(0).values
+                if spread_col in df_score.columns else 0.0
+            )
 
         for col in _CORRECTION_FEATURES_BASIC:
             if col not in feat_df.columns:
@@ -1285,8 +1300,17 @@ def score(data_dir, models_dir, score_only, run_calibrate):
     if _joblib is not None and _CALIBRATION_PATH.exists():
         try:
             _calibration_dict = _joblib.load(_CALIBRATION_PATH)
+            # Validate compatibility — unpickling across sklearn versions can succeed
+            # but leave models in a broken state (missing attributes like multi_class).
+            for _mdl in _calibration_dict.values():
+                _mdl.get_params()  # raises AttributeError on broken models
         except Exception as exc:
-            logger.warning("Could not load calibration_models.joblib (%s)", exc)
+            logger.warning("Stale calibration models detected (%s) — clearing for retrain", exc)
+            _calibration_dict = {}
+            try:
+                _CALIBRATION_PATH.unlink()
+            except Exception:
+                pass
 
     # Step 4a: Apply per-model residual corrections (Part 2)
     # Try 63d correction first (most relevant to primary signal), fall back to shorter horizons.
