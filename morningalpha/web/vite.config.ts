@@ -31,7 +31,7 @@ function serveRepoData() {
 
 export default defineConfig({
   plugins: [react(), serveRepoData()],
-  base: './',
+  base: '/',
   server: {
     proxy: {
       '/api': 'http://localhost:5050',

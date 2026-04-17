@@ -1,0 +1,7 @@
+{
+  "buildCommand": "npm run build && mkdir -p dist/data/latest && cp ../../data/latest/*.csv dist/data/latest/ 2>/dev/null; cp ../../data/latest/*.json dist/data/latest/ 2>/dev/null; true",
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/((?!data/).*)", "destination": "/index.html" }
+  ]
+}

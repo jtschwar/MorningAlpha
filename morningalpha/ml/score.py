@@ -362,19 +362,6 @@ def _run_calibration(model_ids: list, active_model_ids: list | None = None) -> N
         today  = pd.Timestamp(date.today())
         _CALIB_DIR.mkdir(parents=True, exist_ok=True)
 
-        # Load calibration_daily for rich feature context (join on ticker + scored_date)
-        calib_ctx: pd.DataFrame | None = None
-        if _CALIB_DAILY_PATH.exists():
-            try:
-                calib_ctx = pd.read_parquet(_CALIB_DAILY_PATH)
-                calib_ctx = calib_ctx.rename(columns={"date": "scored_date"})
-                console.print(
-                    f"[dim]calibration_daily loaded: {len(calib_ctx):,} rows "
-                    f"({calib_ctx['scored_date'].nunique()} days)[/dim]"
-                )
-            except Exception as exc:
-                logger.warning("Could not load calibration_daily (%s) — using basic features", exc)
-
         # --- Part 1: IC timeseries + consolidated model_health.json ---
         ic_ts = _update_ic_timeseries(ledger, today, model_ids)
         _check_and_save_alerts(ic_ts, model_ids)
@@ -387,14 +374,27 @@ def _run_calibration(model_ids: list, active_model_ids: list | None = None) -> N
             except Exception:
                 correction_dict = {}
 
+        train_cutoffs: dict[str, str] = {}
         for model_id in model_ids:
             raw_col = f"raw_{model_id}"
             if raw_col not in ledger.columns:
                 console.print(f"[dim]--calibrate: {model_id} — no score column in ledger yet[/dim]")
                 continue
 
+            # Load train_cutoff so the correction model only sees out-of-sample data
+            cfg_path = Path("models") / f"{model_id}_feature_config.json"
+            train_cutoff: str | None = None
+            if cfg_path.exists():
+                try:
+                    with open(cfg_path) as _f:
+                        train_cutoff = json.load(_f).get("train_cutoff")
+                    if train_cutoff:
+                        train_cutoffs[model_id] = train_cutoff
+                except Exception:
+                    pass
+
             for _, _, suffix in _HORIZONS:
-                cm = _fit_residual_correction(ledger, model_id, suffix, calib_ctx)
+                cm = _fit_residual_correction(ledger, model_id, suffix, train_cutoff)
                 if cm is not None:
                     key = f"{model_id}_{suffix}"
                     correction_dict[key] = cm
@@ -434,7 +434,7 @@ def _run_calibration(model_ids: list, active_model_ids: list | None = None) -> N
                 calibration_dict = {}
 
         for _, _, suffix in _HORIZONS:
-            cal_model = _fit_calibration_model(ledger, suffix, active_model_ids, calib_ctx)
+            cal_model = _fit_calibration_model(ledger, suffix, active_model_ids, train_cutoffs)
             if cal_model is not None:
                 calibration_dict[suffix] = cal_model
                 n_resolved = int(
@@ -622,30 +622,24 @@ def _check_and_save_alerts(ic_ts: pd.DataFrame, active_model_ids: list[str]) -> 
 # Residual correction (Part 2)
 # ---------------------------------------------------------------------------
 
-# Basic context features always available from the ledger
+# Context features from the ledger used for residual correction
 _CORRECTION_FEATURES_BASIC = [
     "raw_score", "sector_code", "market_return_21d", "vix_at_prediction", "momentum_bucket",
 ]
-# Richer features available when calibration_daily.parquet is joined in
-_CORRECTION_FEATURES_RICH = _CORRECTION_FEATURES_BASIC + [
-    "rsi", "momentum_12_1", "price_to_sma200", "volatility_20d",
-    "bollinger_pct_b", "vix_level",
-]
-_CORRECTION_FEATURES = _CORRECTION_FEATURES_BASIC  # default; overridden at fit time
 
 
 def _fit_residual_correction(
     ledger: pd.DataFrame,
     model_id: str,
     horizon_suffix: str,
-    calib_ctx: "pd.DataFrame | None" = None,
+    train_cutoff: "str | None" = None,
     lookback_pairs: int = 3000,
 ):
-    """Fit a Ridge correction model on recent (prediction, actual) residuals.
+    """Fit a Ridge correction model on out-of-sample (prediction, actual) residuals.
 
-    When ``calib_ctx`` is provided (calibration_daily.parquet), joins richer
-    features (RSI, momentum, SMA ratio, etc.) for a more powerful correction.
-    Falls back to basic ledger context columns if not available.
+    Only rows after ``train_cutoff`` are used — ensuring the correction model
+    sees no data the underlying ML model was trained on.  Pass the model's
+    ``train_cutoff`` from its feature_config.json.
 
     Returns the fitted Ridge model, or None if not enough resolved data.
     """
@@ -669,40 +663,26 @@ def _fit_residual_correction(
         ledger[ret_col].notna()
     ].sort_values("scored_date", ascending=False).head(lookback_pairs).copy()
 
+    # Exclude any rows within the model's training period
+    if train_cutoff is not None:
+        cutoff_ts = pd.Timestamp(train_cutoff)
+        resolved = resolved[resolved["scored_date"] > cutoff_ts].copy()
+
     if len(resolved) < 200:
         return None
 
-    # Join rich features from calibration_daily when available
-    if calib_ctx is not None:
-        resolved = resolved.merge(
-            calib_ctx[["ticker", "scored_date"] + [
-                c for c in _CORRECTION_FEATURES_RICH
-                if c not in _CORRECTION_FEATURES_BASIC and c in calib_ctx.columns
-            ]],
-            on=["ticker", "scored_date"],
-            how="left",
-        )
-        features = [f for f in _CORRECTION_FEATURES_RICH if f in resolved.columns or f in _CORRECTION_FEATURES_BASIC]
-    else:
-        features = _CORRECTION_FEATURES_BASIC
-
+    features = _CORRECTION_FEATURES_BASIC
     resolved["raw_score"] = resolved[raw_col].values
     for col in features:
         if col not in resolved.columns:
             resolved[col] = 0.0
-
-    # Downweight backfill rows (0.3) vs live rows (1.0)
-    sample_weight = np.where(
-        resolved.get("is_backfill", pd.Series(False, index=resolved.index)).fillna(False),
-        0.3, 1.0
-    )
 
     X = resolved[features].fillna(0).values.astype(float)
     y = (resolved[ret_col] - resolved[raw_col]).values  # residual
 
     try:
         mdl = Ridge(alpha=10.0)
-        mdl.fit(X, y, sample_weight=sample_weight)
+        mdl.fit(X, y)
         return mdl
     except Exception as exc:
         logger.warning("Residual correction fit failed for %s %s: %s", model_id, horizon_suffix, exc)
@@ -715,17 +695,11 @@ def _apply_correction(
     correction_model,
     ctx: dict,
 ) -> np.ndarray:
-    """Apply residual correction to today's raw scores array.
-
-    Builds the full rich feature set (matching what the model was trained on):
-    basic ledger context + RSI, momentum, SMA200, volatility, bollinger, VIX.
-    Falls back to 0 for any feature not available in df_score.
-    """
+    """Apply residual correction to today's raw scores using basic ledger context features."""
     if correction_model is None:
         return raw
     try:
         feat_df = pd.DataFrame({"raw_score": raw})
-        # Basic context features
         feat_df["sector_code"] = (
             df_score["Sector"].map(_SECTOR_CODES).fillna(0).values
             if "Sector" in df_score.columns else 0
@@ -738,28 +712,11 @@ def _apply_correction(
         else:
             feat_df["momentum_bucket"] = 2
 
-        # Rich features from today's spread CSV (PascalCase → values)
-        def _spread_col(pascal, default):
-            return pd.to_numeric(df_score[pascal], errors="coerce").fillna(default).values \
-                if pascal in df_score.columns else default
-
-        feat_df["rsi"]             = _spread_col("RSI", 50.0)
-        feat_df["momentum_12_1"]   = _spread_col("Momentum12_1", 0.0)
-        feat_df["price_to_sma200"] = _spread_col("PriceToSMA200Pct", 1.0)
-        feat_df["volatility_20d"]  = _spread_col("AnnualizedVol", 0.02)
-        feat_df["bollinger_pct_b"] = _spread_col("BollingerPctB", 0.5)
-
-        # Use whichever features the stored model was trained on
-        n_expected = correction_model.n_features_in_
-        available_features = _CORRECTION_FEATURES_RICH
-        features_to_use = available_features[:n_expected]
-
-        # Ensure all required columns exist
-        for col in features_to_use:
+        for col in _CORRECTION_FEATURES_BASIC:
             if col not in feat_df.columns:
                 feat_df[col] = 0.0
 
-        X = feat_df[features_to_use].fillna(0).values.astype(float)
+        X = feat_df[_CORRECTION_FEATURES_BASIC].fillna(0).values.astype(float)
         corrections = correction_model.predict(X)
         corrections = np.clip(corrections, -0.1, 0.1)
         return raw + corrections
@@ -817,16 +774,15 @@ def _fit_calibration_model(
     ledger: pd.DataFrame,
     horizon_suffix: str,
     active_model_ids: list[str],
-    calib_ctx: "pd.DataFrame | None" = None,
+    train_cutoffs: "dict | None" = None,
     min_samples: int = 500,
     rolling_window: int = 5000,
 ):
-    """Fit a LogisticRegression calibration model on resolved predictions.
+    """Fit a LogisticRegression calibration model on out-of-sample resolved predictions.
 
-    When ``calib_ctx`` is provided (calibration_daily.parquet), joins richer
-    stock-level features (RSI, momentum, SMA ratio, etc.) for better regime-
-    conditional calibration.  Backfill rows are downweighted (0.3) so the model
-    activates immediately from historical data but shifts toward live signal.
+    Rows within any model's training period are excluded via ``train_cutoffs``
+    (model_id → cutoff date string).  The most conservative (latest) cutoff across
+    all active models is used so every included row is out-of-sample for all models.
 
     Returns None during cold-start (< min_samples resolved rows).
     """
@@ -858,17 +814,13 @@ def _fit_calibration_model(
     if len(resolved) < min_samples:
         return None
 
-    # Join rich features from calibration_daily when available
-    _RICH_CALIB_COLS = ["rsi", "momentum_12_1", "price_to_sma200", "volatility_20d",
-                        "bollinger_pct_b", "vix_level"]
-    if calib_ctx is not None:
-        ctx_cols = [c for c in _RICH_CALIB_COLS if c in calib_ctx.columns]
-        if ctx_cols:
-            resolved = resolved.merge(
-                calib_ctx[["ticker", "scored_date"] + ctx_cols],
-                on=["ticker", "scored_date"],
-                how="left",
-            )
+    # Exclude rows within any model's training period using the latest cutoff across all models
+    if train_cutoffs:
+        latest_cutoff = pd.Timestamp(max(train_cutoffs.values()))
+        resolved = resolved[resolved["scored_date"] > latest_cutoff].copy()
+
+    if len(resolved) < min_samples:
+        return None
 
     feature_rows = resolved.apply(lambda r: _build_calib_features(r, active_model_ids), axis=1)
     X = pd.DataFrame(feature_rows.tolist()).fillna(0).values.astype(float)
@@ -882,15 +834,9 @@ def _fit_calibration_model(
     else:
         y = (resolved[ret_col] > 0).astype(int).values
 
-    # Downweight backfill rows (selection-bias risk) while still using them for cold-start
-    sample_weight = np.where(
-        resolved.get("is_backfill", pd.Series(False, index=resolved.index)).fillna(False),
-        0.3, 1.0
-    )
-
     try:
         mdl = LogisticRegression(C=1.0, max_iter=1000, class_weight="balanced")
-        mdl.fit(X, y, sample_weight=sample_weight)
+        mdl.fit(X, y)
         return mdl
     except Exception as exc:
         logger.warning("Calibration model fit failed for horizon %s: %s", horizon_suffix, exc)
@@ -1165,15 +1111,6 @@ def score(data_dir, models_dir, score_only, run_calibrate):
         raise SystemExit(1)
 
     df3m = pd.read_csv(source_path, index_col=0)
-
-    # Update the rolling 63-day feature window used for LSTM inference + rich calibration
-    if not score_only:
-        try:
-            from morningalpha.ml.backfill import update_calibration_daily
-            n_rows = update_calibration_daily(df3m, pd.Timestamp(date.today()), _CALIB_DAILY_PATH)
-            console.print(f"[dim]calibration_daily updated: {n_rows:,} rows[/dim]")
-        except Exception as exc:
-            logger.warning("calibration_daily update failed (%s) — continuing", exc)
 
     # Backfill MarketCap from fundamentals.csv if the spread CSV has it empty
     # (happens when spread CSVs predate the fundamentals-merge fix in access.py).
