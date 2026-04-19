@@ -45,6 +45,34 @@ _MONOTONE_NEGATIVE = frozenset({
 _EXPLOSIVE_THRESHOLD = 0.8
 
 
+def _momentum_cohort_mask(
+    df: pd.DataFrame,
+    mom_rank_min: float = 0.10,
+    sma_rank_min: float = 0.0,
+    return_pct_min: float = 0.20,
+    mom_rank_max: float = 50.0,
+) -> pd.Series:
+    """Boolean mask selecting rows that look like ongoing momentum leaders.
+
+    Thresholds operate on the *rank-normalized* columns in dataset.parquet
+    (``momentum_12_1`` and ``price_to_sma200`` are in [-1, +1]; rank 0 = median,
+    rank 0.5 ≈ 75th percentile). ``return_pct`` is in the raw percent scale.
+
+    Default thresholds match the legacy ``--momentum-universe`` filter:
+      - momentum_12_1 > 0.10  (above ~55th percentile of 12-1 momentum)
+      - price_to_sma200 > 0   (above median — stock above its 200-day MA)
+      - return_pct > 0.20     (stock up at least 0.20% this snapshot — trivial,
+                                left in for backward compat; raise it to tighten)
+
+    For a strict leaders cohort (top-quartile momentum, above SMA, near 52wk
+    high) pass ``mom_rank_min=0.5``.
+    """
+    mom = df.get("momentum_12_1", pd.Series(0, index=df.index))
+    sma = df.get("price_to_sma200", pd.Series(0, index=df.index))
+    ret = df.get("return_pct", pd.Series(0, index=df.index))
+    return (mom > mom_rank_min) & (mom < mom_rank_max) & (sma > sma_rank_min) & (ret > return_pct_min)
+
+
 def _build_monotone_constraints(feat_cols: List[str]) -> List[int]:
     """Return a LightGBM monotone_constraints list aligned with feat_cols."""
     return [
@@ -697,8 +725,11 @@ def walk_forward_cv(
 @click.option("--no-plots", "no_plots", is_flag=True, default=False, help="Skip diagnostic plot generation.")
 @click.option("--exclude-features", "exclude_features", default=None, help="Comma-separated feature names to exclude (for ablation experiments).")
 @click.option("--momentum-universe", "momentum_universe", is_flag=True, default=False,
-              help="Filter training data to confirmed uptrends (momentum_12_1 > 10, price_to_sma200 > 0) "
-                   "and exclude pure value features. Trains a momentum-continuation model.")
+              help="Restrict training rows to a momentum cohort (rank-normalized "
+                   "momentum_12_1 > 0.10 AND price_to_sma200 > 0) and drop pure-value "
+                   "features (earnings_yield, book_to_market, etc.). Applied to BOTH "
+                   "walk-forward CV folds and the final expanding-window model, so "
+                   "reported IC reflects cohort-only performance.")
 @click.option("--no-walk-forward", "no_walk_forward", is_flag=True, default=False,
               help="Skip walk-forward CV and train on static splits only (faster, less rigorous).")
 @click.option("--wfcv-years", "wfcv_years", default=5.0, show_default=True,
@@ -746,6 +777,21 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
             f"test {split_dates['test_start'].date()} → {split_dates['test_end'].date()}  "
             f"({split_dates['n_folds']} folds)"
         )
+
+        # Apply momentum-cohort row filter to df_full before derivatives so
+        # both the final expanding-window splits and the walk-forward CV see
+        # the same (filtered) universe.  Without this the WFCV trains/tests on
+        # the full universe while the final model trains on the cohort — IC
+        # metrics become uncomparable.
+        if momentum_universe:
+            n_before = len(df_full)
+            df_full = df_full[_momentum_cohort_mask(df_full)].reset_index(drop=True)
+            console.print(
+                f"[cyan]Momentum cohort filter (pre-split): "
+                f"{n_before:,} → {len(df_full):,} rows ({len(df_full)/max(n_before,1):.1%} kept). "
+                f"Applied to both WFCV folds and final splits.[/cyan]"
+            )
+
         df_tr_final = df_full[df_full["date"] <  split_dates["val_start"]]
         df_va_final = df_full[(df_full["date"] >= split_dates["val_start"]) &
                               (df_full["date"] <  split_dates["train_end"])]
@@ -784,33 +830,29 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
             f"→ {len(feat_cols)} features remaining[/cyan]"
         )
 
-    # Momentum-universe mode: filter to confirmed uptrends + drop pure value features
+    # Momentum-universe mode: drop pure value features (row filter already
+    # applied to df_full above for walk-forward path; handle static-split path
+    # and feature exclusion here).
     if momentum_universe:
         _MOM_VALUE_FEATURES = {
             "earnings_yield", "book_to_market", "sales_to_price",
             "earnings_yield_vs_sector", "book_to_market_vs_sector",
             "earnings_yield_quality", "debt_to_equity", "current_ratio",
         }
-        # Filter training rows to confirmed mid-run uptrends (10% < mom12_1 < 5000%)
-        # Upper cap is intentionally high — extreme momentum stocks (AXTI 2234%, SNDK 1139%)
-        # are exactly what we want the model to learn from. Only exclude true data errors.
-        def _momentum_mask(df_split):
-            mom = df_split.get("momentum_12_1", pd.Series(0, index=df_split.index))
-            sma = df_split.get("price_to_sma200", pd.Series(0, index=df_split.index))
-            ret = df_split.get("return_pct", pd.Series(0, index=df_split.index))
-            # require stock already moving in current period (mid-breakout, up 20%+)
-            return (mom > 0.10) & (mom < 50.00) & (sma > 0) & (ret > 0.20)
-        tr_mask = _momentum_mask(df_tr)
-        va_mask = _momentum_mask(df_va)
-        te_mask = _momentum_mask(df_te)
-        before = len(X_tr)
-        X_tr, y_tr, d_tr, df_tr = X_tr[tr_mask], y_tr[tr_mask], d_tr[tr_mask], df_tr[tr_mask]
-        X_va, y_va, d_va, df_va = X_va[va_mask], y_va[va_mask], d_va[va_mask], df_va[va_mask]
-        X_te, y_te, d_te, df_te = X_te[te_mask], y_te[te_mask], d_te[te_mask], df_te[te_mask]
-        console.print(
-            f"[cyan]Momentum universe filter: {before:,} → {len(X_tr):,} train rows "
-            f"(kept stocks with 10% < momentum_12_1 < 5000% and price above SMA200)[/cyan]"
-        )
+        # Static-split path: df_full wasn't filtered earlier, so filter the
+        # train/val/test dataframes here.
+        if not use_walk_forward:
+            tr_mask = _momentum_cohort_mask(df_tr)
+            va_mask = _momentum_cohort_mask(df_va)
+            te_mask = _momentum_cohort_mask(df_te)
+            before = len(X_tr)
+            X_tr, y_tr, d_tr, df_tr = X_tr[tr_mask], y_tr[tr_mask], d_tr[tr_mask], df_tr[tr_mask]
+            X_va, y_va, d_va, df_va = X_va[va_mask], y_va[va_mask], d_va[va_mask], df_va[va_mask]
+            X_te, y_te, d_te, df_te = X_te[te_mask], y_te[te_mask], d_te[te_mask], df_te[te_mask]
+            console.print(
+                f"[cyan]Momentum cohort filter (static splits): "
+                f"{before:,} → {len(X_tr):,} train rows[/cyan]"
+            )
         # Drop value features — they penalise growth stocks
         feat_cols = [f for f in feat_cols if f not in _MOM_VALUE_FEATURES]
         X_tr = X_tr[feat_cols]; X_va = X_va[feat_cols]; X_te = X_te[feat_cols]
