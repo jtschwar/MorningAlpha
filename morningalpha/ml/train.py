@@ -561,6 +561,7 @@ def walk_forward_cv(
     monotone_constraints_list: Optional[List[int]] = None,
     embargo_days: int = 10,
     lookback_years: float = 5.0,
+    binary_raw_threshold: float = 0.30,
 ) -> pd.DataFrame:
     """Expanding-window walk-forward CV using pre-assigned test_fold labels.
 
@@ -671,8 +672,19 @@ def walk_forward_cv(
             preds = ranker.predict(X_te_s)
 
         elif objective == "binary":
-            y_tr_bin = (y_tr >= _EXPLOSIVE_THRESHOLD).astype(np.float32)
-            y_va_bin = (y_va >= _EXPLOSIVE_THRESHOLD).astype(np.float32)
+            import re as _re
+            _raw_match = _re.match(r"(forward_\d+d)", target)
+            _raw_col   = _raw_match.group(1) if _raw_match else None
+
+            if _raw_col and _raw_col in fold_tr.columns:
+                y_tr_bin = (fold_tr[_raw_col].fillna(0).values > binary_raw_threshold).astype(np.float32)
+                y_va_bin = (fold_val[_raw_col].fillna(0).values > binary_raw_threshold).astype(np.float32)
+                y_te_raw = fold_test[_raw_col].fillna(0).values
+            else:
+                y_tr_bin = (y_tr >= _EXPLOSIVE_THRESHOLD).astype(np.float32)
+                y_va_bin = (y_va >= _EXPLOSIVE_THRESHOLD).astype(np.float32)
+                y_te_raw = y_te
+
             bin_params = {**lgbm_params, "objective": "binary", "metric": "auc"}
             clf = lgb.LGBMClassifier(**bin_params)
             clf.fit(
@@ -688,6 +700,13 @@ def walk_forward_cv(
         ic = rank_ic(preds, y_te)
         hr = hit_rate(preds, y_te)
 
+        # Precision@10: fraction of top-10 predictions that exceeded the raw return threshold.
+        # Only meaningful for binary objective where y_te_raw is defined.
+        p_at_10 = float("nan")
+        if objective == "binary" and "y_te_raw" in dir():
+            top10_idx = np.argsort(preds)[-10:]
+            p_at_10 = float((y_te_raw[top10_idx] > binary_raw_threshold).mean())
+
         fold_results.append({
             "fold":           fold_n,
             "test_start":     fold_test_start.date(),
@@ -698,12 +717,14 @@ def walk_forward_cv(
             "n_test":         len(fold_test),
             "ic":             round(ic, 4),
             "hit_rate":       round(hr, 4),
+            "precision_at_10": round(p_at_10, 4) if not np.isnan(p_at_10) else None,
         })
 
+        p10_str = f"  P@10={p_at_10:.2f}" if not np.isnan(p_at_10) else ""
         console.print(
             f"  Fold {fold_n:>3}  "
             f"{str(fold_test_start.date()):>12} → {str(fold_test['date'].max().date()):<12}  "
-            f"IC={ic:+.4f}  hit={hr:.3f}  train={len(fold_tr):,}"
+            f"IC={ic:+.4f}  hit={hr:.3f}  train={len(fold_tr):,}{p10_str}"
         )
 
     return pd.DataFrame(fold_results)
@@ -737,8 +758,12 @@ def walk_forward_cv(
 @click.option("--objective", default="regression",
               type=click.Choice(["regression", "lambdarank", "binary"]), show_default=True,
               help="Training objective. 'regression': rank target (default). 'lambdarank': LTR with NDCG@K, "
-                   "converts target to 4-level relevance labels. 'binary': explosive breakout classifier "
-                   "(top-10%% cross-sectional excess return). All objectives report Spearman rank IC for comparison.")
+                   "converts target to 4-level relevance labels. 'binary': breakout classifier. "
+                   "All objectives report Spearman rank IC for comparison.")
+@click.option("--binary-raw-threshold", "binary_raw_threshold", default=0.30, show_default=True,
+              help="For --objective binary: classify as positive when the raw forward return "
+                   "(e.g. forward_63d) exceeds this value. Default 0.30 = +30%% in the forward window. "
+                   "Ignored for regression/lambdarank objectives.")
 @click.option("--feature-set", "feature_set", default="full",
               type=click.Choice(["full", "momentum"]), show_default=True,
               help="Feature set. 'full': all features (default). 'momentum': drop the 13 value/fundamental "
@@ -749,7 +774,7 @@ def walk_forward_cv(
                    "Negative: days_since_52wk_high, price_vs_5yr_high, price_vs_52wk_high.")
 def train(dataset, model_type, target, name, output, n_trials, finetune, checkpoint, no_plots,
           exclude_features, momentum_universe, no_walk_forward, wfcv_years,
-          objective, feature_set, monotone_constraints):
+          objective, binary_raw_threshold, feature_set, monotone_constraints):
     """Train a model on the labeled dataset.
 
     \b
@@ -927,6 +952,7 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
                 objective=objective,
                 monotone_constraints_list=monotone_constraints_list,
                 lookback_years=wfcv_years,
+                binary_raw_threshold=binary_raw_threshold,
             )
 
             if len(wf_results) > 0:
@@ -942,6 +968,9 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
                 wf_table.add_row("Std IC",           f"{std_ic:.4f}")
                 wf_table.add_row("IC > 0",           f"{pos_folds}/{len(wf_results)} ({pos_folds/len(wf_results):.0%})")
                 wf_table.add_row("Mean Hit Rate",    f"{mean_hr:.3f}")
+                if objective == "binary" and "precision_at_10" in wf_results.columns:
+                    mean_p10 = wf_results["precision_at_10"].dropna().mean()
+                    wf_table.add_row("Mean Precision@10", f"{mean_p10:.3f}  (frac of top-10 picks with >{binary_raw_threshold:.0%} return)")
                 wf_table.add_row("Date range",       f"{wf_results['test_start'].min()} → {wf_results['test_end'].max()}")
                 console.print(wf_table)
 
