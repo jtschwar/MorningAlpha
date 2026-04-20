@@ -834,10 +834,19 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
     # applied to df_full above for walk-forward path; handle static-split path
     # and feature exclusion here).
     if momentum_universe:
+        # Raw value ratios plus the two interaction terms. In a momentum-only
+        # cohort momentum_12_1 is always positive, so value_x_momentum and
+        # quality_x_momentum reduce to proxies for earnings_yield and roe
+        # respectively — they reintroduce the value signal we just filtered
+        # out. Drop them together.
+        # Quality features (roe, revenue_growth, profit_margin) are retained:
+        # Nvidia-2022 / GEV / ERAS style multi-baggers all had strong quality
+        # fundamentals, so this feature family is the right kind of signal.
         _MOM_VALUE_FEATURES = {
             "earnings_yield", "book_to_market", "sales_to_price",
             "earnings_yield_vs_sector", "book_to_market_vs_sector",
             "earnings_yield_quality", "debt_to_equity", "current_ratio",
+            "value_x_momentum", "quality_x_momentum",
         }
         # Static-split path: df_full wasn't filtered earlier, so filter the
         # train/val/test dataframes here.
