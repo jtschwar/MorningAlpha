@@ -1056,6 +1056,49 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
                 console.print(f"\n[bold]Generating plots → {plot_dir}/[/bold]")
                 generate_plots(final_model, X_tr, y_tr, X_va, y_va, X_te, y_te, feat_cols, plot_dir)
 
+        elif objective == "binary":
+            from morningalpha.ml.lgbm_model import LightGBMBinaryModel
+            import re as _re2
+            _raw_match2 = _re2.match(r"(forward_\d+d)", target)
+            _raw_col2   = _raw_match2.group(1) if _raw_match2 else None
+
+            bin_params_final = {"n_estimators": 1000, "verbose": -1, **best_params,
+                                "objective": "binary", "metric": "auc", "is_unbalance": True}
+            final_bin = LightGBMBinaryModel(params=bin_params_final)
+
+            if _raw_col2 and _raw_col2 in df_tr.columns:
+                y_tr_bin_f = (df_tr[_raw_col2].fillna(0).values > binary_raw_threshold).astype(np.float32)
+                y_va_bin_f = (df_va[_raw_col2].fillna(0).values > binary_raw_threshold).astype(np.float32)
+            else:
+                y_tr_bin_f = (y_tr >= _EXPLOSIVE_THRESHOLD).astype(np.float32)
+                y_va_bin_f = (y_va >= _EXPLOSIVE_THRESHOLD).astype(np.float32)
+
+            final_bin.fit(X_tr, y_tr_bin_f, X_va, y_va_bin_f)
+            pos_rate = float(y_tr_bin_f.mean())
+            console.print(f"[dim]Binary final model: positive rate {pos_rate:.1%} (threshold >{binary_raw_threshold:.0%} raw return)[/dim]")
+
+            final_bin.save(output)
+            console.print(f"\n[bold green]Model saved → {output}[/bold green]")
+
+            feat_config = {
+                "model_name": name, "model_type": "lgbm_binary",
+                "objective": "binary",
+                "binary_raw_threshold": binary_raw_threshold,
+                "binary_raw_col": _raw_col2,
+                "feature_set": feature_set,
+                "feature_columns": feat_cols,
+                "target": target,
+                "best_params": best_params,
+                "wfcv_mean_p10": float(wf_results["precision_at_10"].dropna().mean()) if use_walk_forward and len(wf_results) > 0 else None,
+                "train_cutoff": str(split_dates["train_end"].date()) if use_walk_forward else None,
+            }
+            feat_config_path = MODEL_DIR / f"{name}_feature_config.json"
+            with open(feat_config_path, "w") as f:
+                json.dump(feat_config, f, indent=2, default=str)
+            console.print(f"Feature config saved → {feat_config_path}")
+
+            _upsert_model_config(MODEL_DIR, name, "lgbm", None)
+
         else:
             console.print(
                 f"[yellow]Final model checkpoint skipped for objective='{objective}'. "

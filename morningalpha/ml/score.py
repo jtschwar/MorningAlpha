@@ -956,6 +956,7 @@ def _write_ticker_index(
     active_models: list,
     raw_scores: dict,
     output_dir: Path,
+    binary_models: list = None,
 ) -> None:
     """Write a lightweight JSON for frontend stock search / Forecast page autocomplete.
 
@@ -1042,6 +1043,16 @@ def _write_ticker_index(
                 field = MODEL_FIELD_MAP.get(m["id"], m["id"]).replace("mlScore_", "calibProb_")
                 entry[field] = round(float(row[col]), 3)
 
+        # Binary classifier breakout probabilities — threshold-named fields so the
+        # frontend doesn't need to know model version numbers.
+        for m in (binary_models or []):
+            col = f"BreakoutProb_{m['id']}"
+            if col in row.index and not pd.isna(row[col]):
+                thr = m.get("threshold_pct", "?")
+                hdz = m.get("horizon_days", 63)
+                field = f"breakoutProb_{thr}pct_{hdz}d"
+                entry[field] = round(float(row[col]), 3)
+
         records.append(entry)
 
     out_path = output_dir / "ticker_index.json"
@@ -1111,7 +1122,12 @@ def score(data_dir, models_dir, score_only, run_calibrate):
         console.print("[yellow]No model checkpoint files found — nothing to score.[/yellow]")
         return
 
-    console.print(f"\n[bold]ML Scoring[/bold] — {len(active_models)} model(s): "
+    # Partition into consensus models (contribute to MLScore) and binary classifiers
+    # (surfaced as breakoutProb_* fields, never blended into MLScore or Hedge weights).
+    consensus_models = [m for m in active_models if m.get("subtype") != "binary"]
+    binary_models    = [m for m in active_models if m.get("subtype") == "binary"]
+
+    console.print(f"\n[bold]ML Scoring[/bold] — {len(consensus_models)} consensus + {len(binary_models)} binary model(s): "
                   + ", ".join(
                       f"[cyan]{m['id']}[/cyan]" + (" [green](champion)[/green]" if m['id'] == champion_id else "")
                       for m in active_models
@@ -1165,15 +1181,18 @@ def score(data_dir, models_dir, score_only, run_calibrate):
 
     raw_scores: dict[str, np.ndarray] = {}
 
-    for m in active_models:
+    def _resolve_model_path(m, models_path):
         model_type = m.get("type", "lgbm")
-        # Resolve checkpoint path: explicit in config, or default by type
         if "checkpoint" in m:
-            model_path = Path(m["checkpoint"])
-        elif model_type in ("set_transformer", "lstm"):
-            model_path = models_path / f"{m['id']}.pt"
-        else:
-            model_path = models_path / f"{m['id']}.pkl"
+            return Path(m["checkpoint"])
+        if model_type in ("set_transformer", "lstm"):
+            return models_path / f"{m['id']}.pt"
+        return models_path / f"{m['id']}.pkl"
+
+    # --- Consensus models: contribute to MLScore and Hedge ensemble ---
+    for m in consensus_models:
+        model_type = m.get("type", "lgbm")
+        model_path = _resolve_model_path(m, models_path)
 
         if not model_path.exists():
             console.print(f"[yellow]Checkpoint not found for {m['id']}: {model_path} — skipping[/yellow]")
@@ -1189,10 +1208,45 @@ def score(data_dir, models_dir, score_only, run_calibrate):
             else:
                 raw = get_raw_scores(df_score, model_path)
             raw_scores[m["id"]] = raw
-            pct = pd.Series(raw, index=df_score.index).rank(pct=True).mul(100).round(1)
+            raw_series = pd.Series(raw, index=df_score.index)
+
+            # Cohort models were trained only on momentum-universe rows
+            # (above SMA200 and positive 12-month return). Scoring outside
+            # that cohort extrapolates badly — high-ROE mega-caps in downtrends
+            # rank near the top even when they're clearly not in momentum.
+            # Gate: rank only within cohort stocks; non-cohort stocks get 0.
+            if "cohort" in m["id"] and "AboveSMA200" in df_score.columns:
+                cohort_mask = df_score["AboveSMA200"].fillna(False)
+                n_cohort = int(cohort_mask.sum())
+                n_total  = len(df_score)
+                console.print(
+                    f"[dim]  {m['id']}: cohort gate → {n_cohort}/{n_total} stocks ranked "
+                    f"({n_cohort/max(n_total,1):.0%} of universe)[/dim]"
+                )
+                pct = raw_series.where(cohort_mask).rank(pct=True).mul(100).round(1).fillna(0)
+            else:
+                pct = raw_series.rank(pct=True).mul(100).round(1)
+
             df_score[f"MLScore_{m['id']}"] = pct.values
         except Exception as exc:
             logger.warning("Scoring with %s failed: %s", m["id"], exc)
+
+    # --- Binary classifiers: raw P(return > threshold) → BreakoutProb_* ---
+    # These are NOT blended into MLScore or Hedge weights. Their output is a
+    # calibrated probability in [0, 1] surfaced as a separate signal.
+    for m in binary_models:
+        model_path = _resolve_model_path(m, models_path)
+        if not model_path.exists():
+            console.print(f"[yellow]Checkpoint not found for {m['id']}: {model_path} — skipping[/yellow]")
+            continue
+        try:
+            raw = get_raw_scores(df_score, model_path)  # returns predict_proba()[:,1]
+            df_score[f"BreakoutProb_{m['id']}"] = np.round(raw, 3)
+            thr = m.get("threshold_pct", "?")
+            hdz = m.get("horizon_days", 63)
+            console.print(f"[dim]  {m['id']}: breakout probs written (>{thr}% in {hdz}d)[/dim]")
+        except Exception as exc:
+            logger.warning("Binary scoring with %s failed: %s", m["id"], exc)
 
     if not raw_scores:
         console.print("[yellow]All models failed to score — nothing written.[/yellow]")
@@ -1364,7 +1418,15 @@ def score(data_dir, models_dir, score_only, run_calibrate):
         + [f"CalibProb_{mid}" for mid in calibrated_probs]
     )
     sma200_col = ["AboveSMA200"] if "AboveSMA200" in df_score.columns else []
-    score_cols = ["MLScore"] + delta_col + sma200_col + [f"MLScore_{m['id']}" for m in active_models if m["id"] in raw_scores] + calib_cols
+    breakout_prob_cols = [
+        f"BreakoutProb_{m['id']}" for m in binary_models
+        if f"BreakoutProb_{m['id']}" in df_score.columns
+    ]
+    score_cols = (
+        ["MLScore"] + delta_col + sma200_col
+        + [f"MLScore_{m['id']}" for m in consensus_models if m["id"] in raw_scores]
+        + calib_cols + breakout_prob_cols
+    )
     scores_by_ticker = df_score.set_index("Ticker")[score_cols]
 
     top_ticker = scores_by_ticker["MLScore"].idxmax()
@@ -1382,6 +1444,7 @@ def score(data_dir, models_dir, score_only, run_calibrate):
         # Drop any stale score/signal columns before merging fresh values
         stale = [c for c in df.columns
                  if c.startswith("MLScore") or c.startswith("CalibProb_")
+                 or c.startswith("BreakoutProb_")
                  or c in ("CalibratedProb", "CalibratedSignal", "AboveSMA200")]
         if stale:
             df = df.drop(columns=stale)
@@ -1414,7 +1477,7 @@ def score(data_dir, models_dir, score_only, run_calibrate):
         json.dump({"generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()}, f)
 
     # Write ticker_index.json for the Forecast/Portfolio frontend pages
-    _write_ticker_index(df_score, active_models, raw_scores, data_path)
+    _write_ticker_index(df_score, active_models, raw_scores, data_path, binary_models=binary_models)
 
     if run_calibrate and not score_only:
         _run_calibration(list(raw_scores.keys()), active_model_ids=list(raw_scores.keys()))
