@@ -11,6 +11,8 @@ export type SortKey =
   | 'entryScore'
   | 'momentumAccel'
   | 'maxDrawdown'
+  | 'breakoutProb63d'
+  | 'breakoutProb252d100'
 
 export type RiskLevel = 'low' | 'moderate' | 'high' | 'very-high' | 'unknown'
 
@@ -108,6 +110,10 @@ export interface Stock {
   fundamentals?: FundamentalData | null
   // ML model predicted score (0–100 percentile rank, written by alpha spread)
   mlScore: number | null
+  // Binary breakout probabilities (0–1 scale) written by alpha ml score
+  BreakoutProb63d: number | null       // P(forward_63d > +20%)
+  BreakoutProb252d50: number | null    // P(forward_252d > +50%)
+  BreakoutProb252d100: number | null   // P(forward_252d > +100%) — multi-bagger
   // Computed at load time by computeScores()
   investmentScore: number | null
   riskRewardRatio: number | null

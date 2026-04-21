@@ -230,6 +230,25 @@ export default function DenseIndicatorGrid({ stock, fundamentals: f, ohlcv, peri
     { label: 'ML SCORE',  value: fmt(stock?.mlScore ?? null, 1), color: stock?.mlScore != null ? (stock.mlScore >= 70 ? 'pos' : stock.mlScore < 40 ? 'neg' : '') : 'neutral' },
   ]
 
+  function fmtProb(v: number | null | undefined): string {
+    return v != null ? `${(v * 100).toFixed(0)}%` : '—'
+  }
+  function probColor(v: number | null | undefined, highThresh = 0.6, midThresh = 0.4): ColorClass {
+    if (v == null) return 'neutral'
+    if (v >= highThresh) return 'pos'
+    if (v >= midThresh) return ''
+    return 'neutral'
+  }
+
+  const perfRow3: CellDef[] = [
+    { label: '63d BRK%',  value: fmtProb(stock?.BreakoutProb63d),    color: probColor(stock?.BreakoutProb63d) },
+    { label: '252d 50%',  value: fmtProb(stock?.BreakoutProb252d50),  color: probColor(stock?.BreakoutProb252d50) },
+    { label: '252d ×2',   value: fmtProb(stock?.BreakoutProb252d100), color: probColor(stock?.BreakoutProb252d100, 0.5, 0.3) },
+    { label: '',          value: '' },
+    { label: '',          value: '' },
+    { label: '',          value: '' },
+  ]
+
   // ── Section 3: Technical Indicators ──────────────────────────────────────
 
   const emaSignalVal = tech?.bullish == null
@@ -323,6 +342,7 @@ export default function DenseIndicatorGrid({ stock, fundamentals: f, ohlcv, peri
             <div className={styles.grid}>
               <Row cells={perfRow1} />
               <Row cells={perfRow2} />
+              <Row cells={perfRow3} />
             </div>
           </div>
         </>

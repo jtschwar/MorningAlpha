@@ -4,7 +4,7 @@ API functions for stock analysis - separated from CLI.
 These functions can be imported and used programmatically.
 """
 
-from morningalpha.spread.metrics import calculate_all_metrics
+from morningalpha.spread.metrics import calculate_all_metrics, calculate_drawdown_metrics
 from morningalpha.spread.indicators import compute_all_indicators
 from dateutil.relativedelta import relativedelta
 from typing import Dict, List, Tuple, Optional

@@ -14,27 +14,87 @@
       "status": "candidate"
     },
     {
+      "id": "lgbm_breakout_cohort_v3",
+      "type": "lgbm",
+      "description": "LGBM — momentum-cohort filter (27%), 63d market-excess rank target, retrained on new dataset. WFCV IC 0.0733 (57 folds), test IC 0.1397, backtest top-decile 29.53% ann / Sharpe 6.82. Candidate.",
+      "status": "candidate"
+    },
+    {
+      "id": "lstm_clip_v3",
+      "type": "lstm",
+      "description": "LSTM h256-L2 — clip target, walk-forward CV (6 folds, EMA 180d) + 53-anchor finetune, dataset through 2026-03-26. Mean WFCV IC-63d 0.1343. Candidate.",
+      "status": "candidate"
+    },
+    {
+      "id": "lgbm_binary_breakout_v2",
+      "type": "lgbm",
+      "subtype": "binary",
+      "threshold_pct": 20,
+      "horizon_days": 63,
+      "description": "LGBM binary classifier — P(forward_63d > 20%). Momentum cohort, 57 WFCV folds. Mean P@10 0.325. Surfaced as breakoutProb_20pct_63d, not blended into MLScore.",
+      "status": "candidate"
+    },
+    {
+      "id": "lgbm_binary_breakout_252d_v1",
+      "type": "lgbm",
+      "subtype": "binary",
+      "threshold_pct": 100,
+      "horizon_days": 252,
+      "description": "LGBM binary classifier — P(forward_252d > 100%). Momentum cohort, 49 WFCV folds. Mean P@10 0.400 (4 of 10 top picks return >100% in 1y vs 5.7% base rate). Multi-bagger detector. Surfaced as breakoutProb_100pct_252d.",
+      "status": "candidate"
+    },
+    {
+      "id": "lgbm_binary_breakout_252d_v2",
+      "type": "lgbm",
+      "subtype": "binary",
+      "threshold_pct": 50,
+      "horizon_days": 252,
+      "description": "LGBM binary classifier — P(forward_252d > 50%). Momentum cohort, 49 WFCV folds. Mean P@10 0.496 (5 of 10 top picks return >50% in 1y vs 13.1% base rate). Surfaced as breakoutProb_50pct_252d.",
+      "status": "candidate"
+    },
+    {
       "id": "lgbm_breakout_medium_v1",
       "type": "lgbm",
-      "description": "LGBM — raw return rank target, 21d horizon, walk-forward CV (folds through fold 97), train_cutoff 2026-02-10. Medium-term signal. Candidate.",
-      "status": "candidate"
+      "description": "LGBM — raw return rank target, 21d horizon. Retired: rank-correlation with 63d champion is 0.933 — no additive signal.",
+      "status": "retired"
     },
     {
       "id": "lgbm_composite_medium_v1",
       "type": "lgbm",
-      "description": "LGBM — composite rank target, 21d horizon, walk-forward CV (folds through fold 97), train_cutoff 2026-02-10. Medium-term signal. Candidate.",
-      "status": "candidate"
+      "description": "LGBM — composite rank target, 21d horizon. Retired: rank-correlation with 63d champion is 0.906 — no additive signal.",
+      "status": "retired"
+    },
+    {
+      "id": "lgbm_breakout_cohort_v2",
+      "type": "lgbm",
+      "description": "LGBM — momentum-cohort filter (27%), 63d market-excess rank target. WFCV IC 0.0843. Retired in favour of cohort_v3 (newer dataset).",
+      "status": "retired"
+    },
+    {
+      "id": "lgbm_breakout_cohort_v1",
+      "type": "lgbm",
+      "description": "LGBM — momentum-cohort filter (27%), 63d market-excess rank target. WFCV IC 0.1088. Retired in favour of cohort_v3.",
+      "status": "retired"
+    },
+    {
+      "id": "lgbm_binary_breakout_v1",
+      "type": "lgbm",
+      "subtype": "binary",
+      "threshold_pct": 30,
+      "horizon_days": 63,
+      "description": "LGBM binary classifier — P(forward_63d > 30%). Mean P@10 0.189. Retired in favour of v2 (>20%, P@10 0.325).",
+      "status": "retired"
     },
     {
       "id": "lgbm_breakout_v7",
       "type": "lgbm",
-      "description": "LGBM — raw return rank target, 7y dataset, walk-forward CV. Mean WFCV IC 0.146, test IC 0.314, hit rate 61.2%. Retired in favour of v10.",
+      "description": "LGBM — raw return rank target, 7y dataset. WFCV IC 0.146, test IC 0.314. Retired in favour of v10.",
       "status": "retired"
     },
     {
       "id": "lgbm_composite_v7",
       "type": "lgbm",
-      "description": "LGBM — quality-adjusted composite rank target, 7y dataset, walk-forward CV. Mean WFCV IC 0.150, test IC 0.240, hit rate 58.2%. Retired in favour of v10.",
+      "description": "LGBM — quality-adjusted composite rank target, 7y dataset. WFCV IC 0.150, test IC 0.240. Retired in favour of v10.",
       "status": "retired"
     },
     {
@@ -50,22 +110,16 @@
       "status": "retired"
     },
     {
-      "id": "lstm_clip_v3",
-      "type": "lstm",
-      "description": "LSTM h256-L2 — clip target, walk-forward CV (6 folds, EMA 180d) + 53-anchor finetune, dataset through 2026-03-26. Mean WFCV IC-63d 0.1343. Candidate.",
-      "status": "candidate"
-    },
-    {
       "id": "lstm_clip_v1",
       "type": "lstm",
-      "description": "LSTM h256-L2 — clip target, walk-forward CV (6 folds, EMA 180d). Mean WFCV IC-63d 0.197, IC-21d 0.147. Retired in favour of v3.",
+      "description": "LSTM h256-L2 — clip target, walk-forward CV (6 folds). Mean WFCV IC-63d 0.197. Retired in favour of v3.",
       "status": "retired"
     },
     {
       "id": "st_sector_relative_v1",
       "type": "set_transformer",
       "checkpoint": "results/set_transformer/st_sector_relative_v1_fold0.pt",
-      "description": "Set Transformer — sector-relative rank target, cross-stock attention, d_model=128. Test IC 0.141. Retired pending CPU optimization.",
+      "description": "Set Transformer — sector-relative rank target, cross-stock attention. Test IC 0.141. Retired pending CPU optimization.",
       "status": "retired"
     }
   ]

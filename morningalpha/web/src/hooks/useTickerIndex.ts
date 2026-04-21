@@ -9,6 +9,9 @@ export interface TickerEntry {
   mlScore_composite: number | null
   mlScore_st: number | null
   investmentScore: number | null
+  breakoutProb_20pct_63d: number | null
+  breakoutProb_50pct_252d: number | null
+  breakoutProb_100pct_252d: number | null
 }
 
 interface UseTickerIndexResult {

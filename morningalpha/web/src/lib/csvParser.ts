@@ -86,6 +86,9 @@ export function parseCSV(csv: string): ParseResult {
   const instOwnershipIdx = col('InstOwnership')
 
   const mlScoreIdx = col('MLScore')
+  const breakoutProb63dIdx   = col('BreakoutProb_lgbm_binary_breakout_v2')
+  const breakoutProb252d100Idx = col('BreakoutProb_lgbm_binary_breakout_252d_v1')
+  const breakoutProb252d50Idx  = col('BreakoutProb_lgbm_binary_breakout_252d_v2')
 
   const hasFundamentals = sectorIdx >= 0
 
@@ -172,6 +175,9 @@ export function parseCSV(csv: string): ParseResult {
         instOwnership: num(values, instOwnershipIdx),
       } : null,
       mlScore: num(values, mlScoreIdx),
+      BreakoutProb63d: num(values, breakoutProb63dIdx),
+      BreakoutProb252d50: num(values, breakoutProb252d50Idx),
+      BreakoutProb252d100: num(values, breakoutProb252d100Idx),
       // Will be filled by computeScores
       investmentScore: null,
       riskRewardRatio: null,

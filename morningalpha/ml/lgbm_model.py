@@ -70,6 +70,57 @@ class LightGBMModel:
         return self.model.feature_importances_
 
 
+class LightGBMBinaryModel:
+    """LightGBM classifier wrapper whose predict() returns P(positive class).
+
+    Drop-in replacement for LightGBMModel in the inference pipeline — the
+    scoring code calls model.predict(X) and expects a continuous score, so
+    predict_proba()[:, 1] is the right output here.
+    """
+
+    def __init__(self, params=None):
+        default = {
+            "objective": "binary", "metric": "auc",
+            "num_leaves": 63, "learning_rate": 0.05,
+            "feature_fraction": 0.8, "bagging_fraction": 0.8,
+            "bagging_freq": 5, "min_child_samples": 20,
+            "n_estimators": 1000, "verbose": -1,
+            "is_unbalance": True,
+        }
+        self.params = {**default, **(params or {})}
+        self.model: lgb.LGBMClassifier = None
+
+    def fit(self, X_train, y_train, X_val, y_val):
+        self.model = lgb.LGBMClassifier(**self.params)
+        self.model.fit(
+            X_train, y_train,
+            eval_set=[(X_val, y_val)],
+            callbacks=[lgb.early_stopping(50, verbose=False), lgb.log_evaluation(100)],
+        )
+        return self
+
+    def predict(self, X):
+        return self.model.predict_proba(X)[:, 1]
+
+    def shap_values(self, X):
+        explainer = shap_lib.TreeExplainer(self.model)
+        sv = explainer.shap_values(X)
+        return sv[1] if isinstance(sv, list) else sv
+
+    def save(self, path):
+        with open(path, "wb") as f:
+            pickle.dump(self, f)
+
+    @classmethod
+    def load(cls, path):
+        with open(path, "rb") as f:
+            return pickle.load(f)
+
+    @property
+    def feature_importances_(self):
+        return self.model.feature_importances_
+
+
 class RidgeModel:
     """Ridge regression wrapper for feature importance analysis."""
 

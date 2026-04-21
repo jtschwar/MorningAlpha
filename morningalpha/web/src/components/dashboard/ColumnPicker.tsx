@@ -13,6 +13,10 @@ export const COLUMN_GROUPS: ColumnGroup[] = [
     columns: ['Name', 'Exchange', 'Return %', 'Sharpe', 'Sortino', 'Quality', 'Entry', 'Max DD', 'RSI', 'Score', 'ML Score'],
   },
   {
+    label: 'ML Signals',
+    columns: ['63d Brk%', '252d 50%', '252d ×2'],
+  },
+  {
     label: 'Technical — Trend',
     columns: ['SMA20 Dist%', 'SMA50 Dist%', 'SMA200 Dist%', 'MACD', 'MACD Hist', 'EMA7', 'EMA200'],
   },

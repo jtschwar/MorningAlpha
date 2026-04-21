@@ -45,6 +45,34 @@ _MONOTONE_NEGATIVE = frozenset({
 _EXPLOSIVE_THRESHOLD = 0.8
 
 
+def _momentum_cohort_mask(
+    df: pd.DataFrame,
+    mom_rank_min: float = 0.10,
+    sma_rank_min: float = 0.0,
+    return_pct_min: float = 0.20,
+    mom_rank_max: float = 50.0,
+) -> pd.Series:
+    """Boolean mask selecting rows that look like ongoing momentum leaders.
+
+    Thresholds operate on the *rank-normalized* columns in dataset.parquet
+    (``momentum_12_1`` and ``price_to_sma200`` are in [-1, +1]; rank 0 = median,
+    rank 0.5 ≈ 75th percentile). ``return_pct`` is in the raw percent scale.
+
+    Default thresholds match the legacy ``--momentum-universe`` filter:
+      - momentum_12_1 > 0.10  (above ~55th percentile of 12-1 momentum)
+      - price_to_sma200 > 0   (above median — stock above its 200-day MA)
+      - return_pct > 0.20     (stock up at least 0.20% this snapshot — trivial,
+                                left in for backward compat; raise it to tighten)
+
+    For a strict leaders cohort (top-quartile momentum, above SMA, near 52wk
+    high) pass ``mom_rank_min=0.5``.
+    """
+    mom = df.get("momentum_12_1", pd.Series(0, index=df.index))
+    sma = df.get("price_to_sma200", pd.Series(0, index=df.index))
+    ret = df.get("return_pct", pd.Series(0, index=df.index))
+    return (mom > mom_rank_min) & (mom < mom_rank_max) & (sma > sma_rank_min) & (ret > return_pct_min)
+
+
 def _build_monotone_constraints(feat_cols: List[str]) -> List[int]:
     """Return a LightGBM monotone_constraints list aligned with feat_cols."""
     return [
@@ -533,6 +561,7 @@ def walk_forward_cv(
     monotone_constraints_list: Optional[List[int]] = None,
     embargo_days: int = 10,
     lookback_years: float = 5.0,
+    binary_raw_threshold: float = 0.30,
 ) -> pd.DataFrame:
     """Expanding-window walk-forward CV using pre-assigned test_fold labels.
 
@@ -643,8 +672,19 @@ def walk_forward_cv(
             preds = ranker.predict(X_te_s)
 
         elif objective == "binary":
-            y_tr_bin = (y_tr >= _EXPLOSIVE_THRESHOLD).astype(np.float32)
-            y_va_bin = (y_va >= _EXPLOSIVE_THRESHOLD).astype(np.float32)
+            import re as _re
+            _raw_match = _re.match(r"(forward_\d+d)", target)
+            _raw_col   = _raw_match.group(1) if _raw_match else None
+
+            if _raw_col and _raw_col in fold_tr.columns:
+                y_tr_bin = (fold_tr[_raw_col].fillna(0).values > binary_raw_threshold).astype(np.float32)
+                y_va_bin = (fold_val[_raw_col].fillna(0).values > binary_raw_threshold).astype(np.float32)
+                y_te_raw = fold_test[_raw_col].fillna(0).values
+            else:
+                y_tr_bin = (y_tr >= _EXPLOSIVE_THRESHOLD).astype(np.float32)
+                y_va_bin = (y_va >= _EXPLOSIVE_THRESHOLD).astype(np.float32)
+                y_te_raw = y_te
+
             bin_params = {**lgbm_params, "objective": "binary", "metric": "auc"}
             clf = lgb.LGBMClassifier(**bin_params)
             clf.fit(
@@ -660,6 +700,13 @@ def walk_forward_cv(
         ic = rank_ic(preds, y_te)
         hr = hit_rate(preds, y_te)
 
+        # Precision@10: fraction of top-10 predictions that exceeded the raw return threshold.
+        # Only meaningful for binary objective where y_te_raw is defined.
+        p_at_10 = float("nan")
+        if objective == "binary" and "y_te_raw" in dir():
+            top10_idx = np.argsort(preds)[-10:]
+            p_at_10 = float((y_te_raw[top10_idx] > binary_raw_threshold).mean())
+
         fold_results.append({
             "fold":           fold_n,
             "test_start":     fold_test_start.date(),
@@ -670,12 +717,14 @@ def walk_forward_cv(
             "n_test":         len(fold_test),
             "ic":             round(ic, 4),
             "hit_rate":       round(hr, 4),
+            "precision_at_10": round(p_at_10, 4) if not np.isnan(p_at_10) else None,
         })
 
+        p10_str = f"  P@10={p_at_10:.2f}" if not np.isnan(p_at_10) else ""
         console.print(
             f"  Fold {fold_n:>3}  "
             f"{str(fold_test_start.date()):>12} → {str(fold_test['date'].max().date()):<12}  "
-            f"IC={ic:+.4f}  hit={hr:.3f}  train={len(fold_tr):,}"
+            f"IC={ic:+.4f}  hit={hr:.3f}  train={len(fold_tr):,}{p10_str}"
         )
 
     return pd.DataFrame(fold_results)
@@ -697,8 +746,11 @@ def walk_forward_cv(
 @click.option("--no-plots", "no_plots", is_flag=True, default=False, help="Skip diagnostic plot generation.")
 @click.option("--exclude-features", "exclude_features", default=None, help="Comma-separated feature names to exclude (for ablation experiments).")
 @click.option("--momentum-universe", "momentum_universe", is_flag=True, default=False,
-              help="Filter training data to confirmed uptrends (momentum_12_1 > 10, price_to_sma200 > 0) "
-                   "and exclude pure value features. Trains a momentum-continuation model.")
+              help="Restrict training rows to a momentum cohort (rank-normalized "
+                   "momentum_12_1 > 0.10 AND price_to_sma200 > 0) and drop pure-value "
+                   "features (earnings_yield, book_to_market, etc.). Applied to BOTH "
+                   "walk-forward CV folds and the final expanding-window model, so "
+                   "reported IC reflects cohort-only performance.")
 @click.option("--no-walk-forward", "no_walk_forward", is_flag=True, default=False,
               help="Skip walk-forward CV and train on static splits only (faster, less rigorous).")
 @click.option("--wfcv-years", "wfcv_years", default=5.0, show_default=True,
@@ -706,8 +758,12 @@ def walk_forward_cv(
 @click.option("--objective", default="regression",
               type=click.Choice(["regression", "lambdarank", "binary"]), show_default=True,
               help="Training objective. 'regression': rank target (default). 'lambdarank': LTR with NDCG@K, "
-                   "converts target to 4-level relevance labels. 'binary': explosive breakout classifier "
-                   "(top-10%% cross-sectional excess return). All objectives report Spearman rank IC for comparison.")
+                   "converts target to 4-level relevance labels. 'binary': breakout classifier. "
+                   "All objectives report Spearman rank IC for comparison.")
+@click.option("--binary-raw-threshold", "binary_raw_threshold", default=0.30, show_default=True,
+              help="For --objective binary: classify as positive when the raw forward return "
+                   "(e.g. forward_63d) exceeds this value. Default 0.30 = +30%% in the forward window. "
+                   "Ignored for regression/lambdarank objectives.")
 @click.option("--feature-set", "feature_set", default="full",
               type=click.Choice(["full", "momentum"]), show_default=True,
               help="Feature set. 'full': all features (default). 'momentum': drop the 13 value/fundamental "
@@ -718,7 +774,7 @@ def walk_forward_cv(
                    "Negative: days_since_52wk_high, price_vs_5yr_high, price_vs_52wk_high.")
 def train(dataset, model_type, target, name, output, n_trials, finetune, checkpoint, no_plots,
           exclude_features, momentum_universe, no_walk_forward, wfcv_years,
-          objective, feature_set, monotone_constraints):
+          objective, binary_raw_threshold, feature_set, monotone_constraints):
     """Train a model on the labeled dataset.
 
     \b
@@ -746,6 +802,21 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
             f"test {split_dates['test_start'].date()} → {split_dates['test_end'].date()}  "
             f"({split_dates['n_folds']} folds)"
         )
+
+        # Apply momentum-cohort row filter to df_full before derivatives so
+        # both the final expanding-window splits and the walk-forward CV see
+        # the same (filtered) universe.  Without this the WFCV trains/tests on
+        # the full universe while the final model trains on the cohort — IC
+        # metrics become uncomparable.
+        if momentum_universe:
+            n_before = len(df_full)
+            df_full = df_full[_momentum_cohort_mask(df_full)].reset_index(drop=True)
+            console.print(
+                f"[cyan]Momentum cohort filter (pre-split): "
+                f"{n_before:,} → {len(df_full):,} rows ({len(df_full)/max(n_before,1):.1%} kept). "
+                f"Applied to both WFCV folds and final splits.[/cyan]"
+            )
+
         df_tr_final = df_full[df_full["date"] <  split_dates["val_start"]]
         df_va_final = df_full[(df_full["date"] >= split_dates["val_start"]) &
                               (df_full["date"] <  split_dates["train_end"])]
@@ -784,33 +855,38 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
             f"→ {len(feat_cols)} features remaining[/cyan]"
         )
 
-    # Momentum-universe mode: filter to confirmed uptrends + drop pure value features
+    # Momentum-universe mode: drop pure value features (row filter already
+    # applied to df_full above for walk-forward path; handle static-split path
+    # and feature exclusion here).
     if momentum_universe:
+        # Raw value ratios plus the two interaction terms. In a momentum-only
+        # cohort momentum_12_1 is always positive, so value_x_momentum and
+        # quality_x_momentum reduce to proxies for earnings_yield and roe
+        # respectively — they reintroduce the value signal we just filtered
+        # out. Drop them together.
+        # Quality features (roe, revenue_growth, profit_margin) are retained:
+        # Nvidia-2022 / GEV / ERAS style multi-baggers all had strong quality
+        # fundamentals, so this feature family is the right kind of signal.
         _MOM_VALUE_FEATURES = {
             "earnings_yield", "book_to_market", "sales_to_price",
             "earnings_yield_vs_sector", "book_to_market_vs_sector",
             "earnings_yield_quality", "debt_to_equity", "current_ratio",
+            "value_x_momentum", "quality_x_momentum",
         }
-        # Filter training rows to confirmed mid-run uptrends (10% < mom12_1 < 5000%)
-        # Upper cap is intentionally high — extreme momentum stocks (AXTI 2234%, SNDK 1139%)
-        # are exactly what we want the model to learn from. Only exclude true data errors.
-        def _momentum_mask(df_split):
-            mom = df_split.get("momentum_12_1", pd.Series(0, index=df_split.index))
-            sma = df_split.get("price_to_sma200", pd.Series(0, index=df_split.index))
-            ret = df_split.get("return_pct", pd.Series(0, index=df_split.index))
-            # require stock already moving in current period (mid-breakout, up 20%+)
-            return (mom > 0.10) & (mom < 50.00) & (sma > 0) & (ret > 0.20)
-        tr_mask = _momentum_mask(df_tr)
-        va_mask = _momentum_mask(df_va)
-        te_mask = _momentum_mask(df_te)
-        before = len(X_tr)
-        X_tr, y_tr, d_tr, df_tr = X_tr[tr_mask], y_tr[tr_mask], d_tr[tr_mask], df_tr[tr_mask]
-        X_va, y_va, d_va, df_va = X_va[va_mask], y_va[va_mask], d_va[va_mask], df_va[va_mask]
-        X_te, y_te, d_te, df_te = X_te[te_mask], y_te[te_mask], d_te[te_mask], df_te[te_mask]
-        console.print(
-            f"[cyan]Momentum universe filter: {before:,} → {len(X_tr):,} train rows "
-            f"(kept stocks with 10% < momentum_12_1 < 5000% and price above SMA200)[/cyan]"
-        )
+        # Static-split path: df_full wasn't filtered earlier, so filter the
+        # train/val/test dataframes here.
+        if not use_walk_forward:
+            tr_mask = _momentum_cohort_mask(df_tr)
+            va_mask = _momentum_cohort_mask(df_va)
+            te_mask = _momentum_cohort_mask(df_te)
+            before = len(X_tr)
+            X_tr, y_tr, d_tr, df_tr = X_tr[tr_mask], y_tr[tr_mask], d_tr[tr_mask], df_tr[tr_mask]
+            X_va, y_va, d_va, df_va = X_va[va_mask], y_va[va_mask], d_va[va_mask], df_va[va_mask]
+            X_te, y_te, d_te, df_te = X_te[te_mask], y_te[te_mask], d_te[te_mask], df_te[te_mask]
+            console.print(
+                f"[cyan]Momentum cohort filter (static splits): "
+                f"{before:,} → {len(X_tr):,} train rows[/cyan]"
+            )
         # Drop value features — they penalise growth stocks
         feat_cols = [f for f in feat_cols if f not in _MOM_VALUE_FEATURES]
         X_tr = X_tr[feat_cols]; X_va = X_va[feat_cols]; X_te = X_te[feat_cols]
@@ -876,6 +952,7 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
                 objective=objective,
                 monotone_constraints_list=monotone_constraints_list,
                 lookback_years=wfcv_years,
+                binary_raw_threshold=binary_raw_threshold,
             )
 
             if len(wf_results) > 0:
@@ -891,6 +968,9 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
                 wf_table.add_row("Std IC",           f"{std_ic:.4f}")
                 wf_table.add_row("IC > 0",           f"{pos_folds}/{len(wf_results)} ({pos_folds/len(wf_results):.0%})")
                 wf_table.add_row("Mean Hit Rate",    f"{mean_hr:.3f}")
+                if objective == "binary" and "precision_at_10" in wf_results.columns:
+                    mean_p10 = wf_results["precision_at_10"].dropna().mean()
+                    wf_table.add_row("Mean Precision@10", f"{mean_p10:.3f}  (frac of top-10 picks with >{binary_raw_threshold:.0%} return)")
                 wf_table.add_row("Date range",       f"{wf_results['test_start'].min()} → {wf_results['test_end'].max()}")
                 console.print(wf_table)
 
@@ -975,6 +1055,75 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
                 plot_dir = Path("data/training/plots") / name
                 console.print(f"\n[bold]Generating plots → {plot_dir}/[/bold]")
                 generate_plots(final_model, X_tr, y_tr, X_va, y_va, X_te, y_te, feat_cols, plot_dir)
+
+        elif objective == "binary":
+            from morningalpha.ml.lgbm_model import LightGBMBinaryModel
+            import re as _re2
+            _raw_match2 = _re2.match(r"(forward_\d+d)", target)
+            _raw_col2   = _raw_match2.group(1) if _raw_match2 else None
+
+            bin_params_final = {"n_estimators": 1000, "verbose": -1, **best_params,
+                                "objective": "binary", "metric": "auc", "is_unbalance": True}
+            final_bin = LightGBMBinaryModel(params=bin_params_final)
+
+            if _raw_col2 and _raw_col2 in df_tr.columns:
+                y_tr_bin_f = (df_tr[_raw_col2].fillna(0).values > binary_raw_threshold).astype(np.float32)
+                y_va_bin_f = (df_va[_raw_col2].fillna(0).values > binary_raw_threshold).astype(np.float32)
+            else:
+                y_tr_bin_f = (y_tr >= _EXPLOSIVE_THRESHOLD).astype(np.float32)
+                y_va_bin_f = (y_va >= _EXPLOSIVE_THRESHOLD).astype(np.float32)
+
+            final_bin.fit(X_tr, y_tr_bin_f, X_va, y_va_bin_f)
+            pos_rate = float(y_tr_bin_f.mean())
+            console.print(f"[dim]Binary final model: positive rate {pos_rate:.1%} (threshold >{binary_raw_threshold:.0%} raw return)[/dim]")
+
+            final_bin.save(output)
+            console.print(f"\n[bold green]Model saved → {output}[/bold green]")
+
+            feat_config = {
+                "model_name": name, "model_type": "lgbm_binary",
+                "objective": "binary",
+                "binary_raw_threshold": binary_raw_threshold,
+                "binary_raw_col": _raw_col2,
+                "feature_set": feature_set,
+                "feature_columns": feat_cols,
+                "target": target,
+                "best_params": best_params,
+                "wfcv_mean_p10": float(wf_results["precision_at_10"].dropna().mean()) if use_walk_forward and len(wf_results) > 0 else None,
+                "train_cutoff": str(split_dates["train_end"].date()) if use_walk_forward else None,
+            }
+            feat_config_path = MODEL_DIR / f"{name}_feature_config.json"
+            with open(feat_config_path, "w") as f:
+                json.dump(feat_config, f, indent=2, default=str)
+            console.print(f"Feature config saved → {feat_config_path}")
+
+            _upsert_model_config(MODEL_DIR, name, "lgbm", None)
+
+            # SHAP top-15 summary (binary classifier — same pattern as regression above)
+            try:
+                sv = final_bin.shap_values(X_te.iloc[:min(1000, len(X_te))])
+                mean_abs_shap = np.abs(sv).mean(axis=0)
+                shap_series = pd.Series(mean_abs_shap, index=feat_cols).sort_values(ascending=False)
+                shap_table = Table(title="SHAP Top 15 Features (mean |SHAP| on test set)", show_header=True)
+                shap_table.add_column("Rank", justify="right")
+                shap_table.add_column("Feature")
+                shap_table.add_column("Mean |SHAP|", justify="right")
+                for rank, (feat, val) in enumerate(shap_series.head(15).items(), 1):
+                    shap_table.add_row(str(rank), feat, f"{val:.6f}")
+                console.print(shap_table)
+            except Exception as e:
+                console.print(f"[yellow]SHAP summary skipped: {e}[/yellow]")
+
+            if not no_plots:
+                plot_dir = Path("data/training/plots") / name
+                console.print(f"\n[bold]Generating plots → {plot_dir}/[/bold]")
+                try:
+                    generate_plots(final_bin, X_tr, y_tr_bin_f, X_va, y_va_bin_f,
+                                   X_te, (df_te[_raw_col2].fillna(0).values > binary_raw_threshold).astype(np.float32)
+                                         if _raw_col2 and _raw_col2 in df_te.columns else (y_te >= _EXPLOSIVE_THRESHOLD).astype(np.float32),
+                                   feat_cols, plot_dir)
+                except Exception as e:
+                    console.print(f"[yellow]Plot generation skipped: {e}[/yellow]")
 
         else:
             console.print(

@@ -55,6 +55,12 @@ export default function PortfolioKPIStrip({ holdings, tickerIndex }: Props) {
     return entry?.mlScore !== null && entry?.mlScore !== undefined && (entry.mlScore ?? 100) < 40
   }).length
 
+  // Count of holdings with multi-bagger signal (≥50% model confidence of doubling in 1y)
+  const multiBaggerCount = holdings.filter(h => {
+    const entry = getEntry(h.ticker, tickerIndex)
+    return (entry?.breakoutProb_100pct_252d ?? 0) >= 0.5
+  }).length
+
   return (
     <div className={styles.strip}>
       <div className={styles.card}>
@@ -100,6 +106,14 @@ export default function PortfolioKPIStrip({ holdings, tickerIndex }: Props) {
           {alertCount}
         </span>
         <span className={`${styles.sub} ${styles.muted}`}>bearish signals</span>
+      </div>
+
+      <div className={styles.card}>
+        <span className={styles.label}>Multi-bagger</span>
+        <span className={`${styles.value} ${multiBaggerCount > 0 ? styles.pos : styles.muted}`}>
+          {multiBaggerCount}
+        </span>
+        <span className={`${styles.sub} ${styles.muted}`}>252d ×2 ≥50%</span>
       </div>
     </div>
   )
