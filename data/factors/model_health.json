@@ -1,7 +1,63 @@
 {
-  "last_updated": "2026-04-16",
+  "last_updated": "2026-04-21",
   "alerts": [],
   "models": {
+    "lgbm_breakout_v10": {
+      "horizons": {
+        "5d": {
+          "ic_mean": 0.0745,
+          "ic_std": 0.0725,
+          "rolling_10": 0.0412,
+          "n": 356,
+          "status": "healthy"
+        },
+        "21d": {
+          "ic_mean": 0.1509,
+          "ic_std": 0.0664,
+          "rolling_10": 0.1557,
+          "n": 275,
+          "status": "healthy"
+        },
+        "63d": {
+          "ic_mean": 0.3197,
+          "ic_std": 0.0236,
+          "rolling_10": 0.3208,
+          "n": 65,
+          "status": "healthy"
+        }
+      },
+      "status": "healthy"
+    },
+    "lgbm_composite_v10": {
+      "horizons": {
+        "5d": {
+          "ic_mean": 0.0454,
+          "ic_std": 0.0898,
+          "rolling_10": 0.0175,
+          "n": 356,
+          "status": "retrain"
+        },
+        "21d": {
+          "ic_mean": 0.111,
+          "ic_std": 0.0442,
+          "rolling_10": 0.094,
+          "n": 275,
+          "status": "healthy"
+        },
+        "63d": {
+          "ic_mean": 0.1937,
+          "ic_std": 0.0559,
+          "rolling_10": 0.1919,
+          "n": 65,
+          "status": "healthy"
+        }
+      },
+      "status": "healthy"
+    },
+    "lgbm_breakout_cohort_v3": {
+      "horizons": {},
+      "status": "warming_up"
+    },
     "lstm_clip_v3": {
       "horizons": {},
       "status": "warming_up"
