@@ -1155,14 +1155,17 @@ def score(data_dir, models_dir, score_only, run_calibrate):
 
     # Filter to large-enough stocks before scoring — micro/small caps produce
     # noisy signals (illiquid, mean-reversion artifacts) and are untradeable at scale.
-    MIN_MARKET_CAP = 100_000_000  # $100M — matches training dataset floor
+    # Floor matches the 2026-04-20 dataset rebuild (`alpha ml dataset --min-market-cap 250m`).
+    # Scoring below the training floor would extrapolate to a universe the models
+    # never saw and surface speculative micro-caps (BNAI +517%, JLHL +148%, etc.).
+    MIN_MARKET_CAP = 250_000_000  # $250M — matches training dataset floor
     mc_numeric = df3m["MarketCap"].apply(pd.to_numeric, errors="coerce") if "MarketCap" in df3m.columns else pd.Series(dtype=float)
     if mc_numeric.notna().any():
         eligible = mc_numeric >= MIN_MARKET_CAP
         n_filtered = int((~eligible & mc_numeric.notna()).sum())
         df_score = df3m[eligible | mc_numeric.isna()].copy()
         if n_filtered:
-            console.print(f"[dim]Filtered out {n_filtered} stocks below ${MIN_MARKET_CAP/1e9:.0f}B market cap[/dim]")
+            console.print(f"[dim]Filtered out {n_filtered} stocks below ${MIN_MARKET_CAP/1e6:.0f}M market cap[/dim]")
     else:
         df_score = df3m.copy()
 
