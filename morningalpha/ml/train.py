@@ -1099,6 +1099,32 @@ def train(dataset, model_type, target, name, output, n_trials, finetune, checkpo
 
             _upsert_model_config(MODEL_DIR, name, "lgbm", None)
 
+            # SHAP top-15 summary (binary classifier — same pattern as regression above)
+            try:
+                sv = final_bin.shap_values(X_te.iloc[:min(1000, len(X_te))])
+                mean_abs_shap = np.abs(sv).mean(axis=0)
+                shap_series = pd.Series(mean_abs_shap, index=feat_cols).sort_values(ascending=False)
+                shap_table = Table(title="SHAP Top 15 Features (mean |SHAP| on test set)", show_header=True)
+                shap_table.add_column("Rank", justify="right")
+                shap_table.add_column("Feature")
+                shap_table.add_column("Mean |SHAP|", justify="right")
+                for rank, (feat, val) in enumerate(shap_series.head(15).items(), 1):
+                    shap_table.add_row(str(rank), feat, f"{val:.6f}")
+                console.print(shap_table)
+            except Exception as e:
+                console.print(f"[yellow]SHAP summary skipped: {e}[/yellow]")
+
+            if not no_plots:
+                plot_dir = Path("data/training/plots") / name
+                console.print(f"\n[bold]Generating plots → {plot_dir}/[/bold]")
+                try:
+                    generate_plots(final_bin, X_tr, y_tr_bin_f, X_va, y_va_bin_f,
+                                   X_te, (df_te[_raw_col2].fillna(0).values > binary_raw_threshold).astype(np.float32)
+                                         if _raw_col2 and _raw_col2 in df_te.columns else (y_te >= _EXPLOSIVE_THRESHOLD).astype(np.float32),
+                                   feat_cols, plot_dir)
+                except Exception as e:
+                    console.print(f"[yellow]Plot generation skipped: {e}[/yellow]")
+
         else:
             console.print(
                 f"[yellow]Final model checkpoint skipped for objective='{objective}'. "

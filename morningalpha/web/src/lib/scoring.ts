@@ -213,6 +213,8 @@ export function sortStocks(stocks: Stock[], sortBy: SortKey): Stock[] {
     momentumAccel: (a, b) => (b.MomentumAccel ?? 0) - (a.MomentumAccel ?? 0),
     mlScore: (a, b) => (b.mlScore ?? -1) - (a.mlScore ?? -1),
     maxDrawdown: (a, b) => (b.MaxDrawdown ?? -100) - (a.MaxDrawdown ?? -100),
+    breakoutProb63d: (a, b) => (b.BreakoutProb63d ?? -1) - (a.BreakoutProb63d ?? -1),
+    breakoutProb252d100: (a, b) => (b.BreakoutProb252d100 ?? -1) - (a.BreakoutProb252d100 ?? -1),
   }
 
   return sorted.sort(cmp[sortBy] ?? cmp.investmentScore)

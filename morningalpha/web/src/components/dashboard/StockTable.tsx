@@ -121,6 +121,32 @@ const COLUMN_DEFS: Record<string, ColDef> = {
     helpSection: 'scores',
     render: s => <td key="ML Score"><ScoreBadge value={s.mlScore} /></td>,
   },
+  '63d Brk%': {
+    label: '63d Brk%',
+    sortKey: 'breakoutProb63d',
+    render: s => {
+      const v = s.BreakoutProb63d
+      const cls = v == null ? '' : v >= 0.6 ? styles.pos : v >= 0.4 ? styles.amber : ''
+      return <td key="63d Brk%" className={`${styles.tdMono} ${cls}`}>{v != null ? `${(v * 100).toFixed(0)}%` : '—'}</td>
+    },
+  },
+  '252d 50%': {
+    label: '252d 50%',
+    render: s => {
+      const v = s.BreakoutProb252d50
+      const cls = v == null ? '' : v >= 0.6 ? styles.pos : v >= 0.4 ? styles.amber : ''
+      return <td key="252d 50%" className={`${styles.tdMono} ${cls}`}>{v != null ? `${(v * 100).toFixed(0)}%` : '—'}</td>
+    },
+  },
+  '252d ×2': {
+    label: '252d ×2',
+    sortKey: 'breakoutProb252d100',
+    render: s => {
+      const v = s.BreakoutProb252d100
+      const cls = v == null ? '' : v >= 0.5 ? styles.pos : v >= 0.3 ? styles.amber : ''
+      return <td key="252d ×2" className={`${styles.tdMono} ${cls}`}>{v != null ? `${(v * 100).toFixed(0)}%` : '—'}</td>
+    },
+  },
   'Mkt Cap': {
     label: 'Mkt Cap',
     sortKey: 'marketCap',

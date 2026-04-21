@@ -1479,6 +1479,16 @@ def score(data_dir, models_dir, score_only, run_calibrate):
     with open(generated_path, "w") as f:
         json.dump({"generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()}, f)
 
+    # Mirror CSVs and _generated.json to the web public directory so the dev
+    # server and GitHub Pages build pick up the latest scores automatically.
+    import shutil
+    web_public = Path(__file__).parents[2] / "morningalpha" / "web" / "public" / "data" / "latest"
+    if web_public.exists():
+        for fname in [*PERIOD_FILES, "_generated.json"]:
+            src = data_path / fname
+            if src.exists():
+                shutil.copy2(src, web_public / fname)
+
     # Write ticker_index.json for the Forecast/Portfolio frontend pages
     _write_ticker_index(df_score, active_models, raw_scores, data_path, binary_models=binary_models)
 

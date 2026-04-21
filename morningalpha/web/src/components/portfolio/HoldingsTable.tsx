@@ -125,6 +125,8 @@ export default function HoldingsTable({ holdings, tickerIndex, onDelete }: Props
     else if (sortKey === 'rsi') { va = sa?.RSI ?? -1; vb = sb?.RSI ?? -1 }
     else if (sortKey === 'mlScore') { va = ea?.mlScore ?? -1; vb = eb?.mlScore ?? -1 }
     else if (sortKey === 'investmentScore') { va = ea?.investmentScore ?? -1; vb = eb?.investmentScore ?? -1 }
+    else if (sortKey === 'breakoutProb252d100') { va = ea?.breakoutProb_100pct_252d ?? -1; vb = eb?.breakoutProb_100pct_252d ?? -1 }
+    else if (sortKey === 'breakoutProb252d50') { va = ea?.breakoutProb_50pct_252d ?? -1; vb = eb?.breakoutProb_50pct_252d ?? -1 }
     else if (sortKey === 'sharpe') { va = sa?.SharpeRatio ?? -999; vb = sb?.SharpeRatio ?? -999 }
     else if (sortKey === 'quality') { va = sa?.QualityScore ?? -1; vb = sb?.QualityScore ?? -1 }
     else if (sortKey === 'entry') { va = sa?.EntryScore ?? -1; vb = sb?.EntryScore ?? -1 }
@@ -263,6 +265,8 @@ export default function HoldingsTable({ holdings, tickerIndex, onDelete }: Props
               <tr>
                 {th('ticker', 'Ticker', true)}
                 {th('mlScore', 'ML Score')}
+                {th('breakoutProb252d50', '252d 50%')}
+                {th('breakoutProb252d100', '252d ×2')}
                 {th('investmentScore', 'Trad. Score')}
                 {th('sharpe', 'Sharpe')}
                 {th('quality', 'Quality')}
@@ -288,6 +292,12 @@ export default function HoldingsTable({ holdings, tickerIndex, onDelete }: Props
                     </td>
                     <td className={scoreClass(entry?.mlScore ?? null)}>
                       {entry?.mlScore != null ? Math.round(entry.mlScore) : '—'}
+                    </td>
+                    <td className={entry?.breakoutProb_50pct_252d != null && entry.breakoutProb_50pct_252d >= 0.6 ? styles.pos : entry?.breakoutProb_50pct_252d != null && entry.breakoutProb_50pct_252d >= 0.4 ? styles.amber : styles.muted}>
+                      {entry?.breakoutProb_50pct_252d != null ? `${(entry.breakoutProb_50pct_252d * 100).toFixed(0)}%` : '—'}
+                    </td>
+                    <td className={entry?.breakoutProb_100pct_252d != null && entry.breakoutProb_100pct_252d >= 0.5 ? styles.pos : entry?.breakoutProb_100pct_252d != null && entry.breakoutProb_100pct_252d >= 0.3 ? styles.amber : styles.muted}>
+                      {entry?.breakoutProb_100pct_252d != null ? `${(entry.breakoutProb_100pct_252d * 100).toFixed(0)}%` : '—'}
                     </td>
                     <td className={scoreClass(entry?.investmentScore ?? null)}>
                       {entry?.investmentScore != null ? entry.investmentScore.toFixed(1) : '—'}
