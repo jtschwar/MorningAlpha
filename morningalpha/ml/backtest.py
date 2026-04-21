@@ -159,6 +159,8 @@ def _compute_snapshot_ic(df: pd.DataFrame, target_col: str) -> pd.DataFrame:
         ic, _ = spearmanr(grp["pred_score"], grp[target_col])
         if not np.isnan(ic):
             rows.append({"date": pd.Timestamp(date), "ic": float(ic)})
+    if not rows:
+        return pd.DataFrame(columns=["date", "ic"])
     return pd.DataFrame(rows).sort_values("date").reset_index(drop=True)
 
 
@@ -721,6 +723,24 @@ def backtest(model_id: str, out_dir: str, dataset_path: str, target_col: Optiona
         df = _run_st_inference(st_model, df, feat_cols, st_config, device=st_device)
     else:
         df = _run_inference(booster, df, feat_cols)
+
+    # Long-horizon guard: if the test set has essentially no resolved forward
+    # labels (e.g. 252d models where post-train_cutoff rows all require a full
+    # year of future prices that haven't elapsed yet), the IC / L/S / decile
+    # metrics are all undefined. Exit gracefully and point at the WFCV CSV.
+    fwd_resolved = df[fwd_col].notna().mean() if fwd_col in df.columns else 0.0
+    if fwd_resolved < 0.05:
+        console.print(
+            f"\n[bold yellow]Skipping backtest: {fwd_col} is resolved for "
+            f"{fwd_resolved:.1%} of the test set (need ≥5%). For long-horizon "
+            f"models the post-train_cutoff window doesn't contain enough "
+            f"future price data — the WFCV results are the authoritative "
+            f"out-of-sample evaluation.[/bold yellow]"
+        )
+        wfcv_csv = Path("results") / f"{model_id}_wfcv.csv"
+        if wfcv_csv.exists():
+            console.print(f"[dim]See: {wfcv_csv}[/dim]")
+        return
 
     # --- IC vs training target (secondary signal — noisy for momentum plays) ---
     console.print("\n[bold cyan]Computing IC vs training target...[/bold cyan]")
