@@ -4,19 +4,13 @@
   "window_weeks": 12,
   "eta": 0.5,
   "weights": {
-    "lgbm_breakout_v10": 0.7829128978568357,
-    "lgbm_composite_v10": 0.171548535201458,
-    "lgbm_breakout_medium_v1": 0.015179522313902122,
-    "lgbm_composite_medium_v1": 0.015179522313902122,
-    "lstm_clip_v3": 0.015179522313902122
+    "lgbm_breakout_v10": 0.79625185988731,
+    "lgbm_composite_v10": 0.16419161277762795,
+    "lgbm_breakout_medium_v1": 0.013185509111687347,
+    "lgbm_composite_medium_v1": 0.013185509111687347,
+    "lstm_clip_v3": 0.013185509111687347
   },
   "ic_history": [
-    {
-      "week_end": "2026-04-07",
-      "horizon": "63d",
-      "lgbm_breakout_v10": 0.31544593159127116,
-      "lgbm_composite_v10": 0.19399351418464517
-    },
     {
       "week_end": "2026-04-08",
       "horizon": "63d",
@@ -73,6 +67,12 @@
     },
     {
       "week_end": "2026-04-16",
+      "horizon": "63d",
+      "lgbm_breakout_v10": 0.31544593159127116,
+      "lgbm_composite_v10": 0.19399351418464517
+    },
+    {
+      "week_end": "2026-04-21",
       "horizon": "63d",
       "lgbm_breakout_v10": 0.31544593159127116,
       "lgbm_composite_v10": 0.19399351418464517
