@@ -60,12 +60,20 @@ export function calculateRiskRewardRatio(stock: Stock): number | null {
 
 /** Attach computed fields to every stock. Called once at load time. */
 export function computeScores(stocks: Stock[]): Stock[] {
-  return stocks.map(s => ({
-    ...s,
-    investmentScore: calculateInvestmentScore(s),
-    riskRewardRatio: calculateRiskRewardRatio(s),
-    riskLevel: calculateRiskLevel(s),
-  }))
+  return stocks.map(s => {
+    const investmentScore = calculateInvestmentScore(s)
+    const ml = s.mlScore
+    const avgScore =
+      investmentScore != null && ml != null ? (investmentScore + ml) / 2
+      : investmentScore ?? ml ?? null
+    return {
+      ...s,
+      investmentScore,
+      avgScore,
+      riskRewardRatio: calculateRiskRewardRatio(s),
+      riskLevel: calculateRiskLevel(s),
+    }
+  })
 }
 
 // ── Filtering ───────────────────────────────────────────────────────────────
@@ -204,6 +212,7 @@ export function sortStocks(stocks: Stock[], sortBy: SortKey): Stock[] {
 
   const cmp: Record<SortKey, (a: Stock, b: Stock) => number> = {
     investmentScore: (a, b) => (b.investmentScore ?? 0) - (a.investmentScore ?? 0),
+    avgScore: (a, b) => (b.avgScore ?? 0) - (a.avgScore ?? 0),
     return: (a, b) => b.ReturnPct - a.ReturnPct,
     quality: (a, b) => (b.QualityScore ?? 0) - (a.QualityScore ?? 0),
     sharpe: (a, b) => (b.SharpeRatio ?? -999) - (a.SharpeRatio ?? -999),

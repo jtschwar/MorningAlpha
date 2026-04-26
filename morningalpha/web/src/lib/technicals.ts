@@ -1,24 +1,28 @@
+// ── SMA ─────────────────────────────────────────────────────────────────────
+
+export function calculateSMA(prices: number[], period: number): (number | null)[] {
+  const result: (number | null)[] = new Array(prices.length).fill(null)
+  if (prices.length < period) return result
+  let sum = 0
+  for (let i = 0; i < period; i++) sum += prices[i]
+  result[period - 1] = sum / period
+  for (let i = period; i < prices.length; i++) {
+    sum += prices[i] - prices[i - period]
+    result[i] = sum / period
+  }
+  return result
+}
+
 // ── EMA ─────────────────────────────────────────────────────────────────────
 
 export function calculateEMA(prices: number[], period: number): (number | null)[] {
-  const ema: (number | null)[] = []
+  if (prices.length === 0) return []
   const multiplier = 2 / (period + 1)
-
-  // Fill nulls until we have enough data, compute SMA as seed
-  let sum = 0
-  for (let i = 0; i < Math.min(period, prices.length); i++) {
-    sum += prices[i]
-    ema.push(null)
+  const result: (number | null)[] = [prices[0]]
+  for (let i = 1; i < prices.length; i++) {
+    result.push((prices[i] - result[i - 1]!) * multiplier + result[i - 1]!)
   }
-
-  if (prices.length >= period) {
-    ema[period - 1] = sum / period
-    for (let i = period; i < prices.length; i++) {
-      ema[i] = (prices[i] - ema[i - 1]!) * multiplier + ema[i - 1]!
-    }
-  }
-
-  return ema
+  return result
 }
 
 // ── RSI ──────────────────────────────────────────────────────────────────────

@@ -32,6 +32,15 @@
   border-bottom-color: var(--accent-blue);
 }
 
+.description {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-style: italic;
+  padding: 8px 12px 2px;
+  line-height: 1.5;
+  border-bottom: 1px solid var(--border);
+}
+
 .chart {
   padding: 8px;
 }

@@ -180,6 +180,7 @@ export function parseCSV(csv: string): ParseResult {
       BreakoutProb252d100: num(values, breakoutProb252d100Idx),
       // Will be filled by computeScores
       investmentScore: null,
+      avgScore: null,
       riskRewardRatio: null,
       riskLevel: 'unknown',
     })

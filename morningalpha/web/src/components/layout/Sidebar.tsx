@@ -19,12 +19,37 @@ export default function Sidebar() {
       </section>
 
       <section className={styles.section}>
-        <div className={styles.sectionTitle}>Presets</div>
+        <div className={styles.sectionTitleRow}>
+          <div className={styles.sectionTitle}>Presets</div>
+          <button
+            className={styles.helpLink}
+            onClick={() => (window as unknown as Record<string, { openSection: (id: string) => void }>).__helpDrawer?.openSection('presets')}
+            title="What do these presets do?"
+          >?</button>
+        </div>
         <FilterPresets />
       </section>
 
       <section className={styles.section}>
         <div className={styles.sectionTitle}>Filters</div>
+
+        <label className={styles.label}>Sort By</label>
+        <select
+          className={styles.select}
+          value={filters.sortBy}
+          onChange={e => set('sortBy', e.target.value as FilterState['sortBy'])}
+        >
+          <option value="investmentScore">Investment Score</option>
+          <option value="avgScore">Average Score</option>
+          <option value="return">Return %</option>
+          <option value="quality">Quality Score</option>
+          <option value="sharpe">Sharpe Ratio</option>
+          <option value="riskReward">Risk/Reward</option>
+          <option value="marketCap">Market Cap</option>
+          <option value="entryScore">Entry Score</option>
+          <option value="momentumAccel">Momentum</option>
+          <option value="maxDrawdown">Max Drawdown (mildest first)</option>
+        </select>
 
         <label className={styles.label}>Exchange</label>
         <select
@@ -141,23 +166,6 @@ export default function Sidebar() {
           placeholder="Any"
           onChange={e => set('minSharpe', e.target.value === '' ? -999 : Number(e.target.value))}
         />
-
-        <label className={styles.label}>Sort By</label>
-        <select
-          className={styles.select}
-          value={filters.sortBy}
-          onChange={e => set('sortBy', e.target.value as FilterState['sortBy'])}
-        >
-          <option value="investmentScore">Investment Score</option>
-          <option value="return">Return %</option>
-          <option value="quality">Quality Score</option>
-          <option value="sharpe">Sharpe Ratio</option>
-          <option value="riskReward">Risk/Reward</option>
-          <option value="marketCap">Market Cap</option>
-          <option value="entryScore">Entry Score</option>
-          <option value="momentumAccel">Momentum</option>
-          <option value="maxDrawdown">Max Drawdown (mildest first)</option>
-        </select>
 
         <button
           className={styles.resetBtn}

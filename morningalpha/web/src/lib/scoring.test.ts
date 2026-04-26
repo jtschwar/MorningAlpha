@@ -44,6 +44,7 @@ function makeStock(overrides: Partial<Stock> = {}): Stock {
     BreakoutProb252d50: null,
     BreakoutProb252d100: null,
   investmentScore: null,
+    avgScore: null,
     riskRewardRatio: null,
     riskLevel: 'unknown',
     ...overrides,

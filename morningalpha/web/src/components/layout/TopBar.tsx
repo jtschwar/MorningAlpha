@@ -32,7 +32,7 @@ export default function TopBar({ showHamburger, onToggleSidebar, sidebarOpen }: 
   const PAGE_LABELS: Record<string, string> = {
     '/forecast':  'Forecast',
     '/portfolio': 'Portfolio',
-    '/backtest':  'Backtest',
+    '/heatmap':   'Heatmap',
   }
   const pageLabel = PAGE_LABELS[location.pathname] ?? null
 
@@ -89,10 +89,10 @@ export default function TopBar({ showHamburger, onToggleSidebar, sidebarOpen }: 
             Forecast
           </button>
           <button
-            className={`${styles.navBtn} ${location.pathname === '/backtest' ? styles.navActive : ''}`}
-            onClick={() => navigate('/backtest')}
+            className={`${styles.navBtn} ${location.pathname === '/heatmap' ? styles.navActive : ''}`}
+            onClick={() => navigate('/heatmap')}
           >
-            Backtest
+            Heatmap
           </button>
         </nav>
         <button className={styles.themeBtn} onClick={toggle} title="Toggle light/dark mode">

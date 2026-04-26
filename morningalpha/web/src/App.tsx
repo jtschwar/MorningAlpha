@@ -4,7 +4,7 @@ import { StockProvider } from './store/StockContext'
 import { ThemeProvider } from './store/ThemeContext'
 import Dashboard from './pages/Dashboard'
 import StockDetail from './pages/StockDetail'
-import BacktestPage from './pages/Backtest'
+import HeatmapPage from './pages/Heatmap'
 import ForecastPage from './pages/Forecast'
 import PortfolioPage from './pages/Portfolio'
 import CommandPalette from './components/layout/CommandPalette'
@@ -31,7 +31,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/stock/:ticker" element={<StockDetail />} />
-          <Route path="/backtest" element={<BacktestPage />} />
+          <Route path="/heatmap" element={<HeatmapPage />} />
           <Route path="/forecast" element={<ForecastPage />} />
           <Route path="/portfolio" element={<PortfolioPage />} />
         </Routes>

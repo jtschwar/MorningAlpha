@@ -16,11 +16,11 @@ export default function RecommendationCards({ stocks }: Props) {
   const [count, setCount] = useState(5)
   const [mode, setMode] = useState<Mode>('traditional')
 
-  const hasML = stocks.some(s => s.mlScore != null)
+  const hasML = stocks.some(s => s.mlScore != null && s.avgScore != null)
 
   const top = useMemo(() => {
     const sorted = mode === 'ml'
-      ? [...stocks].filter(s => s.mlScore != null).sort((a, b) => (b.mlScore ?? 0) - (a.mlScore ?? 0))
+      ? [...stocks].filter(s => s.avgScore != null).sort((a, b) => (b.avgScore ?? 0) - (a.avgScore ?? 0))
       : [...stocks].filter(s => s.investmentScore != null).sort((a, b) => (b.investmentScore ?? 0) - (a.investmentScore ?? 0))
     return sorted.slice(0, count)
   }, [stocks, mode, count])
@@ -66,7 +66,7 @@ export default function RecommendationCards({ stocks }: Props) {
         {top.map((s, i) => (
           <div
             key={s.Ticker}
-            className={`${styles.card} ${mode === 'ml' ? styles.cardML : ''}`}
+            className={`${styles.card} ${mode !== 'traditional' ? styles.cardML : ''}`}
             onClick={() => navigate(`/stock/${s.Ticker}`)}
             role="button"
             tabIndex={0}
@@ -82,26 +82,28 @@ export default function RecommendationCards({ stocks }: Props) {
             {mode === 'ml' ? (
               <div className={styles.metrics}>
                 <div className={styles.metric}>
-                  <span className={styles.mLabel}>ML Score</span>
-                  <span className={styles.mlScore}>{s.mlScore?.toFixed(1)}</span>
+                  <span className={styles.mLabel}>Avg Score</span>
+                  <span className={styles.mlScore}>{s.avgScore?.toFixed(1)}</span>
+                </div>
+                <div className={styles.metric}>
+                  <span className={styles.mLabel}>Trad.</span>
+                  <span className={styles.mVal}>
+                    {s.investmentScore != null ? s.investmentScore.toFixed(0) : '—'}
+                  </span>
+                </div>
+                <div className={styles.metric}>
+                  <span className={styles.mLabel}>ML</span>
+                  <span className={styles.mVal}>
+                    {s.mlScore != null ? s.mlScore.toFixed(1) : '—'}
+                  </span>
                 </div>
                 <div className={styles.metric}>
                   <span className={styles.mLabel}>Quality</span>
                   <ScoreBadge value={s.QualityScore} />
                 </div>
                 <div className={styles.metric}>
-                  <span className={styles.mLabel}>Entry</span>
-                  <ScoreBadge value={s.EntryScore} />
-                </div>
-                <div className={styles.metric}>
                   <span className={styles.mLabel}>Risk</span>
                   <RiskBadge level={s.riskLevel} />
-                </div>
-                <div className={styles.metric}>
-                  <span className={styles.mLabel}>Trad. Score</span>
-                  <span className={styles.mVal}>
-                    {s.investmentScore != null ? s.investmentScore.toFixed(0) : '—'}
-                  </span>
                 </div>
               </div>
             ) : (

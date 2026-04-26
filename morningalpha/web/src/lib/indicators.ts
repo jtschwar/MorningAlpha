@@ -126,10 +126,11 @@ export function calculateBollingerBands(
   const pctB: (number | null)[] = new Array(prices.length).fill(null)
   const bandwidth: (number | null)[] = new Array(prices.length).fill(null)
 
-  for (let i = period - 1; i < prices.length; i++) {
-    const slice = prices.slice(i - period + 1, i + 1)
-    const mean = slice.reduce((a, b) => a + b, 0) / period
-    const variance = slice.reduce((a, b) => a + (b - mean) ** 2, 0) / period
+  for (let i = 0; i < prices.length; i++) {
+    const slice = prices.slice(Math.max(0, i - period + 1), i + 1)
+    const n = slice.length
+    const mean = slice.reduce((a, b) => a + b, 0) / n
+    const variance = slice.reduce((a, b) => a + (b - mean) ** 2, 0) / n
     const sd = Math.sqrt(variance)
 
     mid[i] = mean

@@ -10,6 +10,21 @@ interface Section {
 
 const SECTIONS: Section[] = [
   {
+    id: 'presets',
+    title: 'Filter Presets',
+    content: (
+      <div>
+        <p>Presets apply a curated set of filters in one click. Clicking an active preset resets all filters.</p>
+        <p><strong>Conservative</strong> — Max drawdown ≥ −20%, Min Sharpe ≥ 1.0, dividend-paying stocks only. Sorted by Investment Score. Best for capital preservation.</p>
+        <p><strong>Momentum</strong> — RSI 50–70 (strong but not overbought), price above SMA 50. Sorted by Momentum Acceleration. Targets stocks in active uptrends.</p>
+        <p><strong>Value Entry</strong> — P/E ≤ 20, price below SMA 200 (out of favour), Min Quality ≥ 40. Sorted by Entry Score. Looks for cheap stocks starting to recover.</p>
+        <p><strong>Quality Growth</strong> — Min Quality Score ≥ 60, Min Sharpe ≥ 1.5. Sorted by Quality Score. Filters for consistent, low-volatility compounders.</p>
+        <p><strong>Breakout</strong> — RSI 50–70, price above SMA 50. Sorted by Momentum Acceleration. Similar to Momentum but emphasises stocks near breakout territory.</p>
+        <p><strong>Undervalued</strong> — P/E ≤ 15, RSI ≤ 40 (oversold). Sorted by Entry Score. Deep-value names with depressed sentiment.</p>
+      </div>
+    ),
+  },
+  {
     id: 'returns',
     title: 'Returns & Periods',
     content: (

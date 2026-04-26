@@ -3,6 +3,7 @@ export type WindowPeriod = '2w' | '1m' | '3m' | '6m'
 export type SortKey =
   | 'investmentScore'
   | 'mlScore'
+  | 'avgScore'
   | 'return'
   | 'quality'
   | 'sharpe'
@@ -116,6 +117,7 @@ export interface Stock {
   BreakoutProb252d100: number | null   // P(forward_252d > +100%) — multi-bagger
   // Computed at load time by computeScores()
   investmentScore: number | null
+  avgScore: number | null
   riskRewardRatio: number | null
   riskLevel: RiskLevel
 }
