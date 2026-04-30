@@ -1,22 +1,16 @@
 {
-  "updated": "2026-04-29",
+  "updated": "2026-04-30",
   "method": "rolling_ic_hedge",
   "window_weeks": 12,
   "eta": 0.5,
   "weights": {
-    "lgbm_breakout_v10": 0.8601984335446264,
-    "lgbm_composite_v10": 0.1232142143677543,
-    "lgbm_breakout_medium_v1": 0.005529117362539794,
-    "lgbm_composite_medium_v1": 0.005529117362539794,
-    "lstm_clip_v3": 0.005529117362539794
+    "lgbm_breakout_v10": 0.8686065413359377,
+    "lgbm_composite_v10": 0.11708795022846141,
+    "lgbm_breakout_medium_v1": 0.004768502811866947,
+    "lgbm_composite_medium_v1": 0.004768502811866947,
+    "lstm_clip_v3": 0.004768502811866947
   },
   "ic_history": [
-    {
-      "week_end": "2026-04-13",
-      "horizon": "63d",
-      "lgbm_breakout_v10": 0.31544593159127116,
-      "lgbm_composite_v10": 0.19399351418464517
-    },
     {
       "week_end": "2026-04-14",
       "horizon": "63d",
@@ -79,6 +73,12 @@
     },
     {
       "week_end": "2026-04-29",
+      "horizon": "63d",
+      "lgbm_breakout_v10": 0.31544593159127116,
+      "lgbm_composite_v10": 0.19399351418464517
+    },
+    {
+      "week_end": "2026-04-30",
       "horizon": "63d",
       "lgbm_breakout_v10": 0.31544593159127116,
       "lgbm_composite_v10": 0.19399351418464517
